@@ -15,6 +15,8 @@ public interface PaymentRecordRepository extends JpaRepository<PaymentRecord, UU
 
     Optional<PaymentRecord> findByOrderId(UUID orderId);
 
+    Optional<PaymentRecord> findByProviderPaymentId(String providerPaymentId);
+
     @Query("""
             select payment
             from PaymentRecord payment

@@ -11,11 +11,15 @@ public record AppProperties(
         @NotBlank String environment,
         @NotBlank String paymentProvider,
         @NotBlank String authenticationProvider,
-        Stripe stripe
+        Stripe stripe,
+        FakeProvider fakeProvider
 ) {
     public AppProperties {
         if (stripe == null) {
             stripe = new Stripe("");
+        }
+        if (fakeProvider == null) {
+            fakeProvider = new FakeProvider("");
         }
     }
 
@@ -28,10 +32,27 @@ public record AppProperties(
         return "stripe".equalsIgnoreCase(paymentProvider);
     }
 
+    @AssertTrue(message = "app.fake-provider.webhook-secret is required when app.payment-provider=fake")
+    public boolean isFakeProviderWebhookSecretConfiguredWhenRequired() {
+        return !isFakeProvider() || !fakeProvider.webhookSecret().isBlank();
+    }
+
+    public boolean isFakeProvider() {
+        return "fake".equalsIgnoreCase(paymentProvider);
+    }
+
     public record Stripe(String secretKey) {
         public Stripe {
             if (secretKey == null) {
                 secretKey = "";
+            }
+        }
+    }
+
+    public record FakeProvider(String webhookSecret) {
+        public FakeProvider {
+            if (webhookSecret == null) {
+                webhookSecret = "";
             }
         }
     }

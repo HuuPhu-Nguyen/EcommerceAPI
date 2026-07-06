@@ -15,6 +15,8 @@ public interface RefundRecordRepository extends JpaRepository<RefundRecord, UUID
 
     Optional<RefundRecord> findByPaymentId(UUID paymentId);
 
+    Optional<RefundRecord> findByProviderRefundId(String providerRefundId);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
             select refund
