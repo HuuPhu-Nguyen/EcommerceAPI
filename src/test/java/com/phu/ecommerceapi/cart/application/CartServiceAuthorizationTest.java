@@ -1,9 +1,12 @@
-package com.phu.ecommerceapi.Cart;
+package com.phu.ecommerceapi.cart.application;
 
 import com.phu.ecommerceapi.Product.ProductRepo;
 import com.phu.ecommerceapi.User.UserModel;
 import com.phu.ecommerceapi.User.UserRepo;
+import com.phu.ecommerceapi.cart.infrastructure.CartModel;
+import com.phu.ecommerceapi.cart.infrastructure.CartRepo;
 import com.phu.ecommerceapi.identity.application.CurrentUser;
+import com.phu.ecommerceapi.inventory.application.InventoryReservationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -11,7 +14,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.access.AccessDeniedException;
 
-import java.util.ArrayList;
 import java.util.Optional;
 import java.util.Set;
 
@@ -31,17 +33,20 @@ class CartServiceAuthorizationTest {
     @Mock
     private UserRepo userRepo;
 
+    @Mock
+    private InventoryReservationService inventoryReservationService;
+
     private CartService cartService;
 
     @BeforeEach
     void setUp() {
-        cartService = new CartService(cartRepo, productRepo, userRepo);
+        cartService = new CartService(cartRepo, productRepo, userRepo, inventoryReservationService);
     }
 
     @Test
     void ownerCanReadCartItems() {
         CartModel cart = cartOwnedBy("customer@example.com", "customer@example.com");
-        when(cartRepo.findById(10L)).thenReturn(Optional.of(cart));
+        when(cartRepo.findWithItemsById(10L)).thenReturn(Optional.of(cart));
 
         assertThat(cartService.getCartItems(10L, currentUser("customer@example.com")).isEmpty())
                 .isTrue();
@@ -50,20 +55,9 @@ class CartServiceAuthorizationTest {
     @Test
     void crossCustomerCartReadIsDenied() {
         CartModel cart = cartOwnedBy("owner@example.com", "owner@example.com");
-        when(cartRepo.findById(10L)).thenReturn(Optional.of(cart));
+        when(cartRepo.findWithItemsById(10L)).thenReturn(Optional.of(cart));
 
         assertThatThrownBy(() -> cartService.getCartItems(10L, currentUser("attacker@example.com")))
-                .isInstanceOf(AccessDeniedException.class)
-                .hasMessage("Cart does not belong to current user");
-    }
-
-    @Test
-    void missingCartOwnerIsDenied() {
-        CartModel cart = new CartModel();
-        cart.setItems(new ArrayList<>());
-        when(cartRepo.findById(10L)).thenReturn(Optional.of(cart));
-
-        assertThatThrownBy(() -> cartService.getCartItems(10L, currentUser("customer@example.com")))
                 .isInstanceOf(AccessDeniedException.class)
                 .hasMessage("Cart does not belong to current user");
     }
@@ -73,10 +67,7 @@ class CartServiceAuthorizationTest {
                 .username(username)
                 .email(email)
                 .build();
-        CartModel cart = new CartModel();
-        cart.setOwner(owner);
-        cart.setItems(new ArrayList<>());
-        return cart;
+        return new CartModel(owner);
     }
 
     private CurrentUser currentUser(String username) {

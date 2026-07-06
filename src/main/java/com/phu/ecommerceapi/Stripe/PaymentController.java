@@ -1,7 +1,7 @@
 package com.phu.ecommerceapi.Stripe;
 
-import com.phu.ecommerceapi.Cart.CartModel;
-import com.phu.ecommerceapi.Cart.CartService;
+import com.phu.ecommerceapi.cart.application.CartResponse;
+import com.phu.ecommerceapi.cart.application.CartService;
 import com.phu.ecommerceapi.identity.api.AuthenticatedUser;
 import com.phu.ecommerceapi.identity.application.CurrentUser;
 import com.phu.ecommerceapi.identity.application.SecurityExpressions;
@@ -28,9 +28,8 @@ public class PaymentController {
             @AuthenticatedUser CurrentUser currentUser
     ) throws Exception {
         try {
-            CartModel cart = cartService.getOwnedCartById(cartId, currentUser);
-
-            long amount = (long) (cart.getTotal() * 100); // Stripe uses cents
+            CartResponse cart = cartService.viewCart(cartId, currentUser);
+            long amount = cart.total().movePointRight(2).longValueExact(); // Stripe uses cents
 
             Map<String, Object> params = new HashMap<>();
             params.put("amount", amount);

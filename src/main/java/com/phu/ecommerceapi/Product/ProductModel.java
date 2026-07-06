@@ -1,6 +1,6 @@
 package com.phu.ecommerceapi.Product;
 
-import com.phu.ecommerceapi.CartItem.CartItemModel;
+import com.phu.ecommerceapi.cart.infrastructure.CartItemModel;
 import jakarta.persistence.*;
 import lombok.*;
 

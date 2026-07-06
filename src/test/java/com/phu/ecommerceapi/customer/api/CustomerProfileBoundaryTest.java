@@ -2,6 +2,7 @@ package com.phu.ecommerceapi.customer.api;
 
 import com.phu.ecommerceapi.User.UserModel;
 import com.phu.ecommerceapi.User.UserRepo;
+import com.phu.ecommerceapi.cart.infrastructure.CartRepo;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -31,8 +32,12 @@ class CustomerProfileBoundaryTest {
     @Autowired
     private UserRepo userRepo;
 
+    @Autowired
+    private CartRepo cartRepo;
+
     @BeforeEach
     void resetUsers() {
+        cartRepo.deleteAll();
         userRepo.deleteAll();
     }
 
