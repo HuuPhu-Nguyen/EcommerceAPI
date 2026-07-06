@@ -25,6 +25,9 @@ public class ProductModel {
 
     private double stock;
 
+    @Builder.Default
+    private boolean active = true;
+
     @OneToMany(mappedBy = "productModel",cascade = CascadeType.ALL)
     private List<CartItemModel> cartItems;
 

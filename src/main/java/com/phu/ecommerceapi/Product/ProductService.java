@@ -4,7 +4,6 @@ import com.phu.ecommerceapi.shared.api.NotFoundException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import java.util.List;
 import java.util.Optional;
 
 @Service
@@ -18,46 +17,37 @@ public class ProductService {
                 .name(product.getName())
                 .price(product.getPrice())
                 .stock(product.getStock())
+                .active(product.getActive() == null || product.getActive())
                 .build();
         repo.save(newProduct);
 
-        ProductResponse response = ProductResponse.builder()
-                .id(newProduct.getProductId())
-                .name((newProduct.getName()))
-                .price(newProduct.getPrice())
-                .stock(newProduct.getStock())
-                .build();
-        return response;
+        return toResponse(newProduct);
     }
 
     public ProductResponse delete(long productId) {
         ProductModel product = repo.findById(productId)
                 .orElseThrow(() -> new NotFoundException("Product not found"));
-        repo.delete(product);
+        product.setActive(false);
+        return toResponse(repo.save(product));
+    }
+
+    public ProductResponse getById(long id) {
+        Optional<ProductModel> product = repo.findByProductIdAndActiveTrue(id);
+        if(product.isPresent()){
+            return toResponse(product.get());
+        }
+        else{
+            throw new NotFoundException("Product not found");
+        }
+    }
+
+    private ProductResponse toResponse(ProductModel product) {
         return ProductResponse.builder()
                 .id(product.getProductId())
                 .name(product.getName())
                 .price(product.getPrice())
                 .stock(product.getStock())
+                .active(product.isActive())
                 .build();
-     }
-
-    public List<ProductModel> getAll() {
-        return repo.findAll();
-    }
-
-    public ProductResponse getById(long id) {
-        Optional<ProductModel> product = repo.findById(id);
-        if(product.isPresent()){
-            return ProductResponse.builder()
-                    .id(product.get().getProductId())
-                    .name(product.get().getName())
-                    .price(product.get().getPrice())
-                    .stock(product.get().getStock())
-                    .build();
-        }
-        else{
-            throw new NotFoundException("Product not found");
-        }
     }
 }

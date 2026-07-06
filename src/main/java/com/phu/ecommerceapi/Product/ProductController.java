@@ -5,8 +5,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
-
 import static com.phu.ecommerceapi.identity.application.SecurityExpressions.ADMIN_PRODUCT_WRITE;
 
 @RestController
@@ -15,16 +13,6 @@ public class ProductController {
 
     @Autowired
     private ProductService productService;
-
-    @GetMapping("/getById")
-    public ResponseEntity<ProductResponse> getProduct(@RequestParam long id){
-        return ResponseEntity.ok(productService.getById(id));
-    }
-
-    @GetMapping("/getAll")
-    public ResponseEntity<List<ProductModel>> getAllProduct(){
-        return ResponseEntity.ok(productService.getAll());
-    }
 
     @PostMapping("/add")
     @PreAuthorize(ADMIN_PRODUCT_WRITE)

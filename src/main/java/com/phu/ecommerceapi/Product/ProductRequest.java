@@ -7,4 +7,5 @@ public class ProductRequest {
     private String name;
     private double price;
     private double stock;
+    private Boolean active;
 }
