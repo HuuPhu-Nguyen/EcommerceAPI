@@ -1,0 +1,138 @@
+package com.phu.ecommerceapi.checkout.application;
+
+import com.phu.ecommerceapi.Product.ProductModel;
+import com.phu.ecommerceapi.User.UserModel;
+import com.phu.ecommerceapi.audit.application.AuditEventCommand;
+import com.phu.ecommerceapi.audit.application.AuditEventRecorder;
+import com.phu.ecommerceapi.cart.infrastructure.CartItemModel;
+import com.phu.ecommerceapi.cart.infrastructure.CartModel;
+import com.phu.ecommerceapi.cart.infrastructure.CartRepo;
+import com.phu.ecommerceapi.identity.application.CurrentUser;
+import com.phu.ecommerceapi.inventory.application.InventoryReservationService;
+import com.phu.ecommerceapi.order.application.OrderItemResponse;
+import com.phu.ecommerceapi.order.application.OrderResponse;
+import com.phu.ecommerceapi.order.infrastructure.CustomerOrderRecord;
+import com.phu.ecommerceapi.order.infrastructure.CustomerOrderRepository;
+import com.phu.ecommerceapi.order.infrastructure.OrderItemRecord;
+import com.phu.ecommerceapi.shared.api.ConflictException;
+import com.phu.ecommerceapi.shared.api.NotFoundException;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.util.Comparator;
+import java.util.List;
+
+@Service
+public class CheckoutService {
+
+    private static final String ORDER_RESOURCE_TYPE = "ORDER";
+    private static final String DEFAULT_CURRENCY = "USD";
+
+    private final CartRepo cartRepo;
+    private final InventoryReservationService inventoryReservationService;
+    private final CustomerOrderRepository orderRepository;
+    private final AuditEventRecorder auditEventRecorder;
+
+    public CheckoutService(
+            CartRepo cartRepo,
+            InventoryReservationService inventoryReservationService,
+            CustomerOrderRepository orderRepository,
+            AuditEventRecorder auditEventRecorder
+    ) {
+        this.cartRepo = cartRepo;
+        this.inventoryReservationService = inventoryReservationService;
+        this.orderRepository = orderRepository;
+        this.auditEventRecorder = auditEventRecorder;
+    }
+
+    @Transactional
+    public OrderResponse checkout(long cartId, CurrentUser currentUser) {
+        CartModel cart = cartRepo.findForCheckoutById(cartId)
+                .orElseThrow(() -> new NotFoundException("Cart not found"));
+        assertCartOwner(cart, currentUser);
+
+        if (orderRepository.existsByCartId(cart.getId())) {
+            throw new ConflictException("Cart has already been checked out");
+        }
+        if (cart.isEmpty()) {
+            throw new ConflictException("Cannot checkout an empty cart");
+        }
+
+        CustomerOrderRecord order = CustomerOrderRecord.pendingPayment(cart.getOwner(), cart.getId(), DEFAULT_CURRENCY);
+        for (CartItemModel item : cart.getItems()) {
+            inventoryReservationService.reserve(item.getProductId(), item.getQuantity());
+            ProductModel product = item.getProductModel();
+            order.addItem(product, item.getQuantity(), money(product.getPrice()));
+        }
+
+        CustomerOrderRecord savedOrder = orderRepository.save(order);
+        cart.clear();
+        cartRepo.save(cart);
+        recordAudit(currentUser, savedOrder);
+        return toResponse(savedOrder);
+    }
+
+    private void assertCartOwner(CartModel cart, CurrentUser currentUser) {
+        if (currentUser == null || cart.getOwner() == null || !belongsToCurrentUser(cart.getOwner(), currentUser)) {
+            throw new AccessDeniedException("Cart does not belong to current user");
+        }
+    }
+
+    private boolean belongsToCurrentUser(UserModel owner, CurrentUser currentUser) {
+        return matches(owner.getUsername(), currentUser.username())
+                || matches(owner.getEmail(), currentUser.email());
+    }
+
+    private boolean matches(String ownerValue, String currentUserValue) {
+        return ownerValue != null
+                && currentUserValue != null
+                && ownerValue.equalsIgnoreCase(currentUserValue);
+    }
+
+    private void recordAudit(CurrentUser actor, CustomerOrderRecord order) {
+        auditEventRecorder.record(new AuditEventCommand(
+                actor.subject(),
+                "CHECKOUT_ORDER_CREATED",
+                ORDER_RESOURCE_TYPE,
+                order.getId().toString(),
+                "cartId=%d;status=%s;total=%s %s".formatted(
+                        order.getCartId(),
+                        order.getStatus(),
+                        order.getTotalAmount(),
+                        order.getCurrency()
+                )
+        ));
+    }
+
+    private OrderResponse toResponse(CustomerOrderRecord order) {
+        List<OrderItemResponse> items = order.getItems()
+                .stream()
+                .sorted(Comparator.comparingLong(OrderItemRecord::getProductId))
+                .map(item -> new OrderItemResponse(
+                        item.getProductId(),
+                        item.getProductName(),
+                        item.getQuantity(),
+                        item.getUnitPriceAmount(),
+                        item.getLineTotalAmount()
+                ))
+                .toList();
+
+        return new OrderResponse(
+                order.getId(),
+                order.getCartId(),
+                order.getCustomer().getId(),
+                order.getStatus(),
+                order.getTotalAmount(),
+                order.getCurrency(),
+                order.getCreatedAt(),
+                items
+        );
+    }
+
+    private BigDecimal money(double value) {
+        return BigDecimal.valueOf(value).setScale(2, RoundingMode.HALF_UP);
+    }
+}

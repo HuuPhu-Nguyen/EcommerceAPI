@@ -3,7 +3,9 @@ package com.phu.ecommerceapi.catalog.api;
 import com.phu.ecommerceapi.Product.ProductModel;
 import com.phu.ecommerceapi.Product.ProductRepo;
 import com.phu.ecommerceapi.audit.infrastructure.AuditEventRepository;
+import com.phu.ecommerceapi.cart.infrastructure.CartRepo;
 import com.phu.ecommerceapi.inventory.infrastructure.InventoryRepository;
+import com.phu.ecommerceapi.order.infrastructure.CustomerOrderRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -36,11 +38,19 @@ class AdminProductManagementTest {
     private AuditEventRepository auditEventRepository;
 
     @Autowired
+    private CustomerOrderRepository orderRepository;
+
+    @Autowired
+    private CartRepo cartRepo;
+
+    @Autowired
     private InventoryRepository inventoryRepository;
 
     @BeforeEach
     void resetData() {
         auditEventRepository.deleteAll();
+        orderRepository.deleteAll();
+        cartRepo.deleteAll();
         inventoryRepository.deleteAll();
         productRepo.deleteAll();
     }

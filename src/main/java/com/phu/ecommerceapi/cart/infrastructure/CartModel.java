@@ -72,6 +72,10 @@ public class CartModel {
         return owner;
     }
 
+    public boolean isEmpty() {
+        return items.isEmpty();
+    }
+
     public int quantityForProduct(long productId) {
         return findItem(productId)
                 .map(CartItemModel::getQuantity)
@@ -100,6 +104,11 @@ public class CartModel {
         CartItemModel item = findItem(productId)
                 .orElseThrow(() -> new NotFoundException("Cart item not found"));
         items.remove(item);
+        recalculateTotal();
+    }
+
+    public void clear() {
+        items.clear();
         recalculateTotal();
     }
 

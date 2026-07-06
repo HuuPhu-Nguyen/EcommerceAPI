@@ -66,6 +66,7 @@ The realm import also includes local API scopes used by method security:
 - `profile:read`
 - `cart:read`
 - `cart:write`
+- `checkout:write`
 - `payment:create`
 - `product:write`
 - `user:read`

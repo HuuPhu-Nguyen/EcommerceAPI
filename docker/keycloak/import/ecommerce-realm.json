@@ -74,6 +74,7 @@
         "profile:read",
         "cart:read",
         "cart:write",
+        "checkout:write",
         "payment:create",
         "product:write",
         "user:read",
@@ -136,6 +137,14 @@
     },
     {
       "name": "cart:write",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "checkout:write",
       "protocol": "openid-connect",
       "attributes": {
         "include.in.token.scope": "true",

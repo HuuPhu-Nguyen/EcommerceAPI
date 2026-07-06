@@ -8,6 +8,7 @@ import com.phu.ecommerceapi.User.UserRepo;
 import com.phu.ecommerceapi.cart.infrastructure.CartRepo;
 import com.phu.ecommerceapi.inventory.infrastructure.InventoryRecord;
 import com.phu.ecommerceapi.inventory.infrastructure.InventoryRepository;
+import com.phu.ecommerceapi.order.infrastructure.CustomerOrderRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -41,6 +42,9 @@ class CartUseCaseTest {
     private CartRepo cartRepo;
 
     @Autowired
+    private CustomerOrderRepository orderRepository;
+
+    @Autowired
     private UserRepo userRepo;
 
     @Autowired
@@ -51,6 +55,7 @@ class CartUseCaseTest {
 
     @BeforeEach
     void resetData() {
+        orderRepository.deleteAll();
         cartRepo.deleteAll();
         userRepo.deleteAll();
         inventoryRepository.deleteAll();
