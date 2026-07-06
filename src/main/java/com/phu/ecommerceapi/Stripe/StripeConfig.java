@@ -1,18 +1,25 @@
 package com.phu.ecommerceapi.Stripe;
 
+import com.phu.ecommerceapi.config.AppProperties;
 import com.stripe.Stripe;
 import jakarta.annotation.PostConstruct;
 import org.springframework.context.annotation.Configuration;
 
 @Configuration
 public class StripeConfig {
+
+    private final AppProperties appProperties;
+
+    public StripeConfig(AppProperties appProperties) {
+        this.appProperties = appProperties;
+    }
+
     @PostConstruct
     public void init() {
-        String stripeApiKey= System.getenv("stripe_secret_key");
-        if (stripeApiKey == null || stripeApiKey.isEmpty()) {
-            throw new IllegalStateException("Environment variable stripe_secret_key is not set!");
+        if (!appProperties.isStripeProvider()) {
+            return;
         }
-        Stripe.apiKey = stripeApiKey;
-        System.out.println("Stripe initialized successfully");
+
+        Stripe.apiKey = appProperties.stripe().secretKey();
     }
 }
