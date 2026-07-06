@@ -10,6 +10,12 @@ import com.phu.ecommerceapi.audit.infrastructure.AuditEventRepository;
 import com.phu.ecommerceapi.cart.infrastructure.CartRepo;
 import com.phu.ecommerceapi.inventory.infrastructure.InventoryRecord;
 import com.phu.ecommerceapi.inventory.infrastructure.InventoryRepository;
+import com.phu.ecommerceapi.ledger.domain.LedgerEntryDirection;
+import com.phu.ecommerceapi.ledger.domain.LedgerTransactionType;
+import com.phu.ecommerceapi.ledger.infrastructure.LedgerEntryRecord;
+import com.phu.ecommerceapi.ledger.infrastructure.LedgerEntryRepository;
+import com.phu.ecommerceapi.ledger.infrastructure.LedgerTransactionRecord;
+import com.phu.ecommerceapi.ledger.infrastructure.LedgerTransactionRepository;
 import com.phu.ecommerceapi.order.domain.OrderStatus;
 import com.phu.ecommerceapi.order.infrastructure.CustomerOrderRecord;
 import com.phu.ecommerceapi.order.infrastructure.CustomerOrderRepository;
@@ -24,12 +30,14 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 
@@ -72,8 +80,18 @@ class CreatePaymentUseCaseTest {
     @Autowired
     private AuditEventRepository auditEventRepository;
 
+    @Autowired
+    private LedgerTransactionRepository ledgerTransactionRepository;
+
+    @Autowired
+    private LedgerEntryRepository ledgerEntryRepository;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
     @BeforeEach
     void resetData() {
+        truncateLedger();
         auditEventRepository.deleteAll();
         idempotencyRepository.deleteAll();
         paymentRepository.deleteAll();
@@ -114,6 +132,7 @@ class CreatePaymentUseCaseTest {
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.SUCCEEDED);
         assertThat(payment.getProviderPaymentId()).startsWith("fake_");
+        assertBalancedPaymentLedger(payment);
         assertThat(auditActions()).contains("CHECKOUT_ORDER_CREATED", "PAYMENT_SUCCEEDED");
     }
 
@@ -165,6 +184,7 @@ class CreatePaymentUseCaseTest {
         PaymentRecord payment = paymentRepository.findByOrderId(orderId).orElseThrow();
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PAYMENT_FAILED);
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.FAILED);
+        assertThat(ledgerTransactionRepository.findAll()).isEmpty();
         assertThat(auditActions()).contains("PAYMENT_FAILED");
         assertThat(auditActions()).doesNotContain("PAYMENT_SUCCEEDED");
     }
@@ -284,6 +304,38 @@ class CreatePaymentUseCaseTest {
                   "paymentMethodToken": "%s"
                 }
                 """.formatted(orderId, paymentMethodToken);
+    }
+
+    private void assertBalancedPaymentLedger(PaymentRecord payment) {
+        LedgerTransactionRecord transaction = ledgerTransactionRepository
+                .findByReferenceTypeAndReferenceIdAndTransactionType(
+                        "PAYMENT",
+                        payment.getId().toString(),
+                        LedgerTransactionType.PAYMENT_CAPTURE
+                )
+                .orElseThrow();
+        List<LedgerEntryRecord> entries = ledgerEntryRepository.findByTransactionId(transaction.getId());
+
+        assertThat(entries).hasSize(2);
+        assertThat(entries)
+                .extracting(LedgerEntryRecord::getDirection)
+                .containsExactlyInAnyOrder(LedgerEntryDirection.DEBIT, LedgerEntryDirection.CREDIT);
+        assertThat(total(entries, LedgerEntryDirection.DEBIT)).isEqualByComparingTo(payment.getAmount());
+        assertThat(total(entries, LedgerEntryDirection.CREDIT)).isEqualByComparingTo(payment.getAmount());
+        assertThat(entries)
+                .extracting(LedgerEntryRecord::getCurrency)
+                .containsOnly(payment.getCurrency());
+    }
+
+    private BigDecimal total(List<LedgerEntryRecord> entries, LedgerEntryDirection direction) {
+        return entries.stream()
+                .filter(entry -> entry.getDirection() == direction)
+                .map(LedgerEntryRecord::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private void truncateLedger() {
+        jdbcTemplate.execute("TRUNCATE TABLE ledger_entry, ledger_transaction RESTART IDENTITY");
     }
 
     private List<String> auditActions() {
