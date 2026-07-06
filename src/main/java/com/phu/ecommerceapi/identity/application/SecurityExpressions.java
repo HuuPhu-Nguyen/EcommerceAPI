@@ -12,6 +12,8 @@ public final class SecurityExpressions {
             "hasRole('CUSTOMER') and hasAuthority('SCOPE_checkout:write')";
     public static final String CUSTOMER_PAYMENT_CREATE =
             "hasRole('CUSTOMER') and hasAuthority('SCOPE_payment:create')";
+    public static final String CUSTOMER_PAYMENT_REFUND =
+            "hasRole('CUSTOMER') and hasAuthority('SCOPE_payment:refund')";
     public static final String ADMIN_PRODUCT_WRITE =
             "hasRole('ADMIN') and hasAuthority('SCOPE_product:write')";
     public static final String ADMIN_OR_AUDITOR_USER_READ =

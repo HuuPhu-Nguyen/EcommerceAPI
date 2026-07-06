@@ -1,8 +1,7 @@
 package com.phu.ecommerceapi.payment.infrastructure;
 
-import com.phu.ecommerceapi.order.infrastructure.CustomerOrderRecord;
-import com.phu.ecommerceapi.payment.application.PaymentProviderResult;
-import com.phu.ecommerceapi.payment.domain.PaymentStatus;
+import com.phu.ecommerceapi.payment.application.PaymentRefundProviderResult;
+import com.phu.ecommerceapi.payment.domain.RefundStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -20,16 +19,19 @@ import java.util.Objects;
 import java.util.UUID;
 
 @Entity
-@Table(name = "payment_record")
-public class PaymentRecord {
+@Table(name = "refund_record")
+public class RefundRecord {
 
     @Id
     @Column(columnDefinition = "uuid")
     private UUID id;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "order_id", nullable = false)
-    private CustomerOrderRecord order;
+    @JoinColumn(name = "payment_id", nullable = false)
+    private PaymentRecord payment;
+
+    @Column(nullable = false, columnDefinition = "uuid")
+    private UUID orderId;
 
     @Column(nullable = false)
     private long customerId;
@@ -42,9 +44,9 @@ public class PaymentRecord {
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 40)
-    private PaymentStatus status;
+    private RefundStatus status;
 
-    private String providerPaymentId;
+    private String providerRefundId;
 
     @Column(length = 40)
     private String providerStatus;
@@ -58,6 +60,9 @@ public class PaymentRecord {
     @Column(nullable = false, length = 128)
     private String idempotencyKey;
 
+    @Column(length = 500)
+    private String reason;
+
     @Column(nullable = false)
     private OffsetDateTime createdAt;
 
@@ -67,43 +72,45 @@ public class PaymentRecord {
     @Column(nullable = false)
     private long version;
 
-    protected PaymentRecord() {
+    protected RefundRecord() {
     }
 
-    private PaymentRecord(CustomerOrderRecord order, String idempotencyKey) {
+    private RefundRecord(PaymentRecord payment, String idempotencyKey, String reason) {
         this.id = UUID.randomUUID();
-        this.order = Objects.requireNonNull(order, "payment order is required");
-        this.customerId = order.getCustomer().getId();
-        this.amount = Objects.requireNonNull(order.getTotalAmount(), "payment amount is required");
-        this.currency = Objects.requireNonNull(order.getCurrency(), "payment currency is required");
-        this.status = PaymentStatus.PENDING;
+        this.payment = Objects.requireNonNull(payment, "refund payment is required");
+        this.orderId = payment.getOrder().getId();
+        this.customerId = payment.getCustomerId();
+        this.amount = Objects.requireNonNull(payment.getAmount(), "refund amount is required");
+        this.currency = Objects.requireNonNull(payment.getCurrency(), "refund currency is required");
+        this.status = RefundStatus.PENDING;
         this.idempotencyKey = requireText(idempotencyKey, "idempotency key");
+        this.reason = normalizeReason(reason);
         this.createdAt = OffsetDateTime.now();
     }
 
-    public static PaymentRecord pending(CustomerOrderRecord order, String idempotencyKey) {
-        return new PaymentRecord(order, idempotencyKey);
+    public static RefundRecord pending(PaymentRecord payment, String idempotencyKey, String reason) {
+        return new RefundRecord(payment, idempotencyKey, reason);
     }
 
-    public void markSucceeded(PaymentProviderResult providerResult) {
+    public void markSucceeded(PaymentRefundProviderResult providerResult) {
         if (status.isTerminal()) {
             return;
         }
-        this.status = PaymentStatus.SUCCEEDED;
-        this.providerPaymentId = requireText(providerResult.providerPaymentId(), "provider payment id");
+        this.status = RefundStatus.SUCCEEDED;
+        this.providerRefundId = requireText(providerResult.providerRefundId(), "provider refund id");
         this.providerStatus = providerResult.status().name();
         this.providerMessage = providerResult.message();
         this.completedAt = OffsetDateTime.now();
     }
 
-    public void markFailed(PaymentProviderResult providerResult) {
+    public void markFailed(PaymentRefundProviderResult providerResult) {
         if (status.isTerminal()) {
             return;
         }
-        this.status = PaymentStatus.FAILED;
-        this.providerPaymentId = requireText(providerResult.providerPaymentId(), "provider payment id");
+        this.status = RefundStatus.FAILED;
+        this.providerRefundId = requireText(providerResult.providerRefundId(), "provider refund id");
         this.providerStatus = providerResult.status().name();
-        this.failureCode = requireText(providerResult.failureCode(), "provider failure code");
+        this.failureCode = requireText(providerResult.failureCode(), "provider refund failure code");
         this.providerMessage = providerResult.message();
         this.completedAt = OffsetDateTime.now();
     }
@@ -112,29 +119,23 @@ public class PaymentRecord {
         if (status.isTerminal()) {
             return;
         }
-        this.status = PaymentStatus.PROVIDER_TIMEOUT;
+        this.status = RefundStatus.PROVIDER_TIMEOUT;
         this.providerStatus = "TIMEOUT";
         this.failureCode = "provider_timeout";
         this.providerMessage = message;
         this.completedAt = OffsetDateTime.now();
     }
 
-    public void markRefunded() {
-        if (status == PaymentStatus.REFUNDED) {
-            return;
-        }
-        if (status != PaymentStatus.SUCCEEDED) {
-            throw new IllegalStateException("Only successful payments can be refunded");
-        }
-        this.status = PaymentStatus.REFUNDED;
-    }
-
     public UUID getId() {
         return id;
     }
 
-    public CustomerOrderRecord getOrder() {
-        return order;
+    public PaymentRecord getPayment() {
+        return payment;
+    }
+
+    public UUID getOrderId() {
+        return orderId;
     }
 
     public long getCustomerId() {
@@ -149,12 +150,12 @@ public class PaymentRecord {
         return currency;
     }
 
-    public PaymentStatus getStatus() {
+    public RefundStatus getStatus() {
         return status;
     }
 
-    public String getProviderPaymentId() {
-        return providerPaymentId;
+    public String getProviderRefundId() {
+        return providerRefundId;
     }
 
     public String getProviderStatus() {
@@ -173,6 +174,10 @@ public class PaymentRecord {
         return idempotencyKey;
     }
 
+    public String getReason() {
+        return reason;
+    }
+
     public OffsetDateTime getCreatedAt() {
         return createdAt;
     }
@@ -183,6 +188,13 @@ public class PaymentRecord {
 
     public long getVersion() {
         return version;
+    }
+
+    private String normalizeReason(String value) {
+        if (value == null || value.isBlank()) {
+            return "customer_request";
+        }
+        return value.trim();
     }
 
     private String requireText(String value, String fieldName) {

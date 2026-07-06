@@ -3,6 +3,7 @@ package com.phu.ecommerceapi.payment.infrastructure;
 import com.phu.ecommerceapi.payment.application.PaymentProviderRequest;
 import com.phu.ecommerceapi.payment.application.PaymentProviderStatus;
 import com.phu.ecommerceapi.payment.application.PaymentProviderTimeoutException;
+import com.phu.ecommerceapi.payment.application.PaymentRefundProviderRequest;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -61,9 +62,63 @@ class FakePaymentProviderTest {
         assertThat(secondResult.providerPaymentId()).isEqualTo(firstResult.providerPaymentId());
     }
 
+    @Test
+    void modelsSuccessfulRefundByDefault() {
+        var result = provider.refundPayment(refundRequest("refund-key-1", Map.of()));
+
+        assertThat(result.status()).isEqualTo(PaymentProviderStatus.SUCCEEDED);
+        assertThat(result.providerRefundId()).startsWith("fake_refund_");
+        assertThat(result.failureCode()).isNull();
+    }
+
+    @Test
+    void modelsRefundFailure() {
+        var result = provider.refundPayment(refundRequest(
+                "refund-key-2",
+                Map.of(FakePaymentProvider.OUTCOME_METADATA_KEY, FakePaymentProvider.OUTCOME_FAILURE)
+        ));
+
+        assertThat(result.status()).isEqualTo(PaymentProviderStatus.FAILED);
+        assertThat(result.failureCode()).isEqualTo("fake_declined");
+    }
+
+    @Test
+    void modelsRefundTimeoutWithoutRecordingTheRequestAsProcessed() {
+        PaymentRefundProviderRequest timeoutRequest = refundRequest(
+                "refund-key-3",
+                Map.of(FakePaymentProvider.OUTCOME_METADATA_KEY, FakePaymentProvider.OUTCOME_TIMEOUT)
+        );
+
+        assertThatThrownBy(() -> provider.refundPayment(timeoutRequest))
+                .isInstanceOf(PaymentProviderTimeoutException.class);
+
+        var retryResult = provider.refundPayment(refundRequest("refund-key-3", Map.of()));
+        assertThat(retryResult.status()).isEqualTo(PaymentProviderStatus.SUCCEEDED);
+    }
+
+    @Test
+    void modelsDuplicateRefundRequestsByIdempotencyKey() {
+        var firstResult = provider.refundPayment(refundRequest("refund-key-4", Map.of()));
+        var secondResult = provider.refundPayment(refundRequest("refund-key-4", Map.of()));
+
+        assertThat(secondResult.status()).isEqualTo(PaymentProviderStatus.DUPLICATE);
+        assertThat(secondResult.providerRefundId()).isEqualTo(firstResult.providerRefundId());
+    }
+
     private PaymentProviderRequest request(String idempotencyKey, Map<String, String> metadata) {
         return new PaymentProviderRequest(
                 UUID.fromString("00000000-0000-0000-0000-000000000001"),
+                new BigDecimal("10.00"),
+                "usd",
+                idempotencyKey,
+                metadata
+        );
+    }
+
+    private PaymentRefundProviderRequest refundRequest(String idempotencyKey, Map<String, String> metadata) {
+        return new PaymentRefundProviderRequest(
+                UUID.fromString("00000000-0000-0000-0000-000000000002"),
+                "fake_00000000-0000-0000-0000-000000000001",
                 new BigDecimal("10.00"),
                 "usd",
                 idempotencyKey,

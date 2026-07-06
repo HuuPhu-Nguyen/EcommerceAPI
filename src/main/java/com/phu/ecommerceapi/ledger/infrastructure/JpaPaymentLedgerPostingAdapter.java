@@ -4,6 +4,7 @@ import com.phu.ecommerceapi.ledger.application.LedgerEntryDraft;
 import com.phu.ecommerceapi.ledger.application.LedgerPostingService;
 import com.phu.ecommerceapi.ledger.application.PaymentLedgerPostingCommand;
 import com.phu.ecommerceapi.ledger.application.PaymentLedgerPostingPort;
+import com.phu.ecommerceapi.ledger.application.RefundLedgerPostingCommand;
 import com.phu.ecommerceapi.ledger.domain.LedgerEntryDirection;
 import com.phu.ecommerceapi.ledger.domain.LedgerTransactionType;
 import org.springframework.stereotype.Component;
@@ -38,6 +39,30 @@ public class JpaPaymentLedgerPostingAdapter implements PaymentLedgerPostingPort 
                         ),
                         new LedgerEntryDraft(
                                 ORDER_REVENUE_ACCOUNT,
+                                LedgerEntryDirection.CREDIT,
+                                command.amount(),
+                                command.currency()
+                        )
+                )
+        );
+    }
+
+    @Override
+    public void postRefundSucceeded(RefundLedgerPostingCommand command) {
+        ledgerPostingService.postTransaction(
+                LedgerTransactionType.REFUND,
+                "REFUND",
+                command.refundId().toString(),
+                "Refund issued for payment " + command.paymentId(),
+                List.of(
+                        new LedgerEntryDraft(
+                                ORDER_REVENUE_ACCOUNT,
+                                LedgerEntryDirection.DEBIT,
+                                command.amount(),
+                                command.currency()
+                        ),
+                        new LedgerEntryDraft(
+                                PROVIDER_CLEARING_ACCOUNT,
                                 LedgerEntryDirection.CREDIT,
                                 command.amount(),
                                 command.currency()

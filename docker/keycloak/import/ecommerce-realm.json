@@ -76,6 +76,7 @@
         "cart:write",
         "checkout:write",
         "payment:create",
+        "payment:refund",
         "product:write",
         "user:read",
         "roles",
@@ -153,6 +154,14 @@
     },
     {
       "name": "payment:create",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "payment:refund",
       "protocol": "openid-connect",
       "attributes": {
         "include.in.token.scope": "true",

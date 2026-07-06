@@ -15,6 +15,15 @@ public interface PaymentRecordRepository extends JpaRepository<PaymentRecord, UU
 
     Optional<PaymentRecord> findByOrderId(UUID orderId);
 
+    @Query("""
+            select payment
+            from PaymentRecord payment
+            join fetch payment.order customerOrder
+            join fetch customerOrder.customer
+            where payment.id = :paymentId
+            """)
+    Optional<PaymentRecord> findWithOrderById(@Param("paymentId") UUID paymentId);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
             select payment
