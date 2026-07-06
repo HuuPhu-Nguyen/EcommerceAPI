@@ -3,6 +3,7 @@ package com.phu.ecommerceapi.catalog.api;
 import com.phu.ecommerceapi.Product.ProductModel;
 import com.phu.ecommerceapi.Product.ProductRepo;
 import com.phu.ecommerceapi.audit.infrastructure.AuditEventRepository;
+import com.phu.ecommerceapi.inventory.infrastructure.InventoryRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -34,9 +35,13 @@ class AdminProductManagementTest {
     @Autowired
     private AuditEventRepository auditEventRepository;
 
+    @Autowired
+    private InventoryRepository inventoryRepository;
+
     @BeforeEach
     void resetData() {
         auditEventRepository.deleteAll();
+        inventoryRepository.deleteAll();
         productRepo.deleteAll();
     }
 
@@ -115,12 +120,12 @@ class AdminProductManagementTest {
                 );
     }
 
-    private String productJson(String name, double price, double stock, boolean active) {
+    private String productJson(String name, double price, int stock, boolean active) {
         return """
                 {
                   "name": "%s",
                   "price": %.2f,
-                  "stock": %.2f,
+                  "stock": %d,
                   "active": %s
                 }
                 """.formatted(name, price, stock, active);

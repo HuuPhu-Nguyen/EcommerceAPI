@@ -5,6 +5,7 @@ import com.phu.ecommerceapi.Product.ProductRepo;
 import com.phu.ecommerceapi.audit.application.AuditEventCommand;
 import com.phu.ecommerceapi.audit.application.AuditEventRecorder;
 import com.phu.ecommerceapi.identity.application.CurrentUser;
+import com.phu.ecommerceapi.inventory.application.InventoryReservationService;
 import com.phu.ecommerceapi.shared.api.NotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -16,10 +17,16 @@ public class AdminProductService {
 
     private final ProductRepo productRepo;
     private final AuditEventRecorder auditEventRecorder;
+    private final InventoryReservationService inventoryReservationService;
 
-    public AdminProductService(ProductRepo productRepo, AuditEventRecorder auditEventRecorder) {
+    public AdminProductService(
+            ProductRepo productRepo,
+            AuditEventRecorder auditEventRecorder,
+            InventoryReservationService inventoryReservationService
+    ) {
         this.productRepo = productRepo;
         this.auditEventRecorder = auditEventRecorder;
+        this.inventoryReservationService = inventoryReservationService;
     }
 
     @Transactional
@@ -32,6 +39,7 @@ public class AdminProductService {
                 .build();
 
         ProductModel savedProduct = productRepo.save(product);
+        inventoryReservationService.initializeInventory(savedProduct.getProductId(), command.stock());
         recordAudit(actor, "PRODUCT_CREATED", savedProduct);
         return toResponse(savedProduct);
     }
@@ -47,6 +55,7 @@ public class AdminProductService {
         product.setActive(command.activeOrDefault(product.isActive()));
 
         ProductModel savedProduct = productRepo.save(product);
+        inventoryReservationService.setAvailableQuantity(savedProduct.getProductId(), command.stock());
         recordAudit(actor, "PRODUCT_UPDATED", savedProduct);
         return toResponse(savedProduct);
     }
@@ -77,7 +86,7 @@ public class AdminProductService {
                 product.getProductId(),
                 product.getName(),
                 product.getPrice(),
-                product.getStock(),
+                (int) product.getStock(),
                 product.isActive()
         );
     }

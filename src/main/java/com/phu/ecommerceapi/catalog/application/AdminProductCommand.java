@@ -3,7 +3,7 @@ package com.phu.ecommerceapi.catalog.application;
 public record AdminProductCommand(
         String name,
         double price,
-        double stock,
+        int stock,
         Boolean active
 ) {
 

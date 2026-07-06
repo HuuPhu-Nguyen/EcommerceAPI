@@ -30,7 +30,7 @@ public class ProductController {
         AdminProductCommand command = new AdminProductCommand(
                 productRequest.getName(),
                 productRequest.getPrice(),
-                productRequest.getStock(),
+                (int) productRequest.getStock(),
                 productRequest.getActive()
         );
         return ResponseEntity.ok(adminProductService.create(command, currentUser));

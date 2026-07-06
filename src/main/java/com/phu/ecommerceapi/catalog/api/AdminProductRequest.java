@@ -7,7 +7,7 @@ import jakarta.validation.constraints.PositiveOrZero;
 public record AdminProductRequest(
         @NotBlank String name,
         @PositiveOrZero double price,
-        @PositiveOrZero double stock,
+        @PositiveOrZero int stock,
         Boolean active
 ) {
 

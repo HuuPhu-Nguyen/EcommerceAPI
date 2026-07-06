@@ -4,7 +4,7 @@ public record ProductAdminResponse(
         long id,
         String name,
         double price,
-        double stock,
+        int stock,
         boolean active
 ) {
 }

@@ -2,6 +2,7 @@ package com.phu.ecommerceapi.catalog.api;
 
 import com.phu.ecommerceapi.Product.ProductModel;
 import com.phu.ecommerceapi.Product.ProductRepo;
+import com.phu.ecommerceapi.inventory.infrastructure.InventoryRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -26,8 +27,12 @@ class ProductCatalogBoundaryTest {
     @Autowired
     private ProductRepo productRepo;
 
+    @Autowired
+    private InventoryRepository inventoryRepository;
+
     @BeforeEach
     void resetProducts() {
+        inventoryRepository.deleteAll();
         productRepo.deleteAll();
     }
 
