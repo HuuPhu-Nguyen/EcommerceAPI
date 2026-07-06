@@ -11,6 +11,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.OffsetDateTime;
 import java.util.HexFormat;
+import java.util.Optional;
 
 @Service
 public class PaymentIdempotencyService {
@@ -46,6 +47,18 @@ public class PaymentIdempotencyService {
             return PaymentIdempotencyDecision.started(record.getId());
         }
         return existingDecision(record, requestHash);
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<PaymentIdempotencyDecision> findExisting(PaymentIdempotencyCommand command) {
+        String requestHash = hash(command.requestBody());
+        return repository.findByCustomerIdAndEndpointAndOperationAndIdempotencyKey(
+                        command.customerId(),
+                        command.endpoint(),
+                        command.operation(),
+                        command.idempotencyKey()
+                )
+                .map(record -> existingDecision(record, requestHash));
     }
 
     @Transactional
