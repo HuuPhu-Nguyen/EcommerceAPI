@@ -8,4 +8,6 @@ import java.util.List;
 public interface AuditEventRepository extends JpaRepository<AuditEventRecord, Long> {
 
     List<AuditEventRecord> findAllByOrderByCreatedAtDesc(Pageable pageable);
+
+    List<AuditEventRecord> findAllByOrderByIdAsc();
 }

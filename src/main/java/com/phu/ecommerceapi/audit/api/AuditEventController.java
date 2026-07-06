@@ -1,6 +1,8 @@
 package com.phu.ecommerceapi.audit.api;
 
 import com.phu.ecommerceapi.audit.application.AuditEventQueryService;
+import com.phu.ecommerceapi.audit.application.AuditHashVerificationResult;
+import com.phu.ecommerceapi.audit.application.AuditHashVerificationService;
 import com.phu.ecommerceapi.identity.application.SecurityExpressions;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -15,9 +17,14 @@ import java.util.List;
 public class AuditEventController {
 
     private final AuditEventQueryService auditEventQueryService;
+    private final AuditHashVerificationService auditHashVerificationService;
 
-    public AuditEventController(AuditEventQueryService auditEventQueryService) {
+    public AuditEventController(
+            AuditEventQueryService auditEventQueryService,
+            AuditHashVerificationService auditHashVerificationService
+    ) {
         this.auditEventQueryService = auditEventQueryService;
+        this.auditHashVerificationService = auditHashVerificationService;
     }
 
     @GetMapping
@@ -26,5 +33,18 @@ public class AuditEventController {
             @RequestParam(defaultValue = "50") int limit
     ) {
         return auditEventQueryService.recentEvents(limit);
+    }
+
+    @GetMapping("/verification")
+    @PreAuthorize(SecurityExpressions.ADMIN_OR_AUDITOR_AUDIT_READ)
+    public AuditHashVerificationResponse verifyHashChain() {
+        AuditHashVerificationResult result = auditHashVerificationService.verify();
+        return new AuditHashVerificationResponse(
+                result.verified(),
+                result.checkedEvents(),
+                result.brokenEventId(),
+                result.latestHash(),
+                result.message()
+        );
     }
 }

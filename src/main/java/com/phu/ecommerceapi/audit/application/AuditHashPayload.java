@@ -1,9 +1,9 @@
-package com.phu.ecommerceapi.audit.api;
+package com.phu.ecommerceapi.audit.application;
 
 import java.time.Instant;
 
-public record AuditEventResponse(
-        Long id,
+public record AuditHashPayload(
+        String previousHash,
         String actorSubject,
         String action,
         String resourceType,
@@ -12,8 +12,6 @@ public record AuditEventResponse(
         String requestId,
         String ipAddress,
         String userAgent,
-        Instant createdAt,
-        String previousHash,
-        String eventHash
+        Instant createdAt
 ) {
 }

@@ -1,5 +1,6 @@
 package com.phu.ecommerceapi.audit.infrastructure;
 
+import com.phu.ecommerceapi.audit.application.AuditHashPayload;
 import com.phu.ecommerceapi.audit.application.AuditEventCommand;
 import com.phu.ecommerceapi.shared.api.RequestMetadata;
 import jakarta.persistence.Column;
@@ -44,6 +45,12 @@ public class AuditEventRecord {
     @Column(nullable = false)
     private Instant createdAt;
 
+    @Column(length = 64)
+    private String previousHash;
+
+    @Column(length = 64)
+    private String eventHash;
+
     protected AuditEventRecord() {
     }
 
@@ -81,6 +88,26 @@ public class AuditEventRecord {
                 metadata.userAgent(),
                 createdAt
         );
+    }
+
+    public AuditHashPayload toHashPayload(String previousHash) {
+        return new AuditHashPayload(
+                previousHash,
+                actorSubject,
+                action,
+                resourceType,
+                resourceId,
+                details,
+                requestId,
+                ipAddress,
+                userAgent,
+                createdAt
+        );
+    }
+
+    public void applyHash(String previousHash, String eventHash) {
+        this.previousHash = previousHash;
+        this.eventHash = eventHash;
     }
 
     public Long getId() {
@@ -121,5 +148,13 @@ public class AuditEventRecord {
 
     public Instant getCreatedAt() {
         return createdAt;
+    }
+
+    public String getPreviousHash() {
+        return previousHash;
+    }
+
+    public String getEventHash() {
+        return eventHash;
     }
 }

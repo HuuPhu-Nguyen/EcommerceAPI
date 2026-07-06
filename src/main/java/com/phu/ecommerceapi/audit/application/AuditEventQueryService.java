@@ -47,7 +47,9 @@ public class AuditEventQueryService {
                 event.getRequestId(),
                 event.getIpAddress(),
                 event.getUserAgent(),
-                event.getCreatedAt()
+                event.getCreatedAt(),
+                event.getPreviousHash(),
+                event.getEventHash()
         );
     }
 
