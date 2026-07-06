@@ -1,0 +1,52 @@
+package com.phu.ecommerceapi.payment.infrastructure;
+
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+
+import java.time.OffsetDateTime;
+import java.util.Optional;
+
+public interface PaymentIdempotencyRecordRepository extends JpaRepository<PaymentIdempotencyRecord, Long> {
+
+    Optional<PaymentIdempotencyRecord> findByCustomerIdAndEndpointAndOperationAndIdempotencyKey(
+            long customerId,
+            String endpoint,
+            String operation,
+            String idempotencyKey
+    );
+
+    @Modifying(flushAutomatically = true)
+    @Query(value = """
+            insert into payment_idempotency_record (
+                customer_id,
+                endpoint,
+                operation,
+                idempotency_key,
+                request_hash,
+                status,
+                created_at,
+                version
+            )
+            values (
+                :customerId,
+                :endpoint,
+                :operation,
+                :idempotencyKey,
+                :requestHash,
+                'IN_PROGRESS',
+                :createdAt,
+                0
+            )
+            on conflict (customer_id, endpoint, operation, idempotency_key) do nothing
+            """, nativeQuery = true)
+    int insertInProgress(
+            @Param("customerId") long customerId,
+            @Param("endpoint") String endpoint,
+            @Param("operation") String operation,
+            @Param("idempotencyKey") String idempotencyKey,
+            @Param("requestHash") String requestHash,
+            @Param("createdAt") OffsetDateTime createdAt
+    );
+}
