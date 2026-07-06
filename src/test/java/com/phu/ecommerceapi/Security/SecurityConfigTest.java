@@ -36,9 +36,9 @@ class SecurityConfigTest {
     }
 
     @Test
-    void protectedEndpointAcceptsJwtAuthentication() throws Exception {
-        mockMvc.perform(get("/allUserInfo").with(jwt()))
-                .andExpect(status().isOk());
+    void protectedEndpointAcceptsJwtAuthenticationAndReachesController() throws Exception {
+        mockMvc.perform(get("/products/getById").param("id", "-1").with(jwt()))
+                .andExpect(status().isNotFound());
     }
 
     @Test

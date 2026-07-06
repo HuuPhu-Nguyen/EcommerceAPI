@@ -2,10 +2,13 @@ package com.phu.ecommerceapi.Stripe;
 
 import com.phu.ecommerceapi.Cart.CartModel;
 import com.phu.ecommerceapi.Cart.CartService;
+import com.phu.ecommerceapi.identity.api.AuthenticatedUser;
+import com.phu.ecommerceapi.identity.application.CurrentUser;
+import com.phu.ecommerceapi.identity.application.SecurityExpressions;
 import com.stripe.model.PaymentIntent;
-import com.stripe.param.PaymentIntentCreateParams;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
@@ -18,10 +21,14 @@ public class PaymentController {
     @Autowired
     private CartService cartService;
 
-    @PostMapping
-    public ResponseEntity<Map<String, String>> createPaymentIntent(@PathVariable long cartId) throws Exception {
+    @PostMapping("/{cartId}")
+    @PreAuthorize(SecurityExpressions.CUSTOMER_PAYMENT_CREATE)
+    public ResponseEntity<Map<String, String>> createPaymentIntent(
+            @PathVariable long cartId,
+            @AuthenticatedUser CurrentUser currentUser
+    ) throws Exception {
         try {
-            CartModel cart = cartService.getCartById(cartId);
+            CartModel cart = cartService.getOwnedCartById(cartId, currentUser);
 
             long amount = (long) (cart.getTotal() * 100); // Stripe uses cents
 

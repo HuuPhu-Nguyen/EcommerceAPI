@@ -60,3 +60,12 @@ Local profile defaults:
 - JWK set: `http://localhost:8081/realms/ecommerce/protocol/openid-connect/certs`
 
 Both are configured so the API validates the token issuer while avoiding a hard startup dependency on Keycloak availability.
+
+The realm import also includes local API scopes used by method security:
+
+- `profile:read`
+- `cart:read`
+- `cart:write`
+- `payment:create`
+- `product:write`
+- `user:read`
