@@ -2,6 +2,7 @@ package com.phu.ecommerceapi.order.infrastructure;
 
 import com.phu.ecommerceapi.Product.ProductModel;
 import com.phu.ecommerceapi.User.UserModel;
+import com.phu.ecommerceapi.order.domain.OrderStateMachine;
 import com.phu.ecommerceapi.order.domain.OrderStatus;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
@@ -79,6 +80,26 @@ public class CustomerOrderRecord {
         OrderItemRecord item = OrderItemRecord.create(this, product, quantity, unitPrice);
         items.add(item);
         totalAmount = totalAmount.add(item.getLineTotalAmount());
+    }
+
+    public void markPaid() {
+        transitionTo(OrderStatus.PAID);
+    }
+
+    public void markPaymentFailed() {
+        transitionTo(OrderStatus.PAYMENT_FAILED);
+    }
+
+    public void cancel() {
+        transitionTo(OrderStatus.CANCELLED);
+    }
+
+    public void refund() {
+        transitionTo(OrderStatus.REFUNDED);
+    }
+
+    private void transitionTo(OrderStatus requestedStatus) {
+        status = OrderStateMachine.transition(status, requestedStatus);
     }
 
     public UUID getId() {
