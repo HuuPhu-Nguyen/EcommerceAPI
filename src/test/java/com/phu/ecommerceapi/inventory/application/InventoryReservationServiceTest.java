@@ -5,9 +5,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.phu.ecommerceapi.Product.ProductModel;
 import com.phu.ecommerceapi.Product.ProductRepo;
 import com.phu.ecommerceapi.inventory.infrastructure.InventoryRepository;
+import com.phu.ecommerceapi.outbox.application.OutboxEventProcessor;
 import com.phu.ecommerceapi.outbox.infrastructure.OutboxEventRepository;
 import com.phu.ecommerceapi.outbox.infrastructure.OutboxEventStatus;
 import com.phu.ecommerceapi.shared.api.OutOfStockException;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -36,6 +38,12 @@ class InventoryReservationServiceTest {
     private InventoryRepository inventoryRepository;
 
     @Autowired
+    private OutboxEventProcessor outboxEventProcessor;
+
+    @Autowired
+    private StockEventBroadcaster stockEventBroadcaster;
+
+    @Autowired
     private OutboxEventRepository outboxEventRepository;
 
     @Autowired
@@ -49,6 +57,11 @@ class InventoryReservationServiceTest {
         outboxEventRepository.deleteAll();
         inventoryRepository.deleteAll();
         productRepo.deleteAll();
+    }
+
+    @AfterEach
+    void closeStockStreams() {
+        stockEventBroadcaster.completeAll();
     }
 
     @Test
@@ -81,6 +94,26 @@ class InventoryReservationServiceTest {
                     assertThat(payload.get("availableQuantity").asInt()).isEqualTo(3);
                     assertThat(payload.get("reservedQuantity").asInt()).isEqualTo(2);
                     assertThat(payload.get("reason").asText()).isEqualTo("RESERVED");
+                });
+    }
+
+    @Test
+    void stockChangedOutboxEventCanBeProcessedForSseSubscribers() {
+        long productId = productWithInventory(5);
+        outboxEventRepository.deleteAll();
+        stockEventBroadcaster.subscribe(productId);
+
+        inventoryReservationService.reserve(productId, 2);
+        int processed = outboxEventProcessor.processPendingBatch(10);
+
+        assertThat(processed).isEqualTo(1);
+        assertThat(stockEventBroadcaster.subscriberCount(productId)).isEqualTo(1);
+        assertThat(outboxEventRepository.findAll())
+                .singleElement()
+                .satisfies(event -> {
+                    assertThat(event.getEventType()).isEqualTo("StockChanged");
+                    assertThat(event.getStatus()).isEqualTo(OutboxEventStatus.PROCESSED);
+                    assertThat(event.getProcessedAt()).isNotNull();
                 });
     }
 
