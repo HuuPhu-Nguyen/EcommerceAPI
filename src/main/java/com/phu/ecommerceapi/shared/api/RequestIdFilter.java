@@ -16,6 +16,7 @@ public class RequestIdFilter extends OncePerRequestFilter {
 
     public static final String REQUEST_ID_HEADER = "X-Request-Id";
     public static final String REQUEST_ID_ATTRIBUTE = "requestId";
+    public static final String CORRELATION_ID_MDC_KEY = "correlationId";
 
     @Override
     protected void doFilterInternal(
@@ -28,6 +29,7 @@ public class RequestIdFilter extends OncePerRequestFilter {
         request.setAttribute(REQUEST_ID_ATTRIBUTE, requestId);
         response.setHeader(REQUEST_ID_HEADER, requestId);
         MDC.put(REQUEST_ID_ATTRIBUTE, requestId);
+        MDC.put(CORRELATION_ID_MDC_KEY, requestId);
         RequestMetadataHolder.set(new RequestMetadata(
                 requestId,
                 resolveIpAddress(request),
@@ -39,6 +41,7 @@ public class RequestIdFilter extends OncePerRequestFilter {
         } finally {
             RequestMetadataHolder.clear();
             MDC.remove(REQUEST_ID_ATTRIBUTE);
+            MDC.remove(CORRELATION_ID_MDC_KEY);
         }
     }
 

@@ -14,6 +14,7 @@ import com.phu.ecommerceapi.payment.infrastructure.PaymentRecord;
 import com.phu.ecommerceapi.payment.infrastructure.PaymentRecordRepository;
 import com.phu.ecommerceapi.shared.api.ConflictException;
 import com.phu.ecommerceapi.shared.api.NotFoundException;
+import com.phu.ecommerceapi.shared.observability.BusinessMetrics;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
@@ -31,17 +32,20 @@ public class PaymentAttemptService {
     private final PaymentRecordRepository paymentRepository;
     private final PaymentLedgerPostingPort ledgerPostingPort;
     private final AuditEventRecorder auditEventRecorder;
+    private final BusinessMetrics businessMetrics;
 
     public PaymentAttemptService(
             CustomerOrderRepository orderRepository,
             PaymentRecordRepository paymentRepository,
             PaymentLedgerPostingPort ledgerPostingPort,
-            AuditEventRecorder auditEventRecorder
+            AuditEventRecorder auditEventRecorder,
+            BusinessMetrics businessMetrics
     ) {
         this.orderRepository = orderRepository;
         this.paymentRepository = paymentRepository;
         this.ledgerPostingPort = ledgerPostingPort;
         this.auditEventRecorder = auditEventRecorder;
+        this.businessMetrics = businessMetrics;
     }
 
     @Transactional(readOnly = true)
@@ -111,6 +115,7 @@ public class PaymentAttemptService {
             recordAudit(actor, "PAYMENT_FAILED", payment);
         }
 
+        businessMetrics.paymentOutcome(payment.getStatus().name());
         return toResponse(payment);
     }
 
@@ -123,6 +128,7 @@ public class PaymentAttemptService {
             payment.getOrder().markPaymentFailed();
             recordAudit(actor, "PAYMENT_PROVIDER_TIMEOUT", payment);
         }
+        businessMetrics.paymentOutcome(payment.getStatus().name());
         return toResponse(payment);
     }
 

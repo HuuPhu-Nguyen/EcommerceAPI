@@ -3,6 +3,7 @@ package com.phu.ecommerceapi.payment.application;
 import com.phu.ecommerceapi.payment.infrastructure.PaymentIdempotencyRecord;
 import com.phu.ecommerceapi.payment.infrastructure.PaymentIdempotencyRecordRepository;
 import com.phu.ecommerceapi.shared.api.ConflictException;
+import com.phu.ecommerceapi.shared.observability.BusinessMetrics;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,9 +18,14 @@ import java.util.Optional;
 public class PaymentIdempotencyService {
 
     private final PaymentIdempotencyRecordRepository repository;
+    private final BusinessMetrics businessMetrics;
 
-    public PaymentIdempotencyService(PaymentIdempotencyRecordRepository repository) {
+    public PaymentIdempotencyService(
+            PaymentIdempotencyRecordRepository repository,
+            BusinessMetrics businessMetrics
+    ) {
         this.repository = repository;
+        this.businessMetrics = businessMetrics;
     }
 
     @Transactional
@@ -44,7 +50,9 @@ public class PaymentIdempotencyService {
                 .orElseThrow(() -> new IllegalStateException("Idempotency record was not persisted"));
 
         if (insertedRows == 1) {
-            return PaymentIdempotencyDecision.started(record.getId());
+            PaymentIdempotencyDecision decision = PaymentIdempotencyDecision.started(record.getId());
+            recordDecision(decision.type());
+            return decision;
         }
         return existingDecision(record, requestHash);
     }
@@ -70,16 +78,25 @@ public class PaymentIdempotencyService {
 
     private PaymentIdempotencyDecision existingDecision(PaymentIdempotencyRecord record, String requestHash) {
         if (!record.hasRequestHash(requestHash)) {
+            businessMetrics.idempotencyDecision("CONFLICT");
             throw new ConflictException("Idempotency key was reused with a different request body");
         }
         if (record.isCompleted()) {
-            return PaymentIdempotencyDecision.replay(
+            PaymentIdempotencyDecision decision = PaymentIdempotencyDecision.replay(
                     record.getId(),
                     record.getResponseStatus(),
                     record.getResponseBody()
             );
+            recordDecision(decision.type());
+            return decision;
         }
-        return PaymentIdempotencyDecision.inProgress(record.getId());
+        PaymentIdempotencyDecision decision = PaymentIdempotencyDecision.inProgress(record.getId());
+        recordDecision(decision.type());
+        return decision;
+    }
+
+    private void recordDecision(PaymentIdempotencyDecisionType decisionType) {
+        businessMetrics.idempotencyDecision(decisionType.name());
     }
 
     private String hash(String requestBody) {

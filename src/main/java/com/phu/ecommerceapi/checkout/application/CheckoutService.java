@@ -16,6 +16,7 @@ import com.phu.ecommerceapi.order.infrastructure.CustomerOrderRepository;
 import com.phu.ecommerceapi.order.infrastructure.OrderItemRecord;
 import com.phu.ecommerceapi.shared.api.ConflictException;
 import com.phu.ecommerceapi.shared.api.NotFoundException;
+import com.phu.ecommerceapi.shared.observability.BusinessMetrics;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,44 +36,53 @@ public class CheckoutService {
     private final InventoryReservationService inventoryReservationService;
     private final CustomerOrderRepository orderRepository;
     private final AuditEventRecorder auditEventRecorder;
+    private final BusinessMetrics businessMetrics;
 
     public CheckoutService(
             CartRepo cartRepo,
             InventoryReservationService inventoryReservationService,
             CustomerOrderRepository orderRepository,
-            AuditEventRecorder auditEventRecorder
+            AuditEventRecorder auditEventRecorder,
+            BusinessMetrics businessMetrics
     ) {
         this.cartRepo = cartRepo;
         this.inventoryReservationService = inventoryReservationService;
         this.orderRepository = orderRepository;
         this.auditEventRecorder = auditEventRecorder;
+        this.businessMetrics = businessMetrics;
     }
 
     @Transactional
     public OrderResponse checkout(long cartId, CurrentUser currentUser) {
-        CartModel cart = cartRepo.findForCheckoutById(cartId)
-                .orElseThrow(() -> new NotFoundException("Cart not found"));
-        assertCartOwner(cart, currentUser);
+        try {
+            CartModel cart = cartRepo.findForCheckoutById(cartId)
+                    .orElseThrow(() -> new NotFoundException("Cart not found"));
+            assertCartOwner(cart, currentUser);
 
-        if (orderRepository.existsByCartId(cart.getId())) {
-            throw new ConflictException("Cart has already been checked out");
-        }
-        if (cart.isEmpty()) {
-            throw new ConflictException("Cannot checkout an empty cart");
-        }
+            if (orderRepository.existsByCartId(cart.getId())) {
+                throw new ConflictException("Cart has already been checked out");
+            }
+            if (cart.isEmpty()) {
+                throw new ConflictException("Cannot checkout an empty cart");
+            }
 
-        CustomerOrderRecord order = CustomerOrderRecord.pendingPayment(cart.getOwner(), cart.getId(), DEFAULT_CURRENCY);
-        for (CartItemModel item : cart.getItems()) {
-            inventoryReservationService.reserve(item.getProductId(), item.getQuantity());
-            ProductModel product = item.getProductModel();
-            order.addItem(product, item.getQuantity(), money(product.getPrice()));
-        }
+            CustomerOrderRecord order = CustomerOrderRecord.pendingPayment(cart.getOwner(), cart.getId(), DEFAULT_CURRENCY);
+            for (CartItemModel item : cart.getItems()) {
+                inventoryReservationService.reserve(item.getProductId(), item.getQuantity());
+                ProductModel product = item.getProductModel();
+                order.addItem(product, item.getQuantity(), money(product.getPrice()));
+            }
 
-        CustomerOrderRecord savedOrder = orderRepository.save(order);
-        cart.clear();
-        cartRepo.save(cart);
-        recordAudit(currentUser, savedOrder);
-        return toResponse(savedOrder);
+            CustomerOrderRecord savedOrder = orderRepository.save(order);
+            cart.clear();
+            cartRepo.save(cart);
+            recordAudit(currentUser, savedOrder);
+            businessMetrics.checkoutAttempt("success");
+            return toResponse(savedOrder);
+        } catch (RuntimeException exception) {
+            businessMetrics.checkoutAttempt("failure");
+            throw exception;
+        }
     }
 
     private void assertCartOwner(CartModel cart, CurrentUser currentUser) {

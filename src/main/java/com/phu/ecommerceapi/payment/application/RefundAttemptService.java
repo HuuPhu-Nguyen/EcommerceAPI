@@ -14,6 +14,7 @@ import com.phu.ecommerceapi.payment.infrastructure.RefundRecord;
 import com.phu.ecommerceapi.payment.infrastructure.RefundRecordRepository;
 import com.phu.ecommerceapi.shared.api.ConflictException;
 import com.phu.ecommerceapi.shared.api.NotFoundException;
+import com.phu.ecommerceapi.shared.observability.BusinessMetrics;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
@@ -31,17 +32,20 @@ public class RefundAttemptService {
     private final RefundRecordRepository refundRepository;
     private final PaymentLedgerPostingPort ledgerPostingPort;
     private final AuditEventRecorder auditEventRecorder;
+    private final BusinessMetrics businessMetrics;
 
     public RefundAttemptService(
             PaymentRecordRepository paymentRepository,
             RefundRecordRepository refundRepository,
             PaymentLedgerPostingPort ledgerPostingPort,
-            AuditEventRecorder auditEventRecorder
+            AuditEventRecorder auditEventRecorder,
+            BusinessMetrics businessMetrics
     ) {
         this.paymentRepository = paymentRepository;
         this.refundRepository = refundRepository;
         this.ledgerPostingPort = ledgerPostingPort;
         this.auditEventRecorder = auditEventRecorder;
+        this.businessMetrics = businessMetrics;
     }
 
     @Transactional(readOnly = true)
@@ -110,6 +114,7 @@ public class RefundAttemptService {
             recordAudit(actor, "REFUND_FAILED", refund);
         }
 
+        businessMetrics.refundOutcome(refund.getStatus().name());
         return toResponse(refund);
     }
 
@@ -121,6 +126,7 @@ public class RefundAttemptService {
             refund.markProviderTimeout(message);
             recordAudit(actor, "REFUND_PROVIDER_TIMEOUT", refund);
         }
+        businessMetrics.refundOutcome(refund.getStatus().name());
         return toResponse(refund);
     }
 
