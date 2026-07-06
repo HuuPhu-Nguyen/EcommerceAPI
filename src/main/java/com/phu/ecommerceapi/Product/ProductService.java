@@ -1,5 +1,6 @@
 package com.phu.ecommerceapi.Product;
 
+import com.phu.ecommerceapi.shared.api.NotFoundException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -30,7 +31,8 @@ public class ProductService {
     }
 
     public ProductResponse delete(long productId) {
-        ProductModel product = repo.findById(productId).orElse(null);
+        ProductModel product = repo.findById(productId)
+                .orElseThrow(() -> new NotFoundException("Product not found"));
         repo.delete(product);
         return ProductResponse.builder()
                 .id(product.getProductId())
@@ -55,7 +57,7 @@ public class ProductService {
                     .build();
         }
         else{
-            throw new RuntimeException("Product not found");
+            throw new NotFoundException("Product not found");
         }
     }
 }

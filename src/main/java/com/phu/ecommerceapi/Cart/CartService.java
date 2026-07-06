@@ -5,6 +5,8 @@ import com.phu.ecommerceapi.Product.ProductModel;
 import com.phu.ecommerceapi.Product.ProductRepo;
 import com.phu.ecommerceapi.User.UserModel;
 import com.phu.ecommerceapi.User.UserRepo;
+import com.phu.ecommerceapi.shared.api.NotFoundException;
+import com.phu.ecommerceapi.shared.api.OutOfStockException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,11 +28,11 @@ public class CartService {
     @Transactional
     public void additem(long cartID, long productID, int quantity ) {
         CartModel cart = cartRepo.findById(cartID)
-                .orElseThrow(() -> new RuntimeException("Cart not found"));
+                .orElseThrow(() -> new NotFoundException("Cart not found"));
         ProductModel product = productRepo.findById(productID)
-                .orElseThrow(()-> new RuntimeException("Product not found"));
+                .orElseThrow(()-> new NotFoundException("Product not found"));
 
-        if(product.getStock()<quantity) { throw new RuntimeException("Not enough stock");}
+        if(product.getStock()<quantity) { throw new OutOfStockException("Not enough stock");}
 
         CartItemModel newItem = CartItemModel.builder()
                 .productModel(product)
@@ -56,9 +58,9 @@ public class CartService {
     @Transactional
     public void removeitem(long cartID, long productID, int quantity) {
         CartModel cart = cartRepo.findById(cartID)
-                .orElseThrow(() -> new RuntimeException("Cart not found"));
+                .orElseThrow(() -> new NotFoundException("Cart not found"));
         ProductModel product = productRepo.findById(productID)
-                .orElseThrow(()-> new RuntimeException("Product not found"));
+                .orElseThrow(()-> new NotFoundException("Product not found"));
 
         CartItemModel newItem = CartItemModel.builder()
                 .productModel(product)
@@ -82,7 +84,7 @@ public class CartService {
             }
         }
         else{
-            throw new RuntimeException("item does not exist");
+            throw new NotFoundException("Cart item not found");
         }
     }
 
@@ -92,16 +94,16 @@ public class CartService {
             return user.get().getCarts();
         }
         else{
-            throw new RuntimeException("user not found");
+            throw new NotFoundException("User not found");
         }
     }
 
     public CartModel getCartById(long id) {
-        return cartRepo.findById(id).orElseThrow(()-> new RuntimeException("Cart not found"));
+        return cartRepo.findById(id).orElseThrow(()-> new NotFoundException("Cart not found"));
     }
 
     public List<CartItemModel> getCartItems(long cartId) {
-        CartModel cart =  cartRepo.findById(cartId).orElseThrow(()-> new RuntimeException("Cart not found"));
+        CartModel cart =  cartRepo.findById(cartId).orElseThrow(()-> new NotFoundException("Cart not found"));
         return cart.getItems();
     }
 
