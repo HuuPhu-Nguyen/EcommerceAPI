@@ -2,6 +2,7 @@ package com.phu.ecommerceapi.audit.infrastructure;
 
 import com.phu.ecommerceapi.audit.application.AuditEventCommand;
 import com.phu.ecommerceapi.audit.application.AuditEventRecorder;
+import com.phu.ecommerceapi.shared.api.RequestMetadataHolder;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
@@ -17,6 +18,6 @@ public class JpaAuditEventRecorder implements AuditEventRecorder {
 
     @Override
     public void record(AuditEventCommand command) {
-        auditEventRepository.save(AuditEventRecord.from(command, Instant.now()));
+        auditEventRepository.save(AuditEventRecord.from(command, RequestMetadataHolder.current(), Instant.now()));
     }
 }

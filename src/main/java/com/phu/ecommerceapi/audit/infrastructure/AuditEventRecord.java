@@ -1,6 +1,7 @@
 package com.phu.ecommerceapi.audit.infrastructure;
 
 import com.phu.ecommerceapi.audit.application.AuditEventCommand;
+import com.phu.ecommerceapi.shared.api.RequestMetadata;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -31,6 +32,15 @@ public class AuditEventRecord {
     @Column(length = 1000)
     private String details;
 
+    @Column(nullable = false, length = 100)
+    private String requestId;
+
+    @Column(nullable = false, length = 100)
+    private String ipAddress;
+
+    @Column(nullable = false, length = 500)
+    private String userAgent;
+
     @Column(nullable = false)
     private Instant createdAt;
 
@@ -43,6 +53,9 @@ public class AuditEventRecord {
             String resourceType,
             String resourceId,
             String details,
+            String requestId,
+            String ipAddress,
+            String userAgent,
             Instant createdAt
     ) {
         this.actorSubject = actorSubject;
@@ -50,16 +63,22 @@ public class AuditEventRecord {
         this.resourceType = resourceType;
         this.resourceId = resourceId;
         this.details = details;
+        this.requestId = requestId;
+        this.ipAddress = ipAddress;
+        this.userAgent = userAgent;
         this.createdAt = createdAt;
     }
 
-    public static AuditEventRecord from(AuditEventCommand command, Instant createdAt) {
+    public static AuditEventRecord from(AuditEventCommand command, RequestMetadata metadata, Instant createdAt) {
         return new AuditEventRecord(
                 command.actorSubject(),
                 command.action(),
                 command.resourceType(),
                 command.resourceId(),
                 command.details(),
+                metadata.requestId(),
+                metadata.ipAddress(),
+                metadata.userAgent(),
                 createdAt
         );
     }
@@ -86,6 +105,18 @@ public class AuditEventRecord {
 
     public String getDetails() {
         return details;
+    }
+
+    public String getRequestId() {
+        return requestId;
+    }
+
+    public String getIpAddress() {
+        return ipAddress;
+    }
+
+    public String getUserAgent() {
+        return userAgent;
     }
 
     public Instant getCreatedAt() {

@@ -28,10 +28,16 @@ public class RequestIdFilter extends OncePerRequestFilter {
         request.setAttribute(REQUEST_ID_ATTRIBUTE, requestId);
         response.setHeader(REQUEST_ID_HEADER, requestId);
         MDC.put(REQUEST_ID_ATTRIBUTE, requestId);
+        RequestMetadataHolder.set(new RequestMetadata(
+                requestId,
+                resolveIpAddress(request),
+                normalizeHeader(request.getHeader("User-Agent"), 500)
+        ));
 
         try {
             filterChain.doFilter(request, response);
         } finally {
+            RequestMetadataHolder.clear();
             MDC.remove(REQUEST_ID_ATTRIBUTE);
         }
     }
@@ -42,5 +48,25 @@ public class RequestIdFilter extends OncePerRequestFilter {
             return UUID.randomUUID().toString();
         }
         return requestId;
+    }
+
+    private String resolveIpAddress(HttpServletRequest request) {
+        String forwardedFor = request.getHeader("X-Forwarded-For");
+        if (forwardedFor != null && !forwardedFor.isBlank()) {
+            String firstAddress = forwardedFor.split(",")[0];
+            return normalizeHeader(firstAddress, 100);
+        }
+        return normalizeHeader(request.getRemoteAddr(), 100);
+    }
+
+    private String normalizeHeader(String value, int maxLength) {
+        if (value == null || value.isBlank()) {
+            return "unknown";
+        }
+        String normalized = value.trim();
+        if (normalized.length() <= maxLength) {
+            return normalized;
+        }
+        return normalized.substring(0, maxLength);
     }
 }
