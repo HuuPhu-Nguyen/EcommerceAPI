@@ -20,6 +20,8 @@ public final class SecurityExpressions {
             "hasAnyRole('ADMIN', 'AUDITOR') and hasAuthority('SCOPE_user:read')";
     public static final String ADMIN_OR_AUDITOR_AUDIT_READ =
             "hasAnyRole('ADMIN', 'AUDITOR') and hasAuthority('SCOPE_audit:read')";
+    public static final String ADMIN_OR_AUDITOR_RECONCILIATION_READ =
+            "hasAnyRole('ADMIN', 'AUDITOR') and hasAuthority('SCOPE_audit:read')";
 
     private SecurityExpressions() {
     }
