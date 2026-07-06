@@ -1,8 +1,12 @@
 package com.phu.ecommerceapi.inventory.application;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.phu.ecommerceapi.Product.ProductModel;
 import com.phu.ecommerceapi.Product.ProductRepo;
 import com.phu.ecommerceapi.inventory.infrastructure.InventoryRepository;
+import com.phu.ecommerceapi.outbox.infrastructure.OutboxEventRepository;
+import com.phu.ecommerceapi.outbox.infrastructure.OutboxEventStatus;
 import com.phu.ecommerceapi.shared.api.OutOfStockException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -32,10 +36,17 @@ class InventoryReservationServiceTest {
     private InventoryRepository inventoryRepository;
 
     @Autowired
+    private OutboxEventRepository outboxEventRepository;
+
+    @Autowired
     private ProductRepo productRepo;
+
+    @Autowired
+    private ObjectMapper objectMapper;
 
     @BeforeEach
     void resetInventory() {
+        outboxEventRepository.deleteAll();
         inventoryRepository.deleteAll();
         productRepo.deleteAll();
     }
@@ -52,8 +63,31 @@ class InventoryReservationServiceTest {
     }
 
     @Test
+    void reserveWritesStockChangedOutboxEvent() throws Exception {
+        long productId = productWithInventory(5);
+        outboxEventRepository.deleteAll();
+
+        inventoryReservationService.reserve(productId, 2);
+
+        assertThat(outboxEventRepository.findAll())
+                .singleElement()
+                .satisfies(event -> {
+                    assertThat(event.getAggregateType()).isEqualTo("PRODUCT");
+                    assertThat(event.getAggregateId()).isEqualTo(Long.toString(productId));
+                    assertThat(event.getEventType()).isEqualTo("StockChanged");
+                    assertThat(event.getStatus()).isEqualTo(OutboxEventStatus.PENDING);
+                    JsonNode payload = readPayload(event.getPayload());
+                    assertThat(payload.get("productId").asLong()).isEqualTo(productId);
+                    assertThat(payload.get("availableQuantity").asInt()).isEqualTo(3);
+                    assertThat(payload.get("reservedQuantity").asInt()).isEqualTo(2);
+                    assertThat(payload.get("reason").asText()).isEqualTo("RESERVED");
+                });
+    }
+
+    @Test
     void reserveFailsWhenAvailableQuantityIsTooLow() {
         long productId = productWithInventory(1);
+        outboxEventRepository.deleteAll();
 
         assertThatThrownBy(() -> inventoryReservationService.reserve(productId, 2))
                 .isInstanceOf(OutOfStockException.class)
@@ -62,6 +96,7 @@ class InventoryReservationServiceTest {
         InventorySnapshot inventory = inventoryReservationService.getInventory(productId);
         assertThat(inventory.availableQuantity()).isEqualTo(1);
         assertThat(inventory.reservedQuantity()).isEqualTo(0);
+        assertThat(outboxEventRepository.findAll()).isEmpty();
     }
 
     @Test
@@ -109,5 +144,13 @@ class InventoryReservationServiceTest {
                 .build());
         inventoryReservationService.initializeInventory(product.getProductId(), availableQuantity);
         return product.getProductId();
+    }
+
+    private JsonNode readPayload(String payload) {
+        try {
+            return objectMapper.readTree(payload);
+        } catch (Exception exception) {
+            throw new AssertionError("Outbox payload is not valid JSON", exception);
+        }
     }
 }
