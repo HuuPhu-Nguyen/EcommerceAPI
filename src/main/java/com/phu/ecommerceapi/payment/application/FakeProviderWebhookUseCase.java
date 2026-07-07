@@ -8,15 +8,8 @@ import com.phu.ecommerceapi.config.AppProperties;
 import com.phu.ecommerceapi.payment.api.FakeProviderWebhookRequest;
 import com.phu.ecommerceapi.payment.api.ProviderWebhookResponse;
 import com.phu.ecommerceapi.payment.domain.PaymentStatus;
-import com.phu.ecommerceapi.payment.domain.ProviderWebhookEventType;
 import com.phu.ecommerceapi.payment.domain.ProviderWebhookProcessingStatus;
 import com.phu.ecommerceapi.payment.domain.RefundStatus;
-import com.phu.ecommerceapi.payment.infrastructure.PaymentRecord;
-import com.phu.ecommerceapi.payment.infrastructure.PaymentRecordRepository;
-import com.phu.ecommerceapi.payment.infrastructure.ProviderWebhookEventRecord;
-import com.phu.ecommerceapi.payment.infrastructure.ProviderWebhookEventRepository;
-import com.phu.ecommerceapi.payment.infrastructure.RefundRecord;
-import com.phu.ecommerceapi.payment.infrastructure.RefundRecordRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,7 +20,6 @@ import java.security.NoSuchAlgorithmException;
 import java.time.OffsetDateTime;
 import java.util.HexFormat;
 import java.util.Optional;
-import java.util.UUID;
 
 @Service
 public class FakeProviderWebhookUseCase {
@@ -37,9 +29,9 @@ public class FakeProviderWebhookUseCase {
 
     private final ObjectMapper objectMapper;
     private final AppProperties appProperties;
-    private final ProviderWebhookEventRepository eventRepository;
-    private final PaymentRecordRepository paymentRepository;
-    private final RefundRecordRepository refundRepository;
+    private final ProviderWebhookPersistencePort webhookPersistence;
+    private final PaymentAttemptPersistencePort paymentAttemptPersistence;
+    private final RefundAttemptPersistencePort refundAttemptPersistence;
     private final PaymentAttemptService paymentAttemptService;
     private final RefundAttemptService refundAttemptService;
     private final AuditEventRecorder auditEventRecorder;
@@ -47,18 +39,18 @@ public class FakeProviderWebhookUseCase {
     public FakeProviderWebhookUseCase(
             ObjectMapper objectMapper,
             AppProperties appProperties,
-            ProviderWebhookEventRepository eventRepository,
-            PaymentRecordRepository paymentRepository,
-            RefundRecordRepository refundRepository,
+            ProviderWebhookPersistencePort webhookPersistence,
+            PaymentAttemptPersistencePort paymentAttemptPersistence,
+            RefundAttemptPersistencePort refundAttemptPersistence,
             PaymentAttemptService paymentAttemptService,
             RefundAttemptService refundAttemptService,
             AuditEventRecorder auditEventRecorder
     ) {
         this.objectMapper = objectMapper;
         this.appProperties = appProperties;
-        this.eventRepository = eventRepository;
-        this.paymentRepository = paymentRepository;
-        this.refundRepository = refundRepository;
+        this.webhookPersistence = webhookPersistence;
+        this.paymentAttemptPersistence = paymentAttemptPersistence;
+        this.refundAttemptPersistence = refundAttemptPersistence;
         this.paymentAttemptService = paymentAttemptService;
         this.refundAttemptService = refundAttemptService;
         this.auditEventRecorder = auditEventRecorder;
@@ -72,57 +64,44 @@ public class FakeProviderWebhookUseCase {
         FakeProviderWebhookRequest request = parseRequest(requestBody);
         String payloadHash = hash(requestBody);
 
-        EventRegistration registration = registerEvent(request, payloadHash, requestBody);
-        if (registration.response() != null) {
-            return registration.response();
+        ProviderWebhookRegistration registration = registerEvent(request, payloadHash, requestBody);
+        if (!registration.payloadMatched()) {
+            recordAudit("PROVIDER_WEBHOOK_PAYLOAD_CONFLICT", request.eventId(), "payload hash mismatch");
+            return new FakeProviderWebhookResult(
+                    HttpStatus.CONFLICT.value(),
+                    new ProviderWebhookResponse(
+                            request.eventId(),
+                            "REJECTED",
+                            "Provider event id was reused with a different payload"
+                    )
+            );
         }
 
-        ProviderWebhookEventRecord event = registration.event();
-        if (event.getProcessingStatus() != ProviderWebhookProcessingStatus.RECEIVED) {
+        ProviderWebhookEventView event = registration.event();
+        if (event.processingStatus() != ProviderWebhookProcessingStatus.RECEIVED) {
             return duplicateResponse(event);
         }
 
         return processEvent(event, request);
     }
 
-    private EventRegistration registerEvent(
+    private ProviderWebhookRegistration registerEvent(
             FakeProviderWebhookRequest request,
             String payloadHash,
             String requestBody
     ) {
-        UUID eventId = UUID.randomUUID();
-        int insertedRows = eventRepository.insertReceived(
-                eventId,
+        return webhookPersistence.registerReceived(new ProviderWebhookRegistrationCommand(
                 PROVIDER_NAME,
                 request.eventId(),
-                request.eventType().name(),
+                request.eventType(),
                 payloadHash,
                 requestBody,
                 OffsetDateTime.now()
-        );
-
-        ProviderWebhookEventRecord existingEvent = eventRepository
-                .findByProviderNameAndProviderEventId(PROVIDER_NAME, request.eventId())
-                .orElseThrow(() -> new IllegalStateException("Provider webhook event was not persisted"));
-
-        if (insertedRows == 0) {
-            if (!existingEvent.hasPayloadHash(payloadHash)) {
-                recordAudit("PROVIDER_WEBHOOK_PAYLOAD_CONFLICT", request.eventId(), "payload hash mismatch");
-                return EventRegistration.response(new FakeProviderWebhookResult(
-                        HttpStatus.CONFLICT.value(),
-                        new ProviderWebhookResponse(
-                                request.eventId(),
-                                "REJECTED",
-                                "Provider event id was reused with a different payload"
-                        )
-                ));
-            }
-        }
-        return EventRegistration.event(existingEvent);
+        ));
     }
 
     private FakeProviderWebhookResult processEvent(
-            ProviderWebhookEventRecord event,
+            ProviderWebhookEventView event,
             FakeProviderWebhookRequest request
     ) {
         return switch (request.eventType()) {
@@ -134,20 +113,20 @@ public class FakeProviderWebhookUseCase {
     }
 
     private FakeProviderWebhookResult processPaymentEvent(
-            ProviderWebhookEventRecord event,
+            ProviderWebhookEventView event,
             FakeProviderWebhookRequest request,
             boolean succeeded
     ) {
-        Optional<PaymentRecord> payment = findPayment(request);
+        Optional<PaymentWebhookAttempt> payment = findPayment(request);
         if (payment.isEmpty()) {
             return rejected(event, "Payment not found for provider webhook event");
         }
 
-        PaymentRecord paymentRecord = payment.get();
-        if (paymentRecord.getStatus() != PaymentStatus.PENDING) {
+        PaymentWebhookAttempt paymentAttempt = payment.get();
+        if (paymentAttempt.status() != PaymentStatus.PENDING) {
             return ignored(
                     event,
-                    "Payment event ignored because payment is " + paymentRecord.getStatus()
+                    "Payment event ignored because payment is " + paymentAttempt.status()
             );
         }
 
@@ -161,27 +140,30 @@ public class FakeProviderWebhookUseCase {
                         failureCode(request),
                         message(request, "Fake payment webhook failed")
                 );
-        paymentAttemptService.completeAttempt(paymentRecord.getId(), providerResult, null);
-        event.markProcessed("Payment webhook applied to payment " + paymentRecord.getId());
-        recordAudit("PROVIDER_WEBHOOK_PROCESSED", event.getProviderEventId(), event.getProcessingMessage());
-        return response(HttpStatus.OK, event);
+        paymentAttemptService.completeAttempt(paymentAttempt.paymentId(), providerResult, null);
+        ProviderWebhookEventView processed = webhookPersistence.markProcessed(
+                event.eventId(),
+                "Payment webhook applied to payment " + paymentAttempt.paymentId()
+        );
+        recordAudit("PROVIDER_WEBHOOK_PROCESSED", processed.providerEventId(), processed.processingMessage());
+        return response(HttpStatus.OK, processed);
     }
 
     private FakeProviderWebhookResult processRefundEvent(
-            ProviderWebhookEventRecord event,
+            ProviderWebhookEventView event,
             FakeProviderWebhookRequest request,
             boolean succeeded
     ) {
-        Optional<RefundRecord> refund = findRefund(request);
+        Optional<RefundWebhookAttempt> refund = findRefund(request);
         if (refund.isEmpty()) {
             return rejected(event, "Refund not found for provider webhook event");
         }
 
-        RefundRecord refundRecord = refund.get();
-        if (refundRecord.getStatus() != RefundStatus.PENDING) {
+        RefundWebhookAttempt refundAttempt = refund.get();
+        if (refundAttempt.status() != RefundStatus.PENDING) {
             return ignored(
                     event,
-                    "Refund event ignored because refund is " + refundRecord.getStatus()
+                    "Refund event ignored because refund is " + refundAttempt.status()
             );
         }
 
@@ -195,58 +177,49 @@ public class FakeProviderWebhookUseCase {
                         failureCode(request),
                         message(request, "Fake refund webhook failed")
                 );
-        refundAttemptService.completeAttempt(refundRecord.getId(), providerResult, null);
-        event.markProcessed("Refund webhook applied to refund " + refundRecord.getId());
-        recordAudit("PROVIDER_WEBHOOK_PROCESSED", event.getProviderEventId(), event.getProcessingMessage());
-        return response(HttpStatus.OK, event);
+        refundAttemptService.completeAttempt(refundAttempt.refundId(), providerResult, null);
+        ProviderWebhookEventView processed = webhookPersistence.markProcessed(
+                event.eventId(),
+                "Refund webhook applied to refund " + refundAttempt.refundId()
+        );
+        recordAudit("PROVIDER_WEBHOOK_PROCESSED", processed.providerEventId(), processed.processingMessage());
+        return response(HttpStatus.OK, processed);
     }
 
-    private Optional<PaymentRecord> findPayment(FakeProviderWebhookRequest request) {
-        if (request.paymentId() != null) {
-            return paymentRepository.findById(request.paymentId());
-        }
-        if (request.providerPaymentId() != null) {
-            return paymentRepository.findByProviderPaymentId(request.providerPaymentId());
-        }
-        return Optional.empty();
+    private Optional<PaymentWebhookAttempt> findPayment(FakeProviderWebhookRequest request) {
+        return paymentAttemptPersistence.findForProviderWebhook(request.paymentId(), request.providerPaymentId());
     }
 
-    private Optional<RefundRecord> findRefund(FakeProviderWebhookRequest request) {
-        if (request.refundId() != null) {
-            return refundRepository.findById(request.refundId());
-        }
-        if (request.providerRefundId() != null) {
-            return refundRepository.findByProviderRefundId(request.providerRefundId());
-        }
-        return Optional.empty();
+    private Optional<RefundWebhookAttempt> findRefund(FakeProviderWebhookRequest request) {
+        return refundAttemptPersistence.findForProviderWebhook(request.refundId(), request.providerRefundId());
     }
 
-    private FakeProviderWebhookResult duplicateResponse(ProviderWebhookEventRecord event) {
+    private FakeProviderWebhookResult duplicateResponse(ProviderWebhookEventView event) {
         ProviderWebhookResponse response = new ProviderWebhookResponse(
-                event.getProviderEventId(),
+                event.providerEventId(),
                 "DUPLICATE",
                 "Provider webhook event was already received"
         );
         return new FakeProviderWebhookResult(HttpStatus.OK.value(), response);
     }
 
-    private FakeProviderWebhookResult ignored(ProviderWebhookEventRecord event, String message) {
-        event.markIgnored(message);
-        recordAudit("PROVIDER_WEBHOOK_IGNORED", event.getProviderEventId(), message);
-        return response(HttpStatus.OK, event);
+    private FakeProviderWebhookResult ignored(ProviderWebhookEventView event, String message) {
+        ProviderWebhookEventView ignored = webhookPersistence.markIgnored(event.eventId(), message);
+        recordAudit("PROVIDER_WEBHOOK_IGNORED", ignored.providerEventId(), message);
+        return response(HttpStatus.OK, ignored);
     }
 
-    private FakeProviderWebhookResult rejected(ProviderWebhookEventRecord event, String message) {
-        event.markRejected(message);
-        recordAudit("PROVIDER_WEBHOOK_REJECTED", event.getProviderEventId(), message);
-        return response(HttpStatus.ACCEPTED, event);
+    private FakeProviderWebhookResult rejected(ProviderWebhookEventView event, String message) {
+        ProviderWebhookEventView rejected = webhookPersistence.markRejected(event.eventId(), message);
+        recordAudit("PROVIDER_WEBHOOK_REJECTED", rejected.providerEventId(), message);
+        return response(HttpStatus.ACCEPTED, rejected);
     }
 
-    private FakeProviderWebhookResult response(HttpStatus httpStatus, ProviderWebhookEventRecord event) {
+    private FakeProviderWebhookResult response(HttpStatus httpStatus, ProviderWebhookEventView event) {
         ProviderWebhookResponse response = new ProviderWebhookResponse(
-                event.getProviderEventId(),
-                event.getProcessingStatus().name(),
-                event.getProcessingMessage()
+                event.providerEventId(),
+                event.processingStatus().name(),
+                event.processingMessage()
         );
         return new FakeProviderWebhookResult(httpStatus.value(), response);
     }
@@ -314,17 +287,4 @@ public class FakeProviderWebhookUseCase {
         ));
     }
 
-    private record EventRegistration(
-            ProviderWebhookEventRecord event,
-            FakeProviderWebhookResult response
-    ) {
-
-        static EventRegistration event(ProviderWebhookEventRecord event) {
-            return new EventRegistration(event, null);
-        }
-
-        static EventRegistration response(FakeProviderWebhookResult response) {
-            return new EventRegistration(null, response);
-        }
-    }
 }

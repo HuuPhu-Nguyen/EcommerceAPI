@@ -1,7 +1,5 @@
 package com.phu.ecommerceapi.payment.application;
 
-import com.phu.ecommerceapi.payment.infrastructure.PaymentIdempotencyRecord;
-import com.phu.ecommerceapi.payment.infrastructure.PaymentIdempotencyRecordRepository;
 import com.phu.ecommerceapi.shared.api.ConflictException;
 import com.phu.ecommerceapi.shared.observability.BusinessMetrics;
 import org.springframework.stereotype.Service;
@@ -17,80 +15,58 @@ import java.util.Optional;
 @Service
 public class PaymentIdempotencyService {
 
-    private final PaymentIdempotencyRecordRepository repository;
+    private final PaymentIdempotencyPersistencePort persistencePort;
     private final BusinessMetrics businessMetrics;
 
     public PaymentIdempotencyService(
-            PaymentIdempotencyRecordRepository repository,
+            PaymentIdempotencyPersistencePort persistencePort,
             BusinessMetrics businessMetrics
     ) {
-        this.repository = repository;
+        this.persistencePort = persistencePort;
         this.businessMetrics = businessMetrics;
     }
 
     @Transactional
     public PaymentIdempotencyDecision start(PaymentIdempotencyCommand command) {
         String requestHash = hash(command.requestBody());
-        int insertedRows = repository.insertInProgress(
-                command.customerId(),
-                command.endpoint(),
-                command.operation(),
-                command.idempotencyKey(),
-                requestHash,
-                OffsetDateTime.now()
-        );
+        PaymentIdempotencyReservation reservation = persistencePort.reserve(command, requestHash, OffsetDateTime.now());
+        PaymentIdempotencyEntry entry = reservation.entry();
 
-        PaymentIdempotencyRecord record = repository
-                .findByCustomerIdAndEndpointAndOperationAndIdempotencyKey(
-                        command.customerId(),
-                        command.endpoint(),
-                        command.operation(),
-                        command.idempotencyKey()
-                )
-                .orElseThrow(() -> new IllegalStateException("Idempotency record was not persisted"));
-
-        if (insertedRows == 1) {
-            PaymentIdempotencyDecision decision = PaymentIdempotencyDecision.started(record.getId());
+        if (reservation.started()) {
+            PaymentIdempotencyDecision decision = PaymentIdempotencyDecision.started(entry.recordId());
             recordDecision(decision.type());
             return decision;
         }
-        return existingDecision(record, requestHash);
+        return existingDecision(entry, requestHash);
     }
 
     @Transactional(readOnly = true)
     public Optional<PaymentIdempotencyDecision> findExisting(PaymentIdempotencyCommand command) {
         String requestHash = hash(command.requestBody());
-        return repository.findByCustomerIdAndEndpointAndOperationAndIdempotencyKey(
-                        command.customerId(),
-                        command.endpoint(),
-                        command.operation(),
-                        command.idempotencyKey()
-                )
-                .map(record -> existingDecision(record, requestHash));
+        return persistencePort.find(command, requestHash)
+                .map(entry -> existingDecision(entry, requestHash));
     }
 
     @Transactional
     public void complete(long recordId, int responseStatus, String responseBody) {
-        PaymentIdempotencyRecord record = repository.findById(recordId)
-                .orElseThrow(() -> new IllegalArgumentException("Idempotency record not found"));
-        record.complete(responseStatus, responseBody);
+        persistencePort.complete(recordId, responseStatus, responseBody);
     }
 
-    private PaymentIdempotencyDecision existingDecision(PaymentIdempotencyRecord record, String requestHash) {
-        if (!record.hasRequestHash(requestHash)) {
+    private PaymentIdempotencyDecision existingDecision(PaymentIdempotencyEntry entry, String requestHash) {
+        if (!entry.hasRequestHash(requestHash)) {
             businessMetrics.idempotencyDecision("CONFLICT");
             throw new ConflictException("Idempotency key was reused with a different request body");
         }
-        if (record.isCompleted()) {
+        if (entry.completed()) {
             PaymentIdempotencyDecision decision = PaymentIdempotencyDecision.replay(
-                    record.getId(),
-                    record.getResponseStatus(),
-                    record.getResponseBody()
+                    entry.recordId(),
+                    entry.responseStatus(),
+                    entry.responseBody()
             );
             recordDecision(decision.type());
             return decision;
         }
-        PaymentIdempotencyDecision decision = PaymentIdempotencyDecision.inProgress(record.getId());
+        PaymentIdempotencyDecision decision = PaymentIdempotencyDecision.inProgress(entry.recordId());
         recordDecision(decision.type());
         return decision;
     }

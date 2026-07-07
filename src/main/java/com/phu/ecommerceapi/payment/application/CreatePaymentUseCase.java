@@ -2,12 +2,11 @@ package com.phu.ecommerceapi.payment.application;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.phu.ecommerceapi.User.UserModel;
-import com.phu.ecommerceapi.User.UserRepo;
+import com.phu.ecommerceapi.customer.application.CustomerProfile;
+import com.phu.ecommerceapi.customer.application.CustomerProfileLookup;
 import com.phu.ecommerceapi.identity.application.CurrentUser;
 import com.phu.ecommerceapi.payment.api.CreatePaymentRequest;
 import com.phu.ecommerceapi.payment.api.PaymentResponse;
-import com.phu.ecommerceapi.payment.infrastructure.FakePaymentProvider;
 import com.phu.ecommerceapi.shared.api.ConflictException;
 import com.phu.ecommerceapi.shared.api.NotFoundException;
 import org.springframework.http.HttpStatus;
@@ -27,20 +26,20 @@ public class CreatePaymentUseCase {
     private static final String PROVIDER_TOKEN_TIMEOUT = "pm_provider_timeout";
 
     private final ObjectMapper objectMapper;
-    private final UserRepo userRepo;
+    private final CustomerProfileLookup customerProfileLookup;
     private final PaymentIdempotencyService idempotencyService;
     private final PaymentAttemptService paymentAttemptService;
     private final PaymentProvider paymentProvider;
 
     public CreatePaymentUseCase(
             ObjectMapper objectMapper,
-            UserRepo userRepo,
+            CustomerProfileLookup customerProfileLookup,
             PaymentIdempotencyService idempotencyService,
             PaymentAttemptService paymentAttemptService,
             PaymentProvider paymentProvider
     ) {
         this.objectMapper = objectMapper;
-        this.userRepo = userRepo;
+        this.customerProfileLookup = customerProfileLookup;
         this.idempotencyService = idempotencyService;
         this.paymentAttemptService = paymentAttemptService;
         this.paymentProvider = paymentProvider;
@@ -48,10 +47,10 @@ public class CreatePaymentUseCase {
 
     public CreatePaymentResult create(CurrentUser currentUser, String idempotencyKey, String requestBody) {
         CreatePaymentRequest request = parseRequest(requestBody);
-        UserModel customer = resolveCustomer(currentUser);
+        long customerId = resolveCustomerId(currentUser);
 
         PaymentIdempotencyCommand idempotencyCommand = new PaymentIdempotencyCommand(
-                customer.getId(),
+                customerId,
                 ENDPOINT,
                 OPERATION,
                 idempotencyKey,
@@ -63,7 +62,7 @@ public class CreatePaymentUseCase {
             return replayOrReject(existingDecision.get());
         }
 
-        paymentAttemptService.validatePayable(customer.getId(), request.orderId());
+        paymentAttemptService.validatePayable(customerId, request.orderId());
         PaymentIdempotencyDecision idempotencyDecision = idempotencyService.start(idempotencyCommand);
         if (idempotencyDecision.type() == PaymentIdempotencyDecisionType.REPLAY) {
             return replayOrReject(idempotencyDecision);
@@ -73,7 +72,7 @@ public class CreatePaymentUseCase {
         }
 
         PaymentAttemptSnapshot attempt = paymentAttemptService.startAttempt(
-                customer.getId(),
+                customerId,
                 request.orderId(),
                 idempotencyKey
         );
@@ -85,7 +84,7 @@ public class CreatePaymentUseCase {
                     attempt.orderId(),
                     attempt.amount(),
                     attempt.currency(),
-                    providerIdempotencyKey(customer.getId(), attempt, idempotencyKey),
+                    providerIdempotencyKey(customerId, attempt, idempotencyKey),
                     providerMetadata(request)
             ));
             response = paymentAttemptService.completeAttempt(attempt.paymentId(), providerResult, currentUser);
@@ -120,19 +119,14 @@ public class CreatePaymentUseCase {
         }
     }
 
-    private UserModel resolveCustomer(CurrentUser currentUser) {
+    private long resolveCustomerId(CurrentUser currentUser) {
         if (currentUser == null) {
             throw new AccessDeniedException("Authenticated customer is required");
         }
 
-        UserModel customer = userRepo.findByUsername(currentUser.username());
-        if (customer == null && currentUser.email() != null) {
-            customer = userRepo.findByEmail(currentUser.email());
-        }
-        if (customer == null) {
-            throw new NotFoundException("Customer profile not found");
-        }
-        return customer;
+        CustomerProfile customer = customerProfileLookup.findCurrentUserProfile(currentUser)
+                .orElseThrow(() -> new NotFoundException("Customer profile not found"));
+        return customer.customerId();
     }
 
     private String providerIdempotencyKey(long customerId, PaymentAttemptSnapshot attempt, String idempotencyKey) {
@@ -143,9 +137,15 @@ public class CreatePaymentUseCase {
         Map<String, String> metadata = new HashMap<>();
         metadata.put("paymentMethodToken", request.paymentMethodToken());
         if (PROVIDER_TOKEN_DECLINED.equalsIgnoreCase(request.paymentMethodToken())) {
-            metadata.put(FakePaymentProvider.OUTCOME_METADATA_KEY, FakePaymentProvider.OUTCOME_FAILURE);
+            metadata.put(
+                    PaymentProviderOutcomeMetadata.OUTCOME_METADATA_KEY,
+                    PaymentProviderOutcomeMetadata.OUTCOME_FAILURE
+            );
         } else if (PROVIDER_TOKEN_TIMEOUT.equalsIgnoreCase(request.paymentMethodToken())) {
-            metadata.put(FakePaymentProvider.OUTCOME_METADATA_KEY, FakePaymentProvider.OUTCOME_TIMEOUT);
+            metadata.put(
+                    PaymentProviderOutcomeMetadata.OUTCOME_METADATA_KEY,
+                    PaymentProviderOutcomeMetadata.OUTCOME_TIMEOUT
+            );
         }
         return metadata;
     }

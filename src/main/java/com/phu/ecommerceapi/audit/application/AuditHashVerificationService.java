@@ -1,7 +1,5 @@
 package com.phu.ecommerceapi.audit.application;
 
-import com.phu.ecommerceapi.audit.infrastructure.AuditEventRecord;
-import com.phu.ecommerceapi.audit.infrastructure.AuditEventRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -11,49 +9,49 @@ import java.util.Objects;
 @Service
 public class AuditHashVerificationService {
 
-    private final AuditEventRepository auditEventRepository;
+    private final AuditEventPersistencePort auditEventPersistencePort;
     private final AuditHashService auditHashService;
 
     public AuditHashVerificationService(
-            AuditEventRepository auditEventRepository,
+            AuditEventPersistencePort auditEventPersistencePort,
             AuditHashService auditHashService
     ) {
-        this.auditEventRepository = auditEventRepository;
+        this.auditEventPersistencePort = auditEventPersistencePort;
         this.auditHashService = auditHashService;
     }
 
     @Transactional(readOnly = true)
     public AuditHashVerificationResult verify() {
-        List<AuditEventRecord> events = auditEventRepository.findAllByOrderByIdAsc();
+        List<AuditEventView> events = auditEventPersistencePort.findAllEventsByIdAsc();
         String expectedPreviousHash = null;
         long checkedEvents = 0;
 
-        for (AuditEventRecord event : events) {
+        for (AuditEventView event : events) {
             checkedEvents++;
-            if (event.getEventHash() == null || event.getEventHash().isBlank()) {
+            if (event.eventHash() == null || event.eventHash().isBlank()) {
                 return AuditHashVerificationResult.broken(
                         checkedEvents,
-                        event.getId(),
+                        event.id(),
                         "Audit event is missing hash"
                 );
             }
-            if (!Objects.equals(event.getPreviousHash(), expectedPreviousHash)) {
+            if (!Objects.equals(event.previousHash(), expectedPreviousHash)) {
                 return AuditHashVerificationResult.broken(
                         checkedEvents,
-                        event.getId(),
+                        event.id(),
                         "Audit event previous hash does not match chain"
                 );
             }
 
             String expectedHash = auditHashService.hash(event.toHashPayload(expectedPreviousHash));
-            if (!event.getEventHash().equals(expectedHash)) {
+            if (!event.eventHash().equals(expectedHash)) {
                 return AuditHashVerificationResult.broken(
                         checkedEvents,
-                        event.getId(),
+                        event.id(),
                         "Audit event hash mismatch"
                 );
             }
-            expectedPreviousHash = event.getEventHash();
+            expectedPreviousHash = event.eventHash();
         }
 
         return AuditHashVerificationResult.verified(checkedEvents, expectedPreviousHash);

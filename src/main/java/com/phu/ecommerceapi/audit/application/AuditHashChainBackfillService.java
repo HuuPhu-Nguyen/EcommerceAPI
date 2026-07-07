@@ -1,9 +1,5 @@
 package com.phu.ecommerceapi.audit.application;
 
-import com.phu.ecommerceapi.audit.infrastructure.AuditEventRecord;
-import com.phu.ecommerceapi.audit.infrastructure.AuditEventRepository;
-import com.phu.ecommerceapi.audit.infrastructure.AuditHashChainStateRecord;
-import com.phu.ecommerceapi.audit.infrastructure.AuditHashChainStateRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -14,45 +10,38 @@ import java.util.List;
 @Service
 public class AuditHashChainBackfillService {
 
-    private static final short CHAIN_STATE_ID = 1;
-
-    private final AuditEventRepository auditEventRepository;
-    private final AuditHashChainStateRepository chainStateRepository;
+    private final AuditEventPersistencePort auditEventPersistencePort;
     private final AuditHashService auditHashService;
 
     public AuditHashChainBackfillService(
-            AuditEventRepository auditEventRepository,
-            AuditHashChainStateRepository chainStateRepository,
+            AuditEventPersistencePort auditEventPersistencePort,
             AuditHashService auditHashService
     ) {
-        this.auditEventRepository = auditEventRepository;
-        this.chainStateRepository = chainStateRepository;
+        this.auditEventPersistencePort = auditEventPersistencePort;
         this.auditHashService = auditHashService;
     }
 
     @Transactional
     public void initializeLegacyChain() {
-        AuditHashChainStateRecord chainState = chainStateRepository.findForUpdateById(CHAIN_STATE_ID)
-                .orElseThrow(() -> new IllegalStateException("Audit hash chain state is missing"));
-        if (chainState.getLatestHash() != null) {
+        if (auditEventPersistencePort.latestHashForUpdate() != null) {
             return;
         }
 
-        List<AuditEventRecord> events = auditEventRepository.findAllByOrderByIdAsc();
+        List<AuditEventView> events = auditEventPersistencePort.findAllEventsByIdAsc();
         if (events.isEmpty()) {
             return;
         }
 
         String previousHash = null;
-        for (AuditEventRecord event : events) {
-            if (event.getPreviousHash() != null || event.getEventHash() != null) {
+        for (AuditEventView event : events) {
+            if (event.previousHash() != null || event.eventHash() != null) {
                 throw new IllegalStateException("Audit hash chain state is inconsistent with existing audit hashes");
             }
             String eventHash = auditHashService.hash(event.toHashPayload(previousHash));
-            event.applyHash(previousHash, eventHash);
+            auditEventPersistencePort.applyHash(event.id(), previousHash, eventHash);
             previousHash = eventHash;
         }
 
-        chainState.markLatestHash(previousHash, Instant.now().truncatedTo(ChronoUnit.MILLIS));
+        auditEventPersistencePort.markLatestHash(previousHash, Instant.now().truncatedTo(ChronoUnit.MILLIS));
     }
 }

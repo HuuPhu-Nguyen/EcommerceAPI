@@ -2,12 +2,11 @@ package com.phu.ecommerceapi.payment.application;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.phu.ecommerceapi.User.UserModel;
-import com.phu.ecommerceapi.User.UserRepo;
+import com.phu.ecommerceapi.customer.application.CustomerProfile;
+import com.phu.ecommerceapi.customer.application.CustomerProfileLookup;
 import com.phu.ecommerceapi.identity.application.CurrentUser;
 import com.phu.ecommerceapi.payment.api.CreateRefundRequest;
 import com.phu.ecommerceapi.payment.api.RefundResponse;
-import com.phu.ecommerceapi.payment.infrastructure.FakePaymentProvider;
 import com.phu.ecommerceapi.shared.api.ConflictException;
 import com.phu.ecommerceapi.shared.api.NotFoundException;
 import org.springframework.http.HttpStatus;
@@ -27,20 +26,20 @@ public class CreateRefundUseCase {
     private static final String PROVIDER_OUTCOME_TIMEOUT_REASON = "fake_provider_timeout";
 
     private final ObjectMapper objectMapper;
-    private final UserRepo userRepo;
+    private final CustomerProfileLookup customerProfileLookup;
     private final PaymentIdempotencyService idempotencyService;
     private final RefundAttemptService refundAttemptService;
     private final PaymentProvider paymentProvider;
 
     public CreateRefundUseCase(
             ObjectMapper objectMapper,
-            UserRepo userRepo,
+            CustomerProfileLookup customerProfileLookup,
             PaymentIdempotencyService idempotencyService,
             RefundAttemptService refundAttemptService,
             PaymentProvider paymentProvider
     ) {
         this.objectMapper = objectMapper;
-        this.userRepo = userRepo;
+        this.customerProfileLookup = customerProfileLookup;
         this.idempotencyService = idempotencyService;
         this.refundAttemptService = refundAttemptService;
         this.paymentProvider = paymentProvider;
@@ -53,10 +52,10 @@ public class CreateRefundUseCase {
             String requestBody
     ) {
         CreateRefundRequest request = parseRequest(requestBody);
-        UserModel customer = resolveCustomer(currentUser);
+        long customerId = resolveCustomerId(currentUser);
 
         PaymentIdempotencyCommand idempotencyCommand = new PaymentIdempotencyCommand(
-                customer.getId(),
+                customerId,
                 endpoint(paymentId),
                 OPERATION,
                 idempotencyKey,
@@ -68,7 +67,7 @@ public class CreateRefundUseCase {
             return replayOrReject(existingDecision.get());
         }
 
-        refundAttemptService.validateRefundable(customer.getId(), paymentId);
+        refundAttemptService.validateRefundable(customerId, paymentId);
         PaymentIdempotencyDecision idempotencyDecision = idempotencyService.start(idempotencyCommand);
         if (idempotencyDecision.type() == PaymentIdempotencyDecisionType.REPLAY) {
             return replayOrReject(idempotencyDecision);
@@ -78,7 +77,7 @@ public class CreateRefundUseCase {
         }
 
         RefundAttemptSnapshot attempt = refundAttemptService.startAttempt(
-                customer.getId(),
+                customerId,
                 paymentId,
                 idempotencyKey,
                 request.reason()
@@ -92,7 +91,7 @@ public class CreateRefundUseCase {
                     attempt.providerPaymentId(),
                     attempt.amount(),
                     attempt.currency(),
-                    providerIdempotencyKey(customer.getId(), attempt, idempotencyKey),
+                    providerIdempotencyKey(customerId, attempt, idempotencyKey),
                     providerMetadata(request)
             ));
             response = refundAttemptService.completeAttempt(attempt.refundId(), providerResult, currentUser);
@@ -131,19 +130,14 @@ public class CreateRefundUseCase {
         }
     }
 
-    private UserModel resolveCustomer(CurrentUser currentUser) {
+    private long resolveCustomerId(CurrentUser currentUser) {
         if (currentUser == null) {
             throw new AccessDeniedException("Authenticated customer is required");
         }
 
-        UserModel customer = userRepo.findByUsername(currentUser.username());
-        if (customer == null && currentUser.email() != null) {
-            customer = userRepo.findByEmail(currentUser.email());
-        }
-        if (customer == null) {
-            throw new NotFoundException("Customer profile not found");
-        }
-        return customer;
+        CustomerProfile customer = customerProfileLookup.findCurrentUserProfile(currentUser)
+                .orElseThrow(() -> new NotFoundException("Customer profile not found"));
+        return customer.customerId();
     }
 
     private String endpoint(UUID paymentId) {
@@ -158,9 +152,15 @@ public class CreateRefundUseCase {
         Map<String, String> metadata = new HashMap<>();
         metadata.put("refundReason", request.reason());
         if (PROVIDER_OUTCOME_FAILED_REASON.equalsIgnoreCase(request.reason())) {
-            metadata.put(FakePaymentProvider.OUTCOME_METADATA_KEY, FakePaymentProvider.OUTCOME_FAILURE);
+            metadata.put(
+                    PaymentProviderOutcomeMetadata.OUTCOME_METADATA_KEY,
+                    PaymentProviderOutcomeMetadata.OUTCOME_FAILURE
+            );
         } else if (PROVIDER_OUTCOME_TIMEOUT_REASON.equalsIgnoreCase(request.reason())) {
-            metadata.put(FakePaymentProvider.OUTCOME_METADATA_KEY, FakePaymentProvider.OUTCOME_TIMEOUT);
+            metadata.put(
+                    PaymentProviderOutcomeMetadata.OUTCOME_METADATA_KEY,
+                    PaymentProviderOutcomeMetadata.OUTCOME_TIMEOUT
+            );
         }
         return metadata;
     }

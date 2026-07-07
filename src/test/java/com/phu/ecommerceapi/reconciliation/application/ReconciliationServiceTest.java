@@ -2,12 +2,8 @@ package com.phu.ecommerceapi.reconciliation.application;
 
 import com.phu.ecommerceapi.ledger.domain.LedgerEntryDirection;
 import com.phu.ecommerceapi.ledger.domain.LedgerTransactionType;
-import com.phu.ecommerceapi.ledger.infrastructure.LedgerEntryRepository;
-import com.phu.ecommerceapi.ledger.infrastructure.LedgerTransactionRepository;
 import com.phu.ecommerceapi.payment.domain.PaymentStatus;
 import com.phu.ecommerceapi.payment.domain.RefundStatus;
-import com.phu.ecommerceapi.payment.infrastructure.PaymentRecordRepository;
-import com.phu.ecommerceapi.payment.infrastructure.RefundRecordRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -28,16 +24,7 @@ class ReconciliationServiceTest {
     private static final String ORDER_REVENUE_ACCOUNT = "ORDER_REVENUE";
 
     @Mock
-    private PaymentRecordRepository paymentRecordRepository;
-
-    @Mock
-    private RefundRecordRepository refundRecordRepository;
-
-    @Mock
-    private LedgerTransactionRepository ledgerTransactionRepository;
-
-    @Mock
-    private LedgerEntryRepository ledgerEntryRepository;
+    private ReconciliationReadPort reconciliationReadPort;
 
     @InjectMocks
     private ReconciliationService reconciliationService;
@@ -125,10 +112,10 @@ class ReconciliationServiceTest {
             List<LedgerTransactionReconciliationItem> transactions,
             List<LedgerEntryReconciliationItem> entries
     ) {
-        when(paymentRecordRepository.findAllForReconciliation()).thenReturn(payments);
-        when(refundRecordRepository.findAllForReconciliation()).thenReturn(refunds);
-        when(ledgerTransactionRepository.findAllForReconciliation()).thenReturn(transactions);
-        when(ledgerEntryRepository.findAllForReconciliation()).thenReturn(entries);
+        when(reconciliationReadPort.findPayments()).thenReturn(payments);
+        when(reconciliationReadPort.findRefunds()).thenReturn(refunds);
+        when(reconciliationReadPort.findLedgerTransactions()).thenReturn(transactions);
+        when(reconciliationReadPort.findLedgerEntries()).thenReturn(entries);
     }
 
     private PaymentReconciliationItem payment(UUID id, String amount, PaymentStatus status) {

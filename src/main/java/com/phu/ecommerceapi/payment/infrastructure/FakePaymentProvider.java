@@ -1,6 +1,7 @@
 package com.phu.ecommerceapi.payment.infrastructure;
 
 import com.phu.ecommerceapi.payment.application.PaymentProvider;
+import com.phu.ecommerceapi.payment.application.PaymentProviderOutcomeMetadata;
 import com.phu.ecommerceapi.payment.application.PaymentProviderRequest;
 import com.phu.ecommerceapi.payment.application.PaymentProviderResult;
 import com.phu.ecommerceapi.payment.application.PaymentProviderTimeoutException;
@@ -20,11 +21,6 @@ import java.util.concurrent.ConcurrentMap;
 @ConditionalOnProperty(name = "app.payment-provider", havingValue = "fake", matchIfMissing = true)
 public class FakePaymentProvider implements PaymentProvider {
 
-    public static final String OUTCOME_METADATA_KEY = "fakeOutcome";
-    public static final String OUTCOME_SUCCESS = "success";
-    public static final String OUTCOME_FAILURE = "failure";
-    public static final String OUTCOME_TIMEOUT = "timeout";
-
     private static final String DECLINED_CODE = "fake_declined";
 
     private final ConcurrentMap<String, PaymentProviderResult> processedRequests = new ConcurrentHashMap<>();
@@ -38,16 +34,16 @@ public class FakePaymentProvider implements PaymentProvider {
         }
 
         PaymentProviderResult result = switch (requestedOutcome(request)) {
-            case OUTCOME_SUCCESS -> PaymentProviderResult.succeeded(
+            case PaymentProviderOutcomeMetadata.OUTCOME_SUCCESS -> PaymentProviderResult.succeeded(
                     providerPaymentId(request),
                     "Fake payment approved"
             );
-            case OUTCOME_FAILURE -> PaymentProviderResult.failed(
+            case PaymentProviderOutcomeMetadata.OUTCOME_FAILURE -> PaymentProviderResult.failed(
                     providerPaymentId(request),
                     DECLINED_CODE,
                     "Fake payment declined"
             );
-            case OUTCOME_TIMEOUT -> throw new PaymentProviderTimeoutException(
+            case PaymentProviderOutcomeMetadata.OUTCOME_TIMEOUT -> throw new PaymentProviderTimeoutException(
                     "Fake payment provider timed out for order " + request.orderId()
             );
             default -> throw new IllegalArgumentException("Unsupported fake payment outcome");
@@ -68,16 +64,16 @@ public class FakePaymentProvider implements PaymentProvider {
         }
 
         PaymentRefundProviderResult result = switch (requestedOutcome(request.metadata())) {
-            case OUTCOME_SUCCESS -> PaymentRefundProviderResult.succeeded(
+            case PaymentProviderOutcomeMetadata.OUTCOME_SUCCESS -> PaymentRefundProviderResult.succeeded(
                     providerRefundId(request),
                     "Fake refund approved"
             );
-            case OUTCOME_FAILURE -> PaymentRefundProviderResult.failed(
+            case PaymentProviderOutcomeMetadata.OUTCOME_FAILURE -> PaymentRefundProviderResult.failed(
                     providerRefundId(request),
                     DECLINED_CODE,
                     "Fake refund declined"
             );
-            case OUTCOME_TIMEOUT -> throw new PaymentProviderTimeoutException(
+            case PaymentProviderOutcomeMetadata.OUTCOME_TIMEOUT -> throw new PaymentProviderTimeoutException(
                     "Fake refund provider timed out for payment " + request.paymentId()
             );
             default -> throw new IllegalArgumentException("Unsupported fake refund outcome");
@@ -112,11 +108,14 @@ public class FakePaymentProvider implements PaymentProvider {
     }
 
     private String requestedOutcome(Map<String, String> metadata) {
-        String outcome = metadata.getOrDefault(OUTCOME_METADATA_KEY, OUTCOME_SUCCESS);
+        String outcome = metadata.getOrDefault(
+                PaymentProviderOutcomeMetadata.OUTCOME_METADATA_KEY,
+                PaymentProviderOutcomeMetadata.OUTCOME_SUCCESS
+        );
         return switch (outcome.trim().toLowerCase(Locale.ROOT)) {
-            case "success", "succeeded", "approved" -> OUTCOME_SUCCESS;
-            case "failure", "failed", "declined" -> OUTCOME_FAILURE;
-            case "timeout" -> OUTCOME_TIMEOUT;
+            case "success", "succeeded", "approved" -> PaymentProviderOutcomeMetadata.OUTCOME_SUCCESS;
+            case "failure", "failed", "declined" -> PaymentProviderOutcomeMetadata.OUTCOME_FAILURE;
+            case "timeout" -> PaymentProviderOutcomeMetadata.OUTCOME_TIMEOUT;
             default -> throw new IllegalArgumentException("Unsupported fake payment outcome: " + outcome);
         };
     }

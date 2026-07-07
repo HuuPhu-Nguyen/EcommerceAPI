@@ -1,9 +1,6 @@
 package com.phu.ecommerceapi.audit.application;
 
 import com.phu.ecommerceapi.audit.api.AuditEventResponse;
-import com.phu.ecommerceapi.audit.infrastructure.AuditEventRecord;
-import com.phu.ecommerceapi.audit.infrastructure.AuditEventRepository;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,35 +18,35 @@ public class AuditEventQueryService {
             "(?i)\"(password|token|secret|email)\"\\s*:\\s*\"[^\"]*\""
     );
 
-    private final AuditEventRepository auditEventRepository;
+    private final AuditEventPersistencePort auditEventPersistencePort;
 
-    public AuditEventQueryService(AuditEventRepository auditEventRepository) {
-        this.auditEventRepository = auditEventRepository;
+    public AuditEventQueryService(AuditEventPersistencePort auditEventPersistencePort) {
+        this.auditEventPersistencePort = auditEventPersistencePort;
     }
 
     @Transactional(readOnly = true)
     public List<AuditEventResponse> recentEvents(int limit) {
         int safeLimit = Math.max(1, Math.min(limit, MAX_LIMIT));
-        return auditEventRepository.findAllByOrderByCreatedAtDesc(PageRequest.of(0, safeLimit))
+        return auditEventPersistencePort.findRecentEvents(safeLimit)
                 .stream()
                 .map(this::toResponse)
                 .toList();
     }
 
-    private AuditEventResponse toResponse(AuditEventRecord event) {
+    private AuditEventResponse toResponse(AuditEventView event) {
         return new AuditEventResponse(
-                event.getId(),
-                maskActorSubject(event.getActorSubject()),
-                event.getAction(),
-                event.getResourceType(),
-                event.getResourceId(),
-                maskDetails(event.getDetails()),
-                event.getRequestId(),
-                event.getIpAddress(),
-                event.getUserAgent(),
-                event.getCreatedAt(),
-                event.getPreviousHash(),
-                event.getEventHash()
+                event.id(),
+                maskActorSubject(event.actorSubject()),
+                event.action(),
+                event.resourceType(),
+                event.resourceId(),
+                maskDetails(event.details()),
+                event.requestId(),
+                event.ipAddress(),
+                event.userAgent(),
+                event.createdAt(),
+                event.previousHash(),
+                event.eventHash()
         );
     }
 

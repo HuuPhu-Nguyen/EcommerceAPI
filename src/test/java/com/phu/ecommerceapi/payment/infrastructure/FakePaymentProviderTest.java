@@ -1,5 +1,6 @@
 package com.phu.ecommerceapi.payment.infrastructure;
 
+import com.phu.ecommerceapi.payment.application.PaymentProviderOutcomeMetadata;
 import com.phu.ecommerceapi.payment.application.PaymentProviderRequest;
 import com.phu.ecommerceapi.payment.application.PaymentProviderStatus;
 import com.phu.ecommerceapi.payment.application.PaymentProviderTimeoutException;
@@ -31,7 +32,10 @@ class FakePaymentProviderTest {
     void modelsProviderFailure() {
         var result = provider.createPayment(request(
                 "payment-key-2",
-                Map.of(FakePaymentProvider.OUTCOME_METADATA_KEY, FakePaymentProvider.OUTCOME_FAILURE)
+                Map.of(
+                        PaymentProviderOutcomeMetadata.OUTCOME_METADATA_KEY,
+                        PaymentProviderOutcomeMetadata.OUTCOME_FAILURE
+                )
         ));
 
         assertThat(result.status()).isEqualTo(PaymentProviderStatus.FAILED);
@@ -43,7 +47,10 @@ class FakePaymentProviderTest {
     void modelsProviderTimeoutWithoutRecordingTheRequestAsProcessed() {
         PaymentProviderRequest timeoutRequest = request(
                 "payment-key-3",
-                Map.of(FakePaymentProvider.OUTCOME_METADATA_KEY, FakePaymentProvider.OUTCOME_TIMEOUT)
+                Map.of(
+                        PaymentProviderOutcomeMetadata.OUTCOME_METADATA_KEY,
+                        PaymentProviderOutcomeMetadata.OUTCOME_TIMEOUT
+                )
         );
 
         assertThatThrownBy(() -> provider.createPayment(timeoutRequest))
@@ -75,7 +82,10 @@ class FakePaymentProviderTest {
     void modelsRefundFailure() {
         var result = provider.refundPayment(refundRequest(
                 "refund-key-2",
-                Map.of(FakePaymentProvider.OUTCOME_METADATA_KEY, FakePaymentProvider.OUTCOME_FAILURE)
+                Map.of(
+                        PaymentProviderOutcomeMetadata.OUTCOME_METADATA_KEY,
+                        PaymentProviderOutcomeMetadata.OUTCOME_FAILURE
+                )
         ));
 
         assertThat(result.status()).isEqualTo(PaymentProviderStatus.FAILED);
@@ -86,7 +96,10 @@ class FakePaymentProviderTest {
     void modelsRefundTimeoutWithoutRecordingTheRequestAsProcessed() {
         PaymentRefundProviderRequest timeoutRequest = refundRequest(
                 "refund-key-3",
-                Map.of(FakePaymentProvider.OUTCOME_METADATA_KEY, FakePaymentProvider.OUTCOME_TIMEOUT)
+                Map.of(
+                        PaymentProviderOutcomeMetadata.OUTCOME_METADATA_KEY,
+                        PaymentProviderOutcomeMetadata.OUTCOME_TIMEOUT
+                )
         );
 
         assertThatThrownBy(() -> provider.refundPayment(timeoutRequest))

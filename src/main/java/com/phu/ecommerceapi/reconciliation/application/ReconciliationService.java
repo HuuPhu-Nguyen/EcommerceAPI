@@ -2,12 +2,8 @@ package com.phu.ecommerceapi.reconciliation.application;
 
 import com.phu.ecommerceapi.ledger.domain.LedgerEntryDirection;
 import com.phu.ecommerceapi.ledger.domain.LedgerTransactionType;
-import com.phu.ecommerceapi.ledger.infrastructure.LedgerEntryRepository;
-import com.phu.ecommerceapi.ledger.infrastructure.LedgerTransactionRepository;
 import com.phu.ecommerceapi.payment.domain.PaymentStatus;
 import com.phu.ecommerceapi.payment.domain.RefundStatus;
-import com.phu.ecommerceapi.payment.infrastructure.PaymentRecordRepository;
-import com.phu.ecommerceapi.payment.infrastructure.RefundRecordRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -39,29 +35,18 @@ public class ReconciliationService {
     private static final String PROVIDER_CLEARING_ACCOUNT = "PAYMENT_PROVIDER_CLEARING";
     private static final String ORDER_REVENUE_ACCOUNT = "ORDER_REVENUE";
 
-    private final PaymentRecordRepository paymentRecordRepository;
-    private final RefundRecordRepository refundRecordRepository;
-    private final LedgerTransactionRepository ledgerTransactionRepository;
-    private final LedgerEntryRepository ledgerEntryRepository;
+    private final ReconciliationReadPort reconciliationReadPort;
 
-    public ReconciliationService(
-            PaymentRecordRepository paymentRecordRepository,
-            RefundRecordRepository refundRecordRepository,
-            LedgerTransactionRepository ledgerTransactionRepository,
-            LedgerEntryRepository ledgerEntryRepository
-    ) {
-        this.paymentRecordRepository = paymentRecordRepository;
-        this.refundRecordRepository = refundRecordRepository;
-        this.ledgerTransactionRepository = ledgerTransactionRepository;
-        this.ledgerEntryRepository = ledgerEntryRepository;
+    public ReconciliationService(ReconciliationReadPort reconciliationReadPort) {
+        this.reconciliationReadPort = reconciliationReadPort;
     }
 
     @Transactional(readOnly = true)
     public ReconciliationReport runReport() {
-        List<PaymentReconciliationItem> payments = paymentRecordRepository.findAllForReconciliation();
-        List<RefundReconciliationItem> refunds = refundRecordRepository.findAllForReconciliation();
-        List<LedgerTransactionReconciliationItem> transactions = ledgerTransactionRepository.findAllForReconciliation();
-        List<LedgerEntryReconciliationItem> entries = ledgerEntryRepository.findAllForReconciliation();
+        List<PaymentReconciliationItem> payments = reconciliationReadPort.findPayments();
+        List<RefundReconciliationItem> refunds = reconciliationReadPort.findRefunds();
+        List<LedgerTransactionReconciliationItem> transactions = reconciliationReadPort.findLedgerTransactions();
+        List<LedgerEntryReconciliationItem> entries = reconciliationReadPort.findLedgerEntries();
 
         Map<UUID, PaymentReconciliationItem> paymentsById = byId(payments, PaymentReconciliationItem::id);
         Map<UUID, RefundReconciliationItem> refundsById = byId(refunds, RefundReconciliationItem::id);

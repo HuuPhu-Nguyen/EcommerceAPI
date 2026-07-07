@@ -1,7 +1,5 @@
 package com.phu.ecommerceapi.inventory.application;
 
-import com.phu.ecommerceapi.inventory.infrastructure.InventoryRecord;
-import com.phu.ecommerceapi.inventory.infrastructure.InventoryRepository;
 import com.phu.ecommerceapi.outbox.application.OutboxEventRecorder;
 import com.phu.ecommerceapi.shared.api.NotFoundException;
 import com.phu.ecommerceapi.shared.api.OutOfStockException;
@@ -15,20 +13,20 @@ public class InventoryReservationService {
     private static final String STOCK_CHANGED_EVENT_TYPE = "StockChanged";
     private static final String PRODUCT_AGGREGATE_TYPE = "PRODUCT";
 
-    private final InventoryRepository inventoryRepository;
+    private final InventoryPersistencePort inventoryPersistencePort;
     private final OutboxEventRecorder outboxEventRecorder;
 
     public InventoryReservationService(
-            InventoryRepository inventoryRepository,
+            InventoryPersistencePort inventoryPersistencePort,
             OutboxEventRecorder outboxEventRecorder
     ) {
-        this.inventoryRepository = inventoryRepository;
+        this.inventoryPersistencePort = inventoryPersistencePort;
         this.outboxEventRecorder = outboxEventRecorder;
     }
 
     @Transactional
     public void initializeInventory(long productId, int availableQuantity) {
-        InventoryRecord inventory = inventoryRepository.save(new InventoryRecord(productId, availableQuantity, 0));
+        InventoryState inventory = inventoryPersistencePort.initialize(productId, availableQuantity);
         recordStockChanged(inventory, "INITIALIZED");
     }
 
@@ -37,8 +35,8 @@ public class InventoryReservationService {
         if (availableQuantity < 0) {
             throw new IllegalArgumentException("Available quantity cannot be negative");
         }
-        int updatedRows = inventoryRepository.updateAvailableQuantity(productId, availableQuantity);
-        if (updatedRows == 0) {
+        boolean updated = inventoryPersistencePort.setAvailableQuantity(productId, availableQuantity);
+        if (!updated) {
             initializeInventory(productId, availableQuantity);
             return;
         }
@@ -48,8 +46,8 @@ public class InventoryReservationService {
     @Transactional
     public void reserve(long productId, int requestedQuantity) {
         Quantity quantity = Quantity.of(requestedQuantity);
-        int updatedRows = inventoryRepository.reserve(productId, quantity.value());
-        if (updatedRows == 0) {
+        boolean reserved = inventoryPersistencePort.reserve(productId, quantity.value());
+        if (!reserved) {
             throw new OutOfStockException("Not enough stock is available");
         }
         recordStockChanged(inventory(productId), "RESERVED");
@@ -57,28 +55,28 @@ public class InventoryReservationService {
 
     @Transactional(readOnly = true)
     public InventorySnapshot getInventory(long productId) {
-        InventoryRecord inventory = inventory(productId);
+        InventoryState inventory = inventory(productId);
         return new InventorySnapshot(
-                inventory.getProductId(),
-                inventory.getAvailableQuantity(),
-                inventory.getReservedQuantity()
+                inventory.productId(),
+                inventory.availableQuantity(),
+                inventory.reservedQuantity()
         );
     }
 
-    private InventoryRecord inventory(long productId) {
-        return inventoryRepository.findById(productId)
+    private InventoryState inventory(long productId) {
+        return inventoryPersistencePort.findByProductId(productId)
                 .orElseThrow(() -> new NotFoundException("Inventory not found"));
     }
 
-    private void recordStockChanged(InventoryRecord inventory, String reason) {
+    private void recordStockChanged(InventoryState inventory, String reason) {
         outboxEventRecorder.record(
                 PRODUCT_AGGREGATE_TYPE,
-                Long.toString(inventory.getProductId()),
+                Long.toString(inventory.productId()),
                 STOCK_CHANGED_EVENT_TYPE,
                 new StockChangedEventPayload(
-                        inventory.getProductId(),
-                        inventory.getAvailableQuantity(),
-                        inventory.getReservedQuantity(),
+                        inventory.productId(),
+                        inventory.availableQuantity(),
+                        inventory.reservedQuantity(),
                         reason
                 )
         );
