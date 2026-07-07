@@ -16,7 +16,7 @@ The final review found no blocking issues. The build gate passes, a fresh clone 
 | --- | --- | --- |
 | Fresh clone setup works | Pass | Cloned the repository into a temporary directory and ran `.\mvnw.cmd -B -ntp -DskipTests compile`. Result: build success, 267 source files compiled. The temporary clone was removed after verifying it was under the OS temp directory. |
 | README demo is coherent | Pass with local-volume caveat | Demo script was reviewed against `compose.yaml`, the Keycloak realm import, `application-local.properties`, and `demo-data.sql`. The documented clean reset uses `docker compose down -v`; it was not executed during this review because an existing local Docker volume was present. The same checkout, payment, refund, ledger, audit, and reconciliation flow is covered by the green integration suite. |
-| Tests pass | Pass | `.\mvnw.cmd -B -ntp verify` completed successfully with 149 tests, 0 failures, 0 errors, 0 Checkstyle violations, and passing JaCoCo coverage checks. |
+| Tests pass | Pass | `.\mvnw.cmd -B -ntp verify` completed successfully with 151 tests, 0 failures, 0 errors, 0 Checkstyle violations, and passing JaCoCo coverage checks. |
 | No secrets are committed | Pass | Searched tracked project files, excluding `.git`, `target`, and `agent`, for common private key, AWS, Stripe, webhook, GitHub, and Slack token patterns. No matches found. Demo credentials are local-only and documented as safe defaults. |
 | No agent files are tracked | Pass | `git ls-files agent` produced no output. The `agent/` directory is ignored by `.gitignore`. |
 | No controller returns JPA entities | Pass | `ArchitectureTest` runs in the full Maven gate and enforces controller/entity boundary rules. |
@@ -27,7 +27,7 @@ The final review found no blocking issues. The build gate passes, a fresh clone 
 ## Known Tradeoffs
 
 - The fake payment provider is deliberate. It keeps demos and tests deterministic while the payment provider port keeps a future Stripe adapter isolated from core workflows.
-- Legacy compatibility aliases such as `/user` and `/allUserInfo` remain, but public docs now prefer `/customer/profile/me` and `/admin/customer-profiles`.
+- Old compatibility aliases have been removed in favor of canonical REST routes.
 - SSE stock updates use in-memory fan-out. The README documents Redis Pub/Sub or Kafka as the multi-instance upgrade path.
 - The README clean demo command resets Docker volumes so Keycloak imports the current realm. That is appropriate for a clean demo but should be run intentionally.
 

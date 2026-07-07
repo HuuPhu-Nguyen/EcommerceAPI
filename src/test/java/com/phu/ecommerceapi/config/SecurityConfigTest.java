@@ -31,13 +31,13 @@ class SecurityConfigTest {
 
     @Test
     void protectedEndpointRequiresAuthentication() throws Exception {
-        mockMvc.perform(get("/allUserInfo"))
+        mockMvc.perform(get("/admin/customer-profiles"))
                 .andExpect(status().isUnauthorized());
     }
 
     @Test
     void protectedEndpointAcceptsJwtAuthenticationAndReachesController() throws Exception {
-        mockMvc.perform(get("/products/getById").param("id", "-1").with(jwt()))
+        mockMvc.perform(get("/products/{id}", -1).with(jwt()))
                 .andExpect(status().isNotFound());
     }
 

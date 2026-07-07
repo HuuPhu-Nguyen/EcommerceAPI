@@ -29,22 +29,8 @@ public class ProductCatalogController {
         return ResponseEntity.ok(productCatalogService.searchActiveProducts(search, page, size));
     }
 
-    @GetMapping("/getAll")
-    public ResponseEntity<PageResponse<ProductCatalogItem>> getAllProducts(
-            @RequestParam(required = false) String search,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size
-    ) {
-        return getProducts(search, page, size);
-    }
-
     @GetMapping("/{id}")
     public ResponseEntity<ProductCatalogItem> getProduct(@PathVariable long id) {
         return ResponseEntity.ok(productCatalogService.getActiveProduct(id));
-    }
-
-    @GetMapping("/getById")
-    public ResponseEntity<ProductCatalogItem> getProductByQueryParam(@RequestParam long id) {
-        return getProduct(id);
     }
 }

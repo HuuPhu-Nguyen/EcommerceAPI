@@ -50,7 +50,7 @@ class CustomerProfileBoundaryTest {
     void currentProfileReturnsSafeDtoForAuthenticatedCustomer() throws Exception {
         saveCustomer();
 
-        mockMvc.perform(get("/user").with(jwt()
+        mockMvc.perform(get("/customer/profile/me").with(jwt()
                         .jwt(jwt -> jwt
                                 .subject("identity-subject-1")
                                 .claim("preferred_username", USERNAME)
@@ -73,7 +73,7 @@ class CustomerProfileBoundaryTest {
     void adminProfileListingReturnsSafeDtos() throws Exception {
         saveCustomer();
 
-        mockMvc.perform(get("/allUserInfo").with(jwt()
+        mockMvc.perform(get("/admin/customer-profiles").with(jwt()
                         .authorities(
                                 new SimpleGrantedAuthority("ROLE_ADMIN"),
                                 new SimpleGrantedAuthority("SCOPE_user:read")
@@ -118,7 +118,7 @@ class CustomerProfileBoundaryTest {
     void currentProfileDoesNotFallBackToMatchingEmail() throws Exception {
         saveCustomer();
 
-        mockMvc.perform(get("/user").with(jwt()
+        mockMvc.perform(get("/customer/profile/me").with(jwt()
                         .jwt(jwt -> jwt
                                 .subject("different-subject")
                                 .claim("preferred_username", USERNAME)

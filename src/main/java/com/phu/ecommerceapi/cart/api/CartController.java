@@ -94,27 +94,4 @@ public class CartController {
     ) {
         return ResponseEntity.ok(cartService.removeItem(cartId, productId, currentUser));
     }
-
-    @PostMapping("/addItem")
-    @PreAuthorize(SecurityExpressions.CUSTOMER_CART_WRITE)
-    public ResponseEntity<CartResponse> addItemLegacy(
-            @Valid @RequestBody LegacyCartItemRequest request,
-            @AuthenticatedUser CurrentUser currentUser
-    ) {
-        return ResponseEntity.ok(cartService.addItem(
-                request.cartId(),
-                request.productId(),
-                request.quantity(),
-                currentUser
-        ));
-    }
-
-    @PostMapping("/removeItem")
-    @PreAuthorize(SecurityExpressions.CUSTOMER_CART_WRITE)
-    public ResponseEntity<CartResponse> removeItemLegacy(
-            @Valid @RequestBody LegacyCartItemRequest request,
-            @AuthenticatedUser CurrentUser currentUser
-    ) {
-        return ResponseEntity.ok(cartService.removeItem(request.cartId(), request.productId(), currentUser));
-    }
 }

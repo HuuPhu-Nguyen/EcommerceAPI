@@ -338,9 +338,8 @@ Important environment variables:
 
 - `ECOMMERCE_DB_URL`, `ECOMMERCE_DB_USERNAME`, `ECOMMERCE_DB_PASSWORD`
 - `OAUTH2_ISSUER_URI`, `OAUTH2_JWK_SET_URI`
-- `PAYMENT_PROVIDER`, defaulting to `fake`
+- `PAYMENT_PROVIDER`, currently supported value: `fake`
 - `FAKE_PROVIDER_WEBHOOK_SECRET`
-- `STRIPE_SECRET_KEY`, only needed if a Stripe adapter is enabled later
 
 No real card data, JWTs, private keys, or production secrets should be committed.
 

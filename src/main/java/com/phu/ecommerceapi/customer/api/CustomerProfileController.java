@@ -20,13 +20,13 @@ public class CustomerProfileController {
         this.customerProfileService = customerProfileService;
     }
 
-    @GetMapping({"/customer/profile/me", "/user"})
+    @GetMapping("/customer/profile/me")
     @PreAuthorize(SecurityExpressions.CUSTOMER_PROFILE_READ)
     public CustomerProfile getCurrentProfile(@AuthenticatedUser CurrentUser currentUser) {
         return customerProfileService.getCurrentProfile(currentUser);
     }
 
-    @GetMapping({"/admin/customer-profiles", "/allUserInfo"})
+    @GetMapping("/admin/customer-profiles")
     @PreAuthorize(SecurityExpressions.ADMIN_OR_AUDITOR_USER_READ)
     public List<CustomerProfile> getAllProfiles() {
         return customerProfileService.getAllProfiles();

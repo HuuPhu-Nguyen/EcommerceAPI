@@ -24,25 +24,25 @@ class AuthorizationPolicyTest {
 
     @Test
     void sensitiveUserReadRequiresAdminOrAuditorRoleAndUserReadScope() throws Exception {
-        mockMvc.perform(get("/allUserInfo").with(jwt()
+        mockMvc.perform(get("/admin/customer-profiles").with(jwt()
                         .authorities(
                                 new SimpleGrantedAuthority("ROLE_CUSTOMER"),
                                 new SimpleGrantedAuthority("SCOPE_user:read")
                         )))
                 .andExpect(status().isForbidden());
 
-        mockMvc.perform(get("/allUserInfo").with(jwt()
+        mockMvc.perform(get("/admin/customer-profiles").with(jwt()
                         .authorities(new SimpleGrantedAuthority("ROLE_ADMIN"))))
                 .andExpect(status().isForbidden());
 
-        mockMvc.perform(get("/allUserInfo").with(jwt()
+        mockMvc.perform(get("/admin/customer-profiles").with(jwt()
                         .authorities(
                                 new SimpleGrantedAuthority("ROLE_ADMIN"),
                                 new SimpleGrantedAuthority("SCOPE_user:read")
                         )))
                 .andExpect(status().isOk());
 
-        mockMvc.perform(get("/allUserInfo").with(jwt()
+        mockMvc.perform(get("/admin/customer-profiles").with(jwt()
                         .authorities(
                                 new SimpleGrantedAuthority("ROLE_AUDITOR"),
                                 new SimpleGrantedAuthority("SCOPE_user:read")

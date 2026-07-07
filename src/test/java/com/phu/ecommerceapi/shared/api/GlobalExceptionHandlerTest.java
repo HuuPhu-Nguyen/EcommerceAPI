@@ -33,7 +33,7 @@ class GlobalExceptionHandlerTest {
 
     @Test
     void outOfStockUsesConflictStatusWithSpecificErrorCode() {
-        MockHttpServletRequest request = requestWithId("/cart/addItem", "req-456");
+        MockHttpServletRequest request = requestWithId("/cart/1/items", "req-456");
 
         ResponseEntity<ProblemDetail> response = handler.handleApiException(
                 new OutOfStockException("Not enough stock"),

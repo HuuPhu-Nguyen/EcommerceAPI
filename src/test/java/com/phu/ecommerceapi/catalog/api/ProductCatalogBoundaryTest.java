@@ -51,7 +51,7 @@ class ProductCatalogBoundaryTest {
         productRepo.save(product("Active Keyboard", true));
         productRepo.save(product("Inactive Monitor", false));
 
-        mockMvc.perform(get("/products/getAll")
+        mockMvc.perform(get("/products")
                         .param("page", "0")
                         .param("size", "10")
                         .with(jwt()))
@@ -104,8 +104,7 @@ class ProductCatalogBoundaryTest {
     void inactiveProductDetailIsHidden() throws Exception {
         ProductModel inactiveProduct = productRepo.save(product("Inactive Product", false));
 
-        mockMvc.perform(get("/products/getById")
-                        .param("id", Long.toString(inactiveProduct.getProductId()))
+        mockMvc.perform(get("/products/{id}", inactiveProduct.getProductId())
                         .with(jwt()))
                 .andExpect(status().isNotFound());
     }
