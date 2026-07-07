@@ -59,7 +59,7 @@ class AuditEventReadApiTest {
                         .header("X-Forwarded-For", "203.0.113.10, 10.0.0.5")
                         .header("User-Agent", "AuditTest/1.0")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(productJson("Audited Product", 19.99, 5, true))
+                        .content(productJson("Audited Product", "19.99", 5, true))
                         .with(adminJwt("product:write")))
                 .andExpect(status().isOk());
 
@@ -143,11 +143,11 @@ class AuditEventReadApiTest {
                 );
     }
 
-    private String productJson(String name, double price, int stock, boolean active) {
+    private String productJson(String name, String price, int stock, boolean active) {
         return """
                 {
                   "name": "%s",
-                  "price": %.2f,
+                  "price": %s,
                   "stock": %d,
                   "active": %s
                 }

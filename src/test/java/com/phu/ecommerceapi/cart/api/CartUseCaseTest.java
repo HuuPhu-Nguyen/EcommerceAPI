@@ -86,10 +86,12 @@ class CartUseCaseTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.cartId").value(cartId))
                 .andExpect(jsonPath("$.total").value(20.00))
+                .andExpect(jsonPath("$.currency").value("USD"))
                 .andExpect(jsonPath("$.owner").doesNotExist())
                 .andExpect(jsonPath("$.items[0].productId").value(product.getProductId()))
                 .andExpect(jsonPath("$.items[0].productName").value("Mechanical Keyboard"))
                 .andExpect(jsonPath("$.items[0].quantity").value(2))
+                .andExpect(jsonPath("$.items[0].currency").value("USD"))
                 .andExpect(jsonPath("$.items[0].cart").doesNotExist())
                 .andExpect(jsonPath("$.items[0].productModel").doesNotExist());
 
@@ -178,7 +180,7 @@ class CartUseCaseTest {
     private ProductModel product(String name, int availableQuantity) {
         ProductModel product = productRepo.save(ProductModel.builder()
                 .name(name)
-                .price(10.00)
+                .price(new java.math.BigDecimal("10.00"))
                 .stock(availableQuantity)
                 .active(true)
                 .build());

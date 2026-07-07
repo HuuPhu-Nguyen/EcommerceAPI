@@ -1,0 +1,17 @@
+ALTER TABLE product_model
+    ADD COLUMN currency VARCHAR(3) NOT NULL DEFAULT 'USD';
+
+ALTER TABLE product_model
+    ALTER COLUMN price TYPE NUMERIC(19, 2) USING ROUND(price::numeric, 2),
+    ALTER COLUMN price SET NOT NULL;
+
+ALTER TABLE product_model
+    ALTER COLUMN stock TYPE INTEGER USING GREATEST(FLOOR(stock)::INTEGER, 0),
+    ALTER COLUMN stock SET NOT NULL;
+
+ALTER TABLE cart_model
+    ADD COLUMN currency VARCHAR(3) NOT NULL DEFAULT 'USD';
+
+ALTER TABLE cart_model
+    ALTER COLUMN total TYPE NUMERIC(19, 2) USING ROUND(total::numeric, 2),
+    ALTER COLUMN total SET NOT NULL;

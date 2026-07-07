@@ -1,6 +1,8 @@
 package com.phu.ecommerceapi.cart.infrastructure;
 
 import com.phu.ecommerceapi.Product.ProductModel;
+import com.phu.ecommerceapi.shared.domain.Money;
+import com.phu.ecommerceapi.shared.domain.Quantity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -70,7 +72,7 @@ public class CartItemModel {
         return productModel.getProductId();
     }
 
-    public double lineTotal() {
-        return productModel.getPrice() * quantity;
+    public Money lineTotalMoney() {
+        return productModel.priceMoney().multiply(Quantity.of(quantity));
     }
 }

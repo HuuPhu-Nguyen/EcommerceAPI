@@ -41,6 +41,7 @@ public class JpaProductCatalogRepository implements ProductCatalogRepository {
                 product.getProductId(),
                 product.getName(),
                 product.getPrice(),
+                product.getCurrency(),
                 product.getStock()
         );
     }

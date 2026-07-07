@@ -21,8 +21,6 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.Comparator;
 import java.util.List;
 
@@ -70,7 +68,7 @@ public class CheckoutService {
             for (CartItemModel item : cart.getItems()) {
                 inventoryReservationService.reserve(item.getProductId(), item.getQuantity());
                 ProductModel product = item.getProductModel();
-                order.addItem(product, item.getQuantity(), money(product.getPrice()));
+                order.addItem(product, item.getQuantity(), product.priceMoney());
             }
 
             CustomerOrderRecord savedOrder = orderRepository.save(order);
@@ -126,6 +124,7 @@ public class CheckoutService {
                         item.getProductName(),
                         item.getQuantity(),
                         item.getUnitPriceAmount(),
+                        order.getCurrency(),
                         item.getLineTotalAmount()
                 ))
                 .toList();
@@ -140,9 +139,5 @@ public class CheckoutService {
                 order.getCreatedAt(),
                 items
         );
-    }
-
-    private BigDecimal money(double value) {
-        return BigDecimal.valueOf(value).setScale(2, RoundingMode.HALF_UP);
     }
 }

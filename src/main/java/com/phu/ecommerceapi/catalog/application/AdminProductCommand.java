@@ -1,8 +1,10 @@
 package com.phu.ecommerceapi.catalog.application;
 
+import com.phu.ecommerceapi.shared.domain.Money;
+
 public record AdminProductCommand(
         String name,
-        double price,
+        Money price,
         int stock,
         Boolean active
 ) {

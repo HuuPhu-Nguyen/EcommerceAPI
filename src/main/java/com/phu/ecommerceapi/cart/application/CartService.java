@@ -12,13 +12,12 @@ import com.phu.ecommerceapi.inventory.application.InventoryReservationService;
 import com.phu.ecommerceapi.inventory.application.InventorySnapshot;
 import com.phu.ecommerceapi.shared.api.NotFoundException;
 import com.phu.ecommerceapi.shared.api.OutOfStockException;
+import com.phu.ecommerceapi.shared.domain.Money;
 import com.phu.ecommerceapi.shared.domain.Quantity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.Comparator;
 import java.util.List;
 
@@ -149,24 +148,22 @@ public class CartService {
                 .map(this::toItemResponse)
                 .toList();
 
-        return new CartResponse(cart.getId(), money(cart.getTotal()), items);
+        Money total = cart.totalMoney();
+        return new CartResponse(cart.getId(), total.amount(), total.currency().getCurrencyCode(), items);
     }
 
     private CartItemResponse toItemResponse(CartItemModel item) {
         ProductModel product = item.getProductModel();
-        BigDecimal unitPrice = money(product.getPrice());
-        BigDecimal lineTotal = unitPrice.multiply(BigDecimal.valueOf(item.getQuantity()));
+        Money unitPrice = product.priceMoney();
+        Money lineTotal = item.lineTotalMoney();
 
         return new CartItemResponse(
                 product.getProductId(),
                 product.getName(),
                 item.getQuantity(),
-                unitPrice,
-                lineTotal
+                unitPrice.amount(),
+                unitPrice.currency().getCurrencyCode(),
+                lineTotal.amount()
         );
-    }
-
-    private BigDecimal money(double value) {
-        return BigDecimal.valueOf(value).setScale(2, RoundingMode.HALF_UP);
     }
 }

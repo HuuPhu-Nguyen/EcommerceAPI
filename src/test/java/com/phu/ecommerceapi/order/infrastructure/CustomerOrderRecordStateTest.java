@@ -1,9 +1,13 @@
 package com.phu.ecommerceapi.order.infrastructure;
 
+import com.phu.ecommerceapi.Product.ProductModel;
 import com.phu.ecommerceapi.User.UserModel;
 import com.phu.ecommerceapi.order.domain.InvalidOrderStateTransitionException;
 import com.phu.ecommerceapi.order.domain.OrderStatus;
+import com.phu.ecommerceapi.shared.domain.Money;
 import org.junit.jupiter.api.Test;
+
+import java.math.BigDecimal;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -28,6 +32,21 @@ class CustomerOrderRecordStateTest {
         assertThatThrownBy(order::markPaid)
                 .isInstanceOf(InvalidOrderStateTransitionException.class)
                 .hasMessage("Cannot transition order from CANCELLED to PAID");
+    }
+
+    @Test
+    void orderRecordRejectsItemMoneyInDifferentCurrency() {
+        CustomerOrderRecord order = pendingOrder();
+        ProductModel product = ProductModel.builder()
+                .name("Foreign currency item")
+                .price(new BigDecimal("10.00"))
+                .currency("EUR")
+                .stock(1)
+                .build();
+
+        assertThatThrownBy(() -> order.addItem(product, 1, Money.of("10.00", "EUR")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Order item currency mismatch");
     }
 
     private CustomerOrderRecord pendingOrder() {

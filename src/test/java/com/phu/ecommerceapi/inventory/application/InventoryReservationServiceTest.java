@@ -171,7 +171,7 @@ class InventoryReservationServiceTest {
     private long productWithInventory(int availableQuantity) {
         ProductModel product = productRepo.save(ProductModel.builder()
                 .name("Inventory Product")
-                .price(10)
+                .price(new java.math.BigDecimal("10.00"))
                 .stock(availableQuantity)
                 .active(true)
                 .build());

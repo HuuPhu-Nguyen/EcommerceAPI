@@ -33,7 +33,8 @@ public class AdminProductService {
     public ProductAdminResponse create(AdminProductCommand command, CurrentUser actor) {
         ProductModel product = ProductModel.builder()
                 .name(command.name())
-                .price(command.price())
+                .price(command.price().amount())
+                .currency(command.price().currency().getCurrencyCode())
                 .stock(command.stock())
                 .active(command.activeOrDefault(true))
                 .build();
@@ -86,7 +87,8 @@ public class AdminProductService {
                 product.getProductId(),
                 product.getName(),
                 product.getPrice(),
-                (int) product.getStock(),
+                product.getCurrency(),
+                product.getStock(),
                 product.isActive()
         );
     }

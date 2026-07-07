@@ -397,7 +397,7 @@ class ProviderWebhookHandlingTest {
     private ProductModel product(String name, int availableQuantity) {
         ProductModel product = productRepo.save(ProductModel.builder()
                 .name(name)
-                .price(10.00)
+                .price(new java.math.BigDecimal("10.00"))
                 .stock(availableQuantity)
                 .active(true)
                 .build());

@@ -100,7 +100,8 @@ class CheckoutUseCaseTest {
                 .andExpect(jsonPath("$.items.length()").value(1))
                 .andExpect(jsonPath("$.items[0].productId").value(product.getProductId()))
                 .andExpect(jsonPath("$.items[0].productName").value("Mechanical Keyboard"))
-                .andExpect(jsonPath("$.items[0].quantity").value(2));
+                .andExpect(jsonPath("$.items[0].quantity").value(2))
+                .andExpect(jsonPath("$.items[0].currency").value("USD"));
 
         InventoryRecord inventory = inventoryRepository.findById(product.getProductId()).orElseThrow();
         assertThat(inventory.getAvailableQuantity()).isEqualTo(3);
@@ -221,7 +222,7 @@ class CheckoutUseCaseTest {
     private ProductModel product(String name, int availableQuantity) {
         ProductModel product = productRepo.save(ProductModel.builder()
                 .name(name)
-                .price(10.00)
+                .price(new java.math.BigDecimal("10.00"))
                 .stock(availableQuantity)
                 .active(true)
                 .build());

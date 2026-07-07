@@ -1,6 +1,8 @@
 package com.phu.ecommerceapi.order.infrastructure;
 
 import com.phu.ecommerceapi.Product.ProductModel;
+import com.phu.ecommerceapi.shared.domain.Money;
+import com.phu.ecommerceapi.shared.domain.Quantity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -45,7 +47,7 @@ public class OrderItemRecord {
     protected OrderItemRecord() {
     }
 
-    private OrderItemRecord(CustomerOrderRecord order, ProductModel product, int quantity, BigDecimal unitPrice) {
+    private OrderItemRecord(CustomerOrderRecord order, ProductModel product, int quantity, Money unitPrice) {
         if (quantity <= 0) {
             throw new IllegalArgumentException("Order item quantity must be positive");
         }
@@ -53,15 +55,16 @@ public class OrderItemRecord {
         this.product = Objects.requireNonNull(product, "product is required");
         this.productName = Objects.requireNonNull(product.getName(), "product name is required");
         this.quantity = quantity;
-        this.unitPriceAmount = Objects.requireNonNull(unitPrice, "unit price is required");
-        this.lineTotalAmount = unitPrice.multiply(BigDecimal.valueOf(quantity));
+        Money requiredUnitPrice = Objects.requireNonNull(unitPrice, "unit price is required");
+        this.unitPriceAmount = requiredUnitPrice.amount();
+        this.lineTotalAmount = requiredUnitPrice.multiply(Quantity.of(quantity)).amount();
     }
 
     public static OrderItemRecord create(
             CustomerOrderRecord order,
             ProductModel product,
             int quantity,
-            BigDecimal unitPrice
+            Money unitPrice
     ) {
         return new OrderItemRecord(order, product, quantity, unitPrice);
     }

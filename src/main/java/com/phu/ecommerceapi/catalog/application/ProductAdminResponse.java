@@ -1,9 +1,12 @@
 package com.phu.ecommerceapi.catalog.application;
 
+import java.math.BigDecimal;
+
 public record ProductAdminResponse(
         long id,
         String name,
-        double price,
+        BigDecimal price,
+        String currency,
         int stock,
         boolean active
 ) {

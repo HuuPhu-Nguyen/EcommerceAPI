@@ -19,6 +19,13 @@ class MoneyTest {
     }
 
     @Test
+    void createsMoneyFromBoundaryDecimalAndCurrencyCode() {
+        Money money = Money.of(new BigDecimal("19.99"), "USD");
+
+        assertThat(money).isEqualTo(Money.of("19.99", "USD"));
+    }
+
+    @Test
     void rejectsAmountWithTooManyFractionDigits() {
         assertThatThrownBy(() -> Money.of("10.001", "USD"))
                 .isInstanceOf(ArithmeticException.class);

@@ -58,6 +58,7 @@ class ProductCatalogBoundaryTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content.length()").value(1))
                 .andExpect(jsonPath("$.content[0].name").value("Active Keyboard"))
+                .andExpect(jsonPath("$.content[0].currency").value("USD"))
                 .andExpect(jsonPath("$.content[0].active").doesNotExist())
                 .andExpect(jsonPath("$.content[0].cartItems").doesNotExist())
                 .andExpect(jsonPath("$.page").value(0))
@@ -112,7 +113,7 @@ class ProductCatalogBoundaryTest {
     private ProductModel product(String name, boolean active) {
         return ProductModel.builder()
                 .name(name)
-                .price(10.00)
+                .price(new java.math.BigDecimal("10.00"))
                 .stock(5)
                 .active(active)
                 .build();

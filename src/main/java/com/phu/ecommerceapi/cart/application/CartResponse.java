@@ -6,6 +6,7 @@ import java.util.List;
 public record CartResponse(
         long cartId,
         BigDecimal total,
+        String currency,
         List<CartItemResponse> items
 ) {
 }

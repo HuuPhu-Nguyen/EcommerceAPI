@@ -59,7 +59,7 @@ class AdminProductManagementTest {
     void customerCannotCreateProduct() throws Exception {
         mockMvc.perform(post("/admin/products")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(productJson("Denied Product", 12.00, 5, true))
+                        .content(productJson("Denied Product", "12.00", 5, true))
                         .with(jwt().authorities(
                                 new SimpleGrantedAuthority("ROLE_CUSTOMER"),
                                 new SimpleGrantedAuthority("SCOPE_product:write")
@@ -74,10 +74,11 @@ class AdminProductManagementTest {
     void adminCanCreateProductAndAuditEventIsRecorded() throws Exception {
         mockMvc.perform(post("/admin/products")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(productJson("Admin Product", 19.99, 8, true))
+                        .content(productJson("Admin Product", "19.99", 8, true))
                         .with(adminJwt()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.name").value("Admin Product"))
+                .andExpect(jsonPath("$.currency").value("USD"))
                 .andExpect(jsonPath("$.active").value(true));
 
         assertThat(productRepo.findAll()).hasSize(1);
@@ -94,14 +95,14 @@ class AdminProductManagementTest {
     void adminCanUpdateAndDeactivateProductWithAuditEvents() throws Exception {
         ProductModel product = productRepo.save(ProductModel.builder()
                 .name("Original Product")
-                .price(10.00)
+                .price(new java.math.BigDecimal("10.00"))
                 .stock(3)
                 .active(true)
                 .build());
 
         mockMvc.perform(put("/admin/products/{productId}", product.getProductId())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(productJson("Updated Product", 25.00, 11, true))
+                        .content(productJson("Updated Product", "25.00", 11, true))
                         .with(adminJwt()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.name").value("Updated Product"))
@@ -130,11 +131,11 @@ class AdminProductManagementTest {
                 );
     }
 
-    private String productJson(String name, double price, int stock, boolean active) {
+    private String productJson(String name, String price, int stock, boolean active) {
         return """
                 {
                   "name": "%s",
-                  "price": %.2f,
+                  "price": %s,
                   "stock": %d,
                   "active": %s
                 }

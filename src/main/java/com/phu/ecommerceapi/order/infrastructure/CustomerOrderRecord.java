@@ -4,6 +4,8 @@ import com.phu.ecommerceapi.Product.ProductModel;
 import com.phu.ecommerceapi.User.UserModel;
 import com.phu.ecommerceapi.order.domain.OrderStateMachine;
 import com.phu.ecommerceapi.order.domain.OrderStatus;
+import com.phu.ecommerceapi.shared.domain.Money;
+import com.phu.ecommerceapi.shared.domain.Quantity;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -20,7 +22,9 @@ import jakarta.persistence.Version;
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.Currency;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -68,7 +72,7 @@ public class CustomerOrderRecord {
         this.cartId = cartId;
         this.status = OrderStatus.PENDING_PAYMENT;
         this.totalAmount = BigDecimal.ZERO.setScale(2);
-        this.currency = Objects.requireNonNull(currency, "order currency is required");
+        this.currency = normalizeCurrency(currency);
         this.createdAt = OffsetDateTime.now();
     }
 
@@ -76,10 +80,17 @@ public class CustomerOrderRecord {
         return new CustomerOrderRecord(customer, cartId, currency);
     }
 
-    public void addItem(ProductModel product, int quantity, BigDecimal unitPrice) {
+    public void addItem(ProductModel product, int quantity, Money unitPrice) {
+        Money requiredUnitPrice = Objects.requireNonNull(unitPrice, "unit price is required");
+        if (!requiredUnitPrice.currency().getCurrencyCode().equals(currency)) {
+            throw new IllegalArgumentException("Order item currency mismatch");
+        }
+        Money lineTotal = requiredUnitPrice.multiply(Quantity.of(quantity));
         OrderItemRecord item = OrderItemRecord.create(this, product, quantity, unitPrice);
         items.add(item);
-        totalAmount = totalAmount.add(item.getLineTotalAmount());
+        totalAmount = Money.of(totalAmount, currency)
+                .add(lineTotal)
+                .amount();
     }
 
     public void markPaid() {
@@ -136,5 +147,10 @@ public class CustomerOrderRecord {
 
     public List<OrderItemRecord> getItems() {
         return items;
+    }
+
+    private static String normalizeCurrency(String currency) {
+        Objects.requireNonNull(currency, "order currency is required");
+        return Currency.getInstance(currency.trim().toUpperCase(Locale.ROOT)).getCurrencyCode();
     }
 }
