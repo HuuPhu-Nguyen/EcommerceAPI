@@ -67,6 +67,8 @@ The code is organized as a pragmatic modular monolith under `com.phu.ecommerceap
 
 Authentication uses standard Spring Security OAuth2 Resource Server JWT validation. Local development uses Keycloak from Docker Compose with a preloaded `ecommerce` realm.
 
+The detailed threat model is in [docs/threat-model.md](docs/threat-model.md).
+
 Demo users:
 
 | User | Password | Purpose |
@@ -344,6 +346,6 @@ No real card data, JWTs, private keys, or production secrets should be committed
 
 ## Current Portfolio Status
 
-The current public story is the banking-grade MVP slice: secure customer checkout, idempotent payments/refunds, immutable ledger entries, tamper-evident audit, reconciliation, operational observability, OpenAPI docs, and CI proof.
+The current public story is the banking-grade MVP slice: secure customer checkout, idempotent payments/refunds, immutable ledger entries, tamper-evident audit, reconciliation, threat model, operational observability, OpenAPI docs, and CI proof.
 
-Remaining polish work is documentation-focused: threat model, final architecture diagram polish, and final portfolio review.
+Remaining polish work is documentation-focused: final architecture diagram polish and final portfolio review.
