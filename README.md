@@ -22,6 +22,22 @@ Local dependency scan:
 
 The first dependency scan may take a while because OWASP Dependency-Check bootstraps its local vulnerability database.
 
+## API Documentation
+
+When the API is running, interactive OpenAPI documentation is available at:
+
+```text
+http://localhost:8080/swagger-ui.html
+```
+
+The raw OpenAPI JSON is available at:
+
+```text
+http://localhost:8080/v3/api-docs
+```
+
+The documented banking-critical endpoints include checkout, idempotent payment creation, refunds, ledger reads, audit events, audit hash verification, reconciliation, and advisory stock event streaming.
+
 ## Stock Update Stream
 
 Product viewers can subscribe to advisory stock updates with Server-Sent Events:

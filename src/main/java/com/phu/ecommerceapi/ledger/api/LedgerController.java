@@ -1,48 +1,56 @@
-package com.phu.ecommerceapi.reconciliation.api;
+package com.phu.ecommerceapi.ledger.api;
 
 import com.phu.ecommerceapi.identity.application.SecurityExpressions;
-import com.phu.ecommerceapi.reconciliation.application.ReconciliationReport;
-import com.phu.ecommerceapi.reconciliation.application.ReconciliationService;
+import com.phu.ecommerceapi.ledger.application.LedgerQueryService;
+import com.phu.ecommerceapi.ledger.application.LedgerTransactionView;
 import com.phu.ecommerceapi.shared.api.OpenApiExamples;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import org.springframework.http.MediaType;
 import org.springframework.http.ProblemDetail;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
+
+@Validated
 @RestController
-@RequestMapping("/reconciliation")
-@Tag(name = "Reconciliation", description = "Money movement consistency checks across payments, refunds, and ledger records.")
-public class ReconciliationController {
+@RequestMapping("/ledger")
+@Tag(name = "Ledger", description = "Read-only immutable ledger views for admin and auditor review.")
+public class LedgerController {
 
-    private final ReconciliationService reconciliationService;
+    private final LedgerQueryService ledgerQueryService;
 
-    public ReconciliationController(ReconciliationService reconciliationService) {
-        this.reconciliationService = reconciliationService;
+    public LedgerController(LedgerQueryService ledgerQueryService) {
+        this.ledgerQueryService = ledgerQueryService;
     }
 
-    @GetMapping("/report")
-    @PreAuthorize(SecurityExpressions.ADMIN_OR_AUDITOR_RECONCILIATION_READ)
+    @GetMapping("/transactions")
+    @PreAuthorize(SecurityExpressions.ADMIN_OR_AUDITOR_LEDGER_READ)
     @Operation(
-            summary = "Run reconciliation report",
-            description = "Checks that payments/refunds have matching balanced ledger transactions and flags orphaned money records."
+            summary = "List recent ledger transactions",
+            description = "Returns immutable ledger transactions with debit/credit entries for audit review."
     )
     @ApiResponses({
             @ApiResponse(
                     responseCode = "200",
-                    description = "Current reconciliation report.",
+                    description = "Recent ledger transactions.",
                     content = @Content(
                             mediaType = MediaType.APPLICATION_JSON_VALUE,
-                            schema = @Schema(implementation = ReconciliationReport.class),
-                            examples = @ExampleObject(value = OpenApiExamples.RECONCILIATION_REPORT_RESPONSE)
+                            array = @ArraySchema(schema = @Schema(implementation = LedgerTransactionView.class)),
+                            examples = @ExampleObject(value = OpenApiExamples.LEDGER_TRANSACTIONS_RESPONSE)
                     )
             ),
             @ApiResponse(
@@ -56,7 +64,7 @@ public class ReconciliationController {
             ),
             @ApiResponse(
                     responseCode = "403",
-                    description = "Admin or auditor role with audit read scope is required.",
+                    description = "Admin or auditor role with ledger read scope is required.",
                     content = @Content(
                             mediaType = MediaType.APPLICATION_JSON_VALUE,
                             schema = @Schema(implementation = ProblemDetail.class),
@@ -64,7 +72,9 @@ public class ReconciliationController {
                     )
             )
     })
-    public ReconciliationReport report() {
-        return reconciliationService.runReport();
+    public List<LedgerTransactionView> recentTransactions(
+            @RequestParam(defaultValue = "20") @Min(1) @Max(100) int limit
+    ) {
+        return ledgerQueryService.recentTransactions(limit);
     }
 }

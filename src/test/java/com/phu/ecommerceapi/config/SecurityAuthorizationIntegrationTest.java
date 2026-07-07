@@ -70,6 +70,9 @@ class SecurityAuthorizationIntegrationTest {
 
         mockMvc.perform(get("/audit/events"))
                 .andExpect(status().isUnauthorized());
+
+        mockMvc.perform(get("/ledger/transactions"))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -144,6 +147,21 @@ class SecurityAuthorizationIntegrationTest {
 
         mockMvc.perform(get("/reconciliation/report")
                         .with(jwtWith("admin-subject", role("ADMIN"), scope("audit:read"))))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void ledgerReadRequiresAdminOrAuditorRoleAndLedgerReadScope() throws Exception {
+        mockMvc.perform(get("/ledger/transactions")
+                        .with(jwtWith("customer-subject", role("CUSTOMER"), scope("ledger:read"))))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(get("/ledger/transactions")
+                        .with(jwtWith("auditor-subject", role("AUDITOR"))))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(get("/ledger/transactions")
+                        .with(jwtWith("auditor-subject", role("AUDITOR"), scope("ledger:read"))))
                 .andExpect(status().isOk());
     }
 
