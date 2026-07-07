@@ -21,26 +21,23 @@ public class JpaCustomerProfileLookup implements CustomerProfileLookup {
 
     @Override
     public Optional<CustomerProfile> findCurrentUserProfile(CurrentUser currentUser) {
-        UserModel user = userRepo.findByUsername(currentUser.username());
-        if (user == null && currentUser.email() != null) {
-            user = userRepo.findByEmail(currentUser.email());
-        }
+        UserModel user = userRepo.findByIdentitySubject(currentUser.subject());
         return Optional.ofNullable(user)
-                .map(profile -> toCustomerProfile(profile, currentUser.subject()));
+                .map(this::toCustomerProfile);
     }
 
     @Override
     public List<CustomerProfile> findAllProfiles() {
         return userRepo.findAll()
                 .stream()
-                .map(user -> toCustomerProfile(user, null))
+                .map(this::toCustomerProfile)
                 .toList();
     }
 
-    private CustomerProfile toCustomerProfile(UserModel user, String identitySubject) {
+    private CustomerProfile toCustomerProfile(UserModel user) {
         return CustomerProfile.fromUserRecord(
                 user.getId(),
-                identitySubject,
+                user.getIdentitySubject(),
                 user.getUsername(),
                 user.getFirstName(),
                 user.getLastName(),

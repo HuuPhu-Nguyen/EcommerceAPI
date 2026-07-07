@@ -1,10 +1,8 @@
 package com.phu.ecommerceapi.payment.application;
 
-import com.phu.ecommerceapi.payment.api.ProviderWebhookResponse;
-
 public record FakeProviderWebhookResult(
         int httpStatus,
-        ProviderWebhookResponse response
+        ProviderWebhookHandlingResponse response
 ) {
 
     public FakeProviderWebhookResult {

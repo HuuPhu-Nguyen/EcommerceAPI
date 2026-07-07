@@ -29,6 +29,11 @@ public record CurrentUser(
         return scopes.contains(normalizeValue(scope));
     }
 
+    public boolean hasSubject(String identitySubject) {
+        String normalizedSubject = blankToNull(identitySubject);
+        return normalizedSubject != null && subject.equals(normalizedSubject);
+    }
+
     private static String requireText(String value, String fieldName) {
         String normalized = blankToNull(value);
         if (normalized == null) {

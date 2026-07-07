@@ -14,6 +14,7 @@ import java.util.List;
 public class UserModel {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private long id;
+    private String identitySubject;
     private String username;
     private String password;
     private String firstName;

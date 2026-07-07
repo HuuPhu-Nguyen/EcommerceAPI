@@ -267,6 +267,7 @@ class CreatePaymentUseCaseTest {
 
     private UserModel user(String username) {
         return userRepo.save(UserModel.builder()
+                .identitySubject(username)
                 .username(username)
                 .email(username)
                 .firstName("Payment")

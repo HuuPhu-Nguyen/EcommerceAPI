@@ -26,6 +26,8 @@ class CurrentUserTest {
         assertThat(currentUser.hasRole("ADMIN")).isTrue();
         assertThat(currentUser.hasScope("catalog:read")).isTrue();
         assertThat(currentUser.hasScope("checkout:write")).isTrue();
+        assertThat(currentUser.hasSubject("subject-1")).isTrue();
+        assertThat(currentUser.hasSubject("customer@example.com")).isFalse();
     }
 
     @Test

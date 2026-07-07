@@ -5,8 +5,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.phu.ecommerceapi.customer.application.CustomerProfile;
 import com.phu.ecommerceapi.customer.application.CustomerProfileLookup;
 import com.phu.ecommerceapi.identity.application.CurrentUser;
-import com.phu.ecommerceapi.payment.api.CreatePaymentRequest;
-import com.phu.ecommerceapi.payment.api.PaymentResponse;
 import com.phu.ecommerceapi.shared.api.ConflictException;
 import com.phu.ecommerceapi.shared.api.NotFoundException;
 import org.springframework.http.HttpStatus;
@@ -45,16 +43,15 @@ public class CreatePaymentUseCase {
         this.paymentProvider = paymentProvider;
     }
 
-    public CreatePaymentResult create(CurrentUser currentUser, String idempotencyKey, String requestBody) {
-        CreatePaymentRequest request = parseRequest(requestBody);
-        long customerId = resolveCustomerId(currentUser);
+    public CreatePaymentResult create(CreatePaymentCommand command) {
+        long customerId = resolveCustomerId(command.currentUser());
 
         PaymentIdempotencyCommand idempotencyCommand = new PaymentIdempotencyCommand(
                 customerId,
                 ENDPOINT,
                 OPERATION,
-                idempotencyKey,
-                requestBody
+                command.idempotencyKey(),
+                command.requestBody()
         );
 
         Optional<PaymentIdempotencyDecision> existingDecision = idempotencyService.findExisting(idempotencyCommand);
@@ -62,7 +59,7 @@ public class CreatePaymentUseCase {
             return replayOrReject(existingDecision.get());
         }
 
-        paymentAttemptService.validatePayable(customerId, request.orderId());
+        paymentAttemptService.validatePayable(customerId, command.orderId());
         PaymentIdempotencyDecision idempotencyDecision = idempotencyService.start(idempotencyCommand);
         if (idempotencyDecision.type() == PaymentIdempotencyDecisionType.REPLAY) {
             return replayOrReject(idempotencyDecision);
@@ -73,23 +70,27 @@ public class CreatePaymentUseCase {
 
         PaymentAttemptSnapshot attempt = paymentAttemptService.startAttempt(
                 customerId,
-                request.orderId(),
-                idempotencyKey
+                command.orderId(),
+                command.idempotencyKey()
         );
 
-        PaymentResponse response;
+        PaymentAttemptResponse response;
         int httpStatus = HttpStatus.OK.value();
         try {
             PaymentProviderResult providerResult = paymentProvider.createPayment(new PaymentProviderRequest(
                     attempt.orderId(),
                     attempt.amount(),
                     attempt.currency(),
-                    providerIdempotencyKey(customerId, attempt, idempotencyKey),
-                    providerMetadata(request)
+                    providerIdempotencyKey(customerId, attempt, command.idempotencyKey()),
+                    providerMetadata(command)
             ));
-            response = paymentAttemptService.completeAttempt(attempt.paymentId(), providerResult, currentUser);
+            response = paymentAttemptService.completeAttempt(attempt.paymentId(), providerResult, command.currentUser());
         } catch (PaymentProviderTimeoutException exception) {
-            response = paymentAttemptService.markProviderTimeout(attempt.paymentId(), exception.getMessage(), currentUser);
+            response = paymentAttemptService.markProviderTimeout(
+                    attempt.paymentId(),
+                    exception.getMessage(),
+                    command.currentUser()
+            );
             httpStatus = HttpStatus.SERVICE_UNAVAILABLE.value();
         }
 
@@ -108,17 +109,6 @@ public class CreatePaymentUseCase {
         throw new IllegalStateException("Unexpected idempotency decision: " + decision.type());
     }
 
-    private CreatePaymentRequest parseRequest(String requestBody) {
-        if (requestBody == null || requestBody.isBlank()) {
-            throw new IllegalArgumentException("payment request body is required");
-        }
-        try {
-            return objectMapper.readValue(requestBody, CreatePaymentRequest.class);
-        } catch (JsonProcessingException exception) {
-            throw new IllegalArgumentException("payment request body is invalid", exception);
-        }
-    }
-
     private long resolveCustomerId(CurrentUser currentUser) {
         if (currentUser == null) {
             throw new AccessDeniedException("Authenticated customer is required");
@@ -133,15 +123,15 @@ public class CreatePaymentUseCase {
         return "payment:%d:%s:%s".formatted(customerId, attempt.orderId(), idempotencyKey.trim());
     }
 
-    private Map<String, String> providerMetadata(CreatePaymentRequest request) {
+    private Map<String, String> providerMetadata(CreatePaymentCommand command) {
         Map<String, String> metadata = new HashMap<>();
-        metadata.put("paymentMethodToken", request.paymentMethodToken());
-        if (PROVIDER_TOKEN_DECLINED.equalsIgnoreCase(request.paymentMethodToken())) {
+        metadata.put("paymentMethodToken", command.paymentMethodToken());
+        if (PROVIDER_TOKEN_DECLINED.equalsIgnoreCase(command.paymentMethodToken())) {
             metadata.put(
                     PaymentProviderOutcomeMetadata.OUTCOME_METADATA_KEY,
                     PaymentProviderOutcomeMetadata.OUTCOME_FAILURE
             );
-        } else if (PROVIDER_TOKEN_TIMEOUT.equalsIgnoreCase(request.paymentMethodToken())) {
+        } else if (PROVIDER_TOKEN_TIMEOUT.equalsIgnoreCase(command.paymentMethodToken())) {
             metadata.put(
                     PaymentProviderOutcomeMetadata.OUTCOME_METADATA_KEY,
                     PaymentProviderOutcomeMetadata.OUTCOME_TIMEOUT
@@ -150,7 +140,7 @@ public class CreatePaymentUseCase {
         return metadata;
     }
 
-    private String serialize(PaymentResponse response) {
+    private String serialize(PaymentAttemptResponse response) {
         try {
             return objectMapper.writeValueAsString(response);
         } catch (JsonProcessingException exception) {

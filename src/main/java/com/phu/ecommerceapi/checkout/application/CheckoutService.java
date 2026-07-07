@@ -90,14 +90,7 @@ public class CheckoutService {
     }
 
     private boolean belongsToCurrentUser(UserModel owner, CurrentUser currentUser) {
-        return matches(owner.getUsername(), currentUser.username())
-                || matches(owner.getEmail(), currentUser.email());
-    }
-
-    private boolean matches(String ownerValue, String currentUserValue) {
-        return ownerValue != null
-                && currentUserValue != null
-                && ownerValue.equalsIgnoreCase(currentUserValue);
+        return currentUser.hasSubject(owner.getIdentitySubject());
     }
 
     private void recordAudit(CurrentUser actor, CustomerOrderRecord order) {

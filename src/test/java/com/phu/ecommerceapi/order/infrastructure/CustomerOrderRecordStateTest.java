@@ -51,6 +51,7 @@ class CustomerOrderRecordStateTest {
 
     private CustomerOrderRecord pendingOrder() {
         UserModel customer = UserModel.builder()
+                .identitySubject("state-customer-subject")
                 .username("state-customer@example.com")
                 .email("state-customer@example.com")
                 .build();

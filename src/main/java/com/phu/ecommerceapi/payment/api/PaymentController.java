@@ -1,8 +1,11 @@
 package com.phu.ecommerceapi.payment.api;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.phu.ecommerceapi.identity.api.AuthenticatedUser;
 import com.phu.ecommerceapi.identity.application.CurrentUser;
 import com.phu.ecommerceapi.identity.application.SecurityExpressions;
+import com.phu.ecommerceapi.payment.application.CreatePaymentCommand;
 import com.phu.ecommerceapi.payment.application.CreatePaymentResult;
 import com.phu.ecommerceapi.payment.application.CreatePaymentUseCase;
 import org.springframework.http.MediaType;
@@ -19,9 +22,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class PaymentController {
 
     private final CreatePaymentUseCase createPaymentUseCase;
+    private final ObjectMapper objectMapper;
 
-    public PaymentController(CreatePaymentUseCase createPaymentUseCase) {
+    public PaymentController(CreatePaymentUseCase createPaymentUseCase, ObjectMapper objectMapper) {
         this.createPaymentUseCase = createPaymentUseCase;
+        this.objectMapper = objectMapper;
     }
 
     @PostMapping
@@ -31,10 +36,28 @@ public class PaymentController {
             @RequestBody(required = false) String requestBody,
             @AuthenticatedUser CurrentUser currentUser
     ) {
-        CreatePaymentResult result = createPaymentUseCase.create(currentUser, idempotencyKey, requestBody);
+        CreatePaymentRequest request = parseRequest(requestBody);
+        CreatePaymentResult result = createPaymentUseCase.create(new CreatePaymentCommand(
+                currentUser,
+                idempotencyKey,
+                requestBody,
+                request.orderId(),
+                request.paymentMethodToken()
+        ));
         return ResponseEntity
                 .status(result.httpStatus())
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(result.responseBody());
+    }
+
+    private CreatePaymentRequest parseRequest(String requestBody) {
+        if (requestBody == null || requestBody.isBlank()) {
+            throw new IllegalArgumentException("payment request body is required");
+        }
+        try {
+            return objectMapper.readValue(requestBody, CreatePaymentRequest.class);
+        } catch (JsonProcessingException exception) {
+            throw new IllegalArgumentException("payment request body is invalid", exception);
+        }
     }
 }

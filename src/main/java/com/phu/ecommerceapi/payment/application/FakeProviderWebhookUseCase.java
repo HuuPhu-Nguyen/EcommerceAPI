@@ -1,12 +1,8 @@
 package com.phu.ecommerceapi.payment.application;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.phu.ecommerceapi.audit.application.AuditEventCommand;
 import com.phu.ecommerceapi.audit.application.AuditEventRecorder;
 import com.phu.ecommerceapi.config.AppProperties;
-import com.phu.ecommerceapi.payment.api.FakeProviderWebhookRequest;
-import com.phu.ecommerceapi.payment.api.ProviderWebhookResponse;
 import com.phu.ecommerceapi.payment.domain.PaymentStatus;
 import com.phu.ecommerceapi.payment.domain.ProviderWebhookProcessingStatus;
 import com.phu.ecommerceapi.payment.domain.RefundStatus;
@@ -27,7 +23,6 @@ public class FakeProviderWebhookUseCase {
     private static final String PROVIDER_NAME = "fake";
     private static final String WEBHOOK_RESOURCE_TYPE = "PROVIDER_WEBHOOK";
 
-    private final ObjectMapper objectMapper;
     private final AppProperties appProperties;
     private final ProviderWebhookPersistencePort webhookPersistence;
     private final PaymentAttemptPersistencePort paymentAttemptPersistence;
@@ -37,7 +32,6 @@ public class FakeProviderWebhookUseCase {
     private final AuditEventRecorder auditEventRecorder;
 
     public FakeProviderWebhookUseCase(
-            ObjectMapper objectMapper,
             AppProperties appProperties,
             ProviderWebhookPersistencePort webhookPersistence,
             PaymentAttemptPersistencePort paymentAttemptPersistence,
@@ -46,7 +40,6 @@ public class FakeProviderWebhookUseCase {
             RefundAttemptService refundAttemptService,
             AuditEventRecorder auditEventRecorder
     ) {
-        this.objectMapper = objectMapper;
         this.appProperties = appProperties;
         this.webhookPersistence = webhookPersistence;
         this.paymentAttemptPersistence = paymentAttemptPersistence;
@@ -57,20 +50,19 @@ public class FakeProviderWebhookUseCase {
     }
 
     @Transactional
-    public FakeProviderWebhookResult handle(String webhookSecret, String requestBody) {
-        if (!isValidSecret(webhookSecret)) {
+    public FakeProviderWebhookResult handle(FakeProviderWebhookCommand command) {
+        if (!isValidSecret(command.webhookSecret())) {
             return invalidSecretResponse();
         }
-        FakeProviderWebhookRequest request = parseRequest(requestBody);
-        String payloadHash = hash(requestBody);
+        String payloadHash = hash(command.requestBody());
 
-        ProviderWebhookRegistration registration = registerEvent(request, payloadHash, requestBody);
+        ProviderWebhookRegistration registration = registerEvent(command, payloadHash);
         if (!registration.payloadMatched()) {
-            recordAudit("PROVIDER_WEBHOOK_PAYLOAD_CONFLICT", request.eventId(), "payload hash mismatch");
+            recordAudit("PROVIDER_WEBHOOK_PAYLOAD_CONFLICT", command.eventId(), "payload hash mismatch");
             return new FakeProviderWebhookResult(
                     HttpStatus.CONFLICT.value(),
-                    new ProviderWebhookResponse(
-                            request.eventId(),
+                    new ProviderWebhookHandlingResponse(
+                            command.eventId(),
                             "REJECTED",
                             "Provider event id was reused with a different payload"
                     )
@@ -82,42 +74,41 @@ public class FakeProviderWebhookUseCase {
             return duplicateResponse(event);
         }
 
-        return processEvent(event, request);
+        return processEvent(event, command);
     }
 
     private ProviderWebhookRegistration registerEvent(
-            FakeProviderWebhookRequest request,
-            String payloadHash,
-            String requestBody
+            FakeProviderWebhookCommand command,
+            String payloadHash
     ) {
         return webhookPersistence.registerReceived(new ProviderWebhookRegistrationCommand(
                 PROVIDER_NAME,
-                request.eventId(),
-                request.eventType(),
+                command.eventId(),
+                command.eventType(),
                 payloadHash,
-                requestBody,
+                command.requestBody(),
                 OffsetDateTime.now()
         ));
     }
 
     private FakeProviderWebhookResult processEvent(
             ProviderWebhookEventView event,
-            FakeProviderWebhookRequest request
+            FakeProviderWebhookCommand command
     ) {
-        return switch (request.eventType()) {
-            case PAYMENT_SUCCEEDED -> processPaymentEvent(event, request, true);
-            case PAYMENT_FAILED -> processPaymentEvent(event, request, false);
-            case REFUND_SUCCEEDED -> processRefundEvent(event, request, true);
-            case REFUND_FAILED -> processRefundEvent(event, request, false);
+        return switch (command.eventType()) {
+            case PAYMENT_SUCCEEDED -> processPaymentEvent(event, command, true);
+            case PAYMENT_FAILED -> processPaymentEvent(event, command, false);
+            case REFUND_SUCCEEDED -> processRefundEvent(event, command, true);
+            case REFUND_FAILED -> processRefundEvent(event, command, false);
         };
     }
 
     private FakeProviderWebhookResult processPaymentEvent(
             ProviderWebhookEventView event,
-            FakeProviderWebhookRequest request,
+            FakeProviderWebhookCommand command,
             boolean succeeded
     ) {
-        Optional<PaymentWebhookAttempt> payment = findPayment(request);
+        Optional<PaymentWebhookAttempt> payment = findPayment(command);
         if (payment.isEmpty()) {
             return rejected(event, "Payment not found for provider webhook event");
         }
@@ -132,13 +123,13 @@ public class FakeProviderWebhookUseCase {
 
         PaymentProviderResult providerResult = succeeded
                 ? PaymentProviderResult.succeeded(requireText(
-                        request.providerPaymentId(),
+                        command.providerPaymentId(),
                         "provider payment id"
-                ), message(request, "Fake payment webhook succeeded"))
+                ), message(command, "Fake payment webhook succeeded"))
                 : PaymentProviderResult.failed(
-                        requireText(request.providerPaymentId(), "provider payment id"),
-                        failureCode(request),
-                        message(request, "Fake payment webhook failed")
+                        requireText(command.providerPaymentId(), "provider payment id"),
+                        failureCode(command),
+                        message(command, "Fake payment webhook failed")
                 );
         paymentAttemptService.completeAttempt(paymentAttempt.paymentId(), providerResult, null);
         ProviderWebhookEventView processed = webhookPersistence.markProcessed(
@@ -151,10 +142,10 @@ public class FakeProviderWebhookUseCase {
 
     private FakeProviderWebhookResult processRefundEvent(
             ProviderWebhookEventView event,
-            FakeProviderWebhookRequest request,
+            FakeProviderWebhookCommand command,
             boolean succeeded
     ) {
-        Optional<RefundWebhookAttempt> refund = findRefund(request);
+        Optional<RefundWebhookAttempt> refund = findRefund(command);
         if (refund.isEmpty()) {
             return rejected(event, "Refund not found for provider webhook event");
         }
@@ -169,13 +160,13 @@ public class FakeProviderWebhookUseCase {
 
         PaymentRefundProviderResult providerResult = succeeded
                 ? PaymentRefundProviderResult.succeeded(requireText(
-                        request.providerRefundId(),
+                        command.providerRefundId(),
                         "provider refund id"
-                ), message(request, "Fake refund webhook succeeded"))
+                ), message(command, "Fake refund webhook succeeded"))
                 : PaymentRefundProviderResult.failed(
-                        requireText(request.providerRefundId(), "provider refund id"),
-                        failureCode(request),
-                        message(request, "Fake refund webhook failed")
+                        requireText(command.providerRefundId(), "provider refund id"),
+                        failureCode(command),
+                        message(command, "Fake refund webhook failed")
                 );
         refundAttemptService.completeAttempt(refundAttempt.refundId(), providerResult, null);
         ProviderWebhookEventView processed = webhookPersistence.markProcessed(
@@ -186,16 +177,16 @@ public class FakeProviderWebhookUseCase {
         return response(HttpStatus.OK, processed);
     }
 
-    private Optional<PaymentWebhookAttempt> findPayment(FakeProviderWebhookRequest request) {
-        return paymentAttemptPersistence.findForProviderWebhook(request.paymentId(), request.providerPaymentId());
+    private Optional<PaymentWebhookAttempt> findPayment(FakeProviderWebhookCommand command) {
+        return paymentAttemptPersistence.findForProviderWebhook(command.paymentId(), command.providerPaymentId());
     }
 
-    private Optional<RefundWebhookAttempt> findRefund(FakeProviderWebhookRequest request) {
-        return refundAttemptPersistence.findForProviderWebhook(request.refundId(), request.providerRefundId());
+    private Optional<RefundWebhookAttempt> findRefund(FakeProviderWebhookCommand command) {
+        return refundAttemptPersistence.findForProviderWebhook(command.refundId(), command.providerRefundId());
     }
 
     private FakeProviderWebhookResult duplicateResponse(ProviderWebhookEventView event) {
-        ProviderWebhookResponse response = new ProviderWebhookResponse(
+        ProviderWebhookHandlingResponse response = new ProviderWebhookHandlingResponse(
                 event.providerEventId(),
                 "DUPLICATE",
                 "Provider webhook event was already received"
@@ -216,7 +207,7 @@ public class FakeProviderWebhookUseCase {
     }
 
     private FakeProviderWebhookResult response(HttpStatus httpStatus, ProviderWebhookEventView event) {
-        ProviderWebhookResponse response = new ProviderWebhookResponse(
+        ProviderWebhookHandlingResponse response = new ProviderWebhookHandlingResponse(
                 event.providerEventId(),
                 event.processingStatus().name(),
                 event.processingMessage()
@@ -233,23 +224,12 @@ public class FakeProviderWebhookUseCase {
         recordAudit("PROVIDER_WEBHOOK_AUTH_FAILED", "unknown", "invalid fake provider webhook secret");
         return new FakeProviderWebhookResult(
                 HttpStatus.FORBIDDEN.value(),
-                new ProviderWebhookResponse(
+                new ProviderWebhookHandlingResponse(
                         "unknown",
                         "REJECTED",
                         "Invalid provider webhook secret"
                 )
         );
-    }
-
-    private FakeProviderWebhookRequest parseRequest(String requestBody) {
-        if (requestBody == null || requestBody.isBlank()) {
-            throw new IllegalArgumentException("provider webhook request body is required");
-        }
-        try {
-            return objectMapper.readValue(requestBody, FakeProviderWebhookRequest.class);
-        } catch (JsonProcessingException exception) {
-            throw new IllegalArgumentException("provider webhook request body is invalid", exception);
-        }
     }
 
     private String hash(String requestBody) {
@@ -262,12 +242,12 @@ public class FakeProviderWebhookUseCase {
         }
     }
 
-    private String failureCode(FakeProviderWebhookRequest request) {
-        return request.failureCode() == null ? "provider_webhook_failed" : request.failureCode();
+    private String failureCode(FakeProviderWebhookCommand command) {
+        return command.failureCode() == null ? "provider_webhook_failed" : command.failureCode();
     }
 
-    private String message(FakeProviderWebhookRequest request, String fallback) {
-        return request.message() == null ? fallback : request.message();
+    private String message(FakeProviderWebhookCommand command, String fallback) {
+        return command.message() == null ? fallback : command.message();
     }
 
     private String requireText(String value, String fieldName) {

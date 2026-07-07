@@ -114,10 +114,7 @@ public class CartService {
             throw new AccessDeniedException("Authenticated customer is required");
         }
 
-        UserModel owner = userRepo.findByUsername(currentUser.username());
-        if (owner == null && currentUser.email() != null) {
-            owner = userRepo.findByEmail(currentUser.email());
-        }
+        UserModel owner = userRepo.findByIdentitySubject(currentUser.subject());
         if (owner == null) {
             throw new NotFoundException("Customer profile not found");
         }
@@ -131,14 +128,7 @@ public class CartService {
     }
 
     private boolean belongsToCurrentUser(UserModel owner, CurrentUser currentUser) {
-        return matches(owner.getUsername(), currentUser.username())
-                || matches(owner.getEmail(), currentUser.email());
-    }
-
-    private boolean matches(String ownerValue, String currentUserValue) {
-        return ownerValue != null
-                && currentUserValue != null
-                && ownerValue.equalsIgnoreCase(currentUserValue);
+        return currentUser.hasSubject(owner.getIdentitySubject());
     }
 
     private CartResponse toResponse(CartModel cart) {

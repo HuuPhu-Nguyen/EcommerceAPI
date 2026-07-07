@@ -1,6 +1,4 @@
 package com.phu.ecommerceapi.audit.application;
-
-import com.phu.ecommerceapi.audit.api.AuditEventResponse;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,7 +23,7 @@ public class AuditEventQueryService {
     }
 
     @Transactional(readOnly = true)
-    public List<AuditEventResponse> recentEvents(int limit) {
+    public List<AuditEventSummary> recentEvents(int limit) {
         int safeLimit = Math.max(1, Math.min(limit, MAX_LIMIT));
         return auditEventPersistencePort.findRecentEvents(safeLimit)
                 .stream()
@@ -33,8 +31,8 @@ public class AuditEventQueryService {
                 .toList();
     }
 
-    private AuditEventResponse toResponse(AuditEventView event) {
-        return new AuditEventResponse(
+    private AuditEventSummary toResponse(AuditEventView event) {
+        return new AuditEventSummary(
                 event.id(),
                 maskActorSubject(event.actorSubject()),
                 event.action(),

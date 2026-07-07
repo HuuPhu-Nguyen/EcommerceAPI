@@ -80,6 +80,7 @@ class CustomerProfileBoundaryTest {
                         )))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].username").value(USERNAME))
+                .andExpect(jsonPath("$[0].identitySubject").value("identity-subject-1"))
                 .andExpect(jsonPath("$[0].email").value(USERNAME))
                 .andExpect(jsonPath("$[0].password").doesNotExist())
                 .andExpect(jsonPath("$[0].phone").doesNotExist())
@@ -113,9 +114,27 @@ class CustomerProfileBoundaryTest {
                 .andExpect(jsonPath("$.carts").doesNotExist());
     }
 
+    @Test
+    void currentProfileDoesNotFallBackToMatchingEmail() throws Exception {
+        saveCustomer();
+
+        mockMvc.perform(get("/user").with(jwt()
+                        .jwt(jwt -> jwt
+                                .subject("different-subject")
+                                .claim("preferred_username", USERNAME)
+                                .claim("email", USERNAME))
+                        .authorities(
+                                new SimpleGrantedAuthority("ROLE_CUSTOMER"),
+                                new SimpleGrantedAuthority("SCOPE_profile:read")
+                        )))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("NOT_FOUND"));
+    }
+
     private void saveCustomer() {
         UserModel user = UserModel.builder()
                 .username(USERNAME)
+                .identitySubject("identity-subject-1")
                 .password("encoded-password")
                 .firstName("Profile")
                 .lastName("Customer")

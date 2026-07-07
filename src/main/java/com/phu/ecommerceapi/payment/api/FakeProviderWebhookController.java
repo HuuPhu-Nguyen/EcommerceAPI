@@ -1,5 +1,8 @@
 package com.phu.ecommerceapi.payment.api;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.phu.ecommerceapi.payment.application.FakeProviderWebhookCommand;
 import com.phu.ecommerceapi.payment.application.FakeProviderWebhookResult;
 import com.phu.ecommerceapi.payment.application.FakeProviderWebhookUseCase;
 import org.springframework.http.ResponseEntity;
@@ -16,9 +19,14 @@ public class FakeProviderWebhookController {
     public static final String WEBHOOK_SECRET_HEADER = "X-Fake-Provider-Webhook-Secret";
 
     private final FakeProviderWebhookUseCase fakeProviderWebhookUseCase;
+    private final ObjectMapper objectMapper;
 
-    public FakeProviderWebhookController(FakeProviderWebhookUseCase fakeProviderWebhookUseCase) {
+    public FakeProviderWebhookController(
+            FakeProviderWebhookUseCase fakeProviderWebhookUseCase,
+            ObjectMapper objectMapper
+    ) {
         this.fakeProviderWebhookUseCase = fakeProviderWebhookUseCase;
+        this.objectMapper = objectMapper;
     }
 
     @PostMapping
@@ -26,9 +34,32 @@ public class FakeProviderWebhookController {
             @RequestHeader(name = WEBHOOK_SECRET_HEADER, required = false) String webhookSecret,
             @RequestBody(required = false) String requestBody
     ) {
-        FakeProviderWebhookResult result = fakeProviderWebhookUseCase.handle(webhookSecret, requestBody);
+        FakeProviderWebhookRequest request = parseRequest(requestBody);
+        FakeProviderWebhookResult result = fakeProviderWebhookUseCase.handle(new FakeProviderWebhookCommand(
+                webhookSecret,
+                requestBody,
+                request.eventId(),
+                request.eventType(),
+                request.paymentId(),
+                request.refundId(),
+                request.providerPaymentId(),
+                request.providerRefundId(),
+                request.failureCode(),
+                request.message()
+        ));
         return ResponseEntity
                 .status(result.httpStatus())
-                .body(result.response());
+                .body(ProviderWebhookResponse.from(result.response()));
+    }
+
+    private FakeProviderWebhookRequest parseRequest(String requestBody) {
+        if (requestBody == null || requestBody.isBlank()) {
+            throw new IllegalArgumentException("provider webhook request body is required");
+        }
+        try {
+            return objectMapper.readValue(requestBody, FakeProviderWebhookRequest.class);
+        } catch (JsonProcessingException exception) {
+            throw new IllegalArgumentException("provider webhook request body is invalid", exception);
+        }
     }
 }

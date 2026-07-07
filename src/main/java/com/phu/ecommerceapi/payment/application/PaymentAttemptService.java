@@ -5,7 +5,6 @@ import com.phu.ecommerceapi.audit.application.AuditEventRecorder;
 import com.phu.ecommerceapi.identity.application.CurrentUser;
 import com.phu.ecommerceapi.ledger.application.PaymentLedgerPostingCommand;
 import com.phu.ecommerceapi.ledger.application.PaymentLedgerPostingPort;
-import com.phu.ecommerceapi.payment.api.PaymentResponse;
 import com.phu.ecommerceapi.shared.observability.BusinessMetrics;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -45,7 +44,7 @@ public class PaymentAttemptService {
     }
 
     @Transactional
-    public PaymentResponse completeAttempt(
+    public PaymentAttemptResponse completeAttempt(
             UUID paymentId,
             PaymentProviderResult providerResult,
             CurrentUser actor
@@ -79,7 +78,7 @@ public class PaymentAttemptService {
     }
 
     @Transactional
-    public PaymentResponse markProviderTimeout(UUID paymentId, String message, CurrentUser actor) {
+    public PaymentAttemptResponse markProviderTimeout(UUID paymentId, String message, CurrentUser actor) {
         PaymentAttemptUpdate update = paymentAttempts.markProviderTimeout(paymentId, message);
         if (update.transitioned()) {
             recordAudit(actor, "PAYMENT_PROVIDER_TIMEOUT", update.attempt());
@@ -108,8 +107,8 @@ public class PaymentAttemptService {
         ));
     }
 
-    private PaymentResponse toResponse(PaymentAttemptView payment) {
-        return new PaymentResponse(
+    private PaymentAttemptResponse toResponse(PaymentAttemptView payment) {
+        return new PaymentAttemptResponse(
                 payment.paymentId(),
                 payment.orderId(),
                 payment.status().name(),

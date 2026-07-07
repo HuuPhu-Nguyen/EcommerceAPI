@@ -5,7 +5,6 @@ import com.phu.ecommerceapi.audit.application.AuditEventRecorder;
 import com.phu.ecommerceapi.identity.application.CurrentUser;
 import com.phu.ecommerceapi.ledger.application.PaymentLedgerPostingPort;
 import com.phu.ecommerceapi.ledger.application.RefundLedgerPostingCommand;
-import com.phu.ecommerceapi.payment.api.RefundResponse;
 import com.phu.ecommerceapi.shared.observability.BusinessMetrics;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -50,7 +49,7 @@ public class RefundAttemptService {
     }
 
     @Transactional
-    public RefundResponse completeAttempt(
+    public RefundAttemptResponse completeAttempt(
             UUID refundId,
             PaymentRefundProviderResult providerResult,
             CurrentUser actor
@@ -85,7 +84,7 @@ public class RefundAttemptService {
     }
 
     @Transactional
-    public RefundResponse markProviderTimeout(UUID refundId, String message, CurrentUser actor) {
+    public RefundAttemptResponse markProviderTimeout(UUID refundId, String message, CurrentUser actor) {
         RefundAttemptUpdate update = refundAttempts.markProviderTimeout(refundId, message);
         if (update.transitioned()) {
             recordAudit(actor, "REFUND_PROVIDER_TIMEOUT", update.attempt());
@@ -115,8 +114,8 @@ public class RefundAttemptService {
         ));
     }
 
-    private RefundResponse toResponse(RefundAttemptView refund) {
-        return new RefundResponse(
+    private RefundAttemptResponse toResponse(RefundAttemptView refund) {
+        return new RefundAttemptResponse(
                 refund.refundId(),
                 refund.paymentId(),
                 refund.orderId(),

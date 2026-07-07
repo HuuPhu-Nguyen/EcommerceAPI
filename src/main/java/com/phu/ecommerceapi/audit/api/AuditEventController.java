@@ -1,6 +1,7 @@
 package com.phu.ecommerceapi.audit.api;
 
 import com.phu.ecommerceapi.audit.application.AuditEventQueryService;
+import com.phu.ecommerceapi.audit.application.AuditEventSummary;
 import com.phu.ecommerceapi.audit.application.AuditHashVerificationResult;
 import com.phu.ecommerceapi.audit.application.AuditHashVerificationService;
 import com.phu.ecommerceapi.identity.application.SecurityExpressions;
@@ -32,7 +33,10 @@ public class AuditEventController {
     public List<AuditEventResponse> recentEvents(
             @RequestParam(defaultValue = "50") int limit
     ) {
-        return auditEventQueryService.recentEvents(limit);
+        return auditEventQueryService.recentEvents(limit)
+                .stream()
+                .map(this::toResponse)
+                .toList();
     }
 
     @GetMapping("/verification")
@@ -45,6 +49,23 @@ public class AuditEventController {
                 result.brokenEventId(),
                 result.latestHash(),
                 result.message()
+        );
+    }
+
+    private AuditEventResponse toResponse(AuditEventSummary event) {
+        return new AuditEventResponse(
+                event.id(),
+                event.actorSubject(),
+                event.action(),
+                event.resourceType(),
+                event.resourceId(),
+                event.details(),
+                event.requestId(),
+                event.ipAddress(),
+                event.userAgent(),
+                event.createdAt(),
+                event.previousHash(),
+                event.eventHash()
         );
     }
 }

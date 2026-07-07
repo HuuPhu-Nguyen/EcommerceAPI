@@ -5,8 +5,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.phu.ecommerceapi.customer.application.CustomerProfile;
 import com.phu.ecommerceapi.customer.application.CustomerProfileLookup;
 import com.phu.ecommerceapi.identity.application.CurrentUser;
-import com.phu.ecommerceapi.payment.api.CreateRefundRequest;
-import com.phu.ecommerceapi.payment.api.RefundResponse;
 import com.phu.ecommerceapi.shared.api.ConflictException;
 import com.phu.ecommerceapi.shared.api.NotFoundException;
 import org.springframework.http.HttpStatus;
@@ -45,21 +43,15 @@ public class CreateRefundUseCase {
         this.paymentProvider = paymentProvider;
     }
 
-    public CreateRefundResult refund(
-            UUID paymentId,
-            CurrentUser currentUser,
-            String idempotencyKey,
-            String requestBody
-    ) {
-        CreateRefundRequest request = parseRequest(requestBody);
-        long customerId = resolveCustomerId(currentUser);
+    public CreateRefundResult refund(CreateRefundCommand command) {
+        long customerId = resolveCustomerId(command.currentUser());
 
         PaymentIdempotencyCommand idempotencyCommand = new PaymentIdempotencyCommand(
                 customerId,
-                endpoint(paymentId),
+                endpoint(command.paymentId()),
                 OPERATION,
-                idempotencyKey,
-                requestBody
+                command.idempotencyKey(),
+                command.requestBody()
         );
 
         Optional<PaymentIdempotencyDecision> existingDecision = idempotencyService.findExisting(idempotencyCommand);
@@ -67,7 +59,7 @@ public class CreateRefundUseCase {
             return replayOrReject(existingDecision.get());
         }
 
-        refundAttemptService.validateRefundable(customerId, paymentId);
+        refundAttemptService.validateRefundable(customerId, command.paymentId());
         PaymentIdempotencyDecision idempotencyDecision = idempotencyService.start(idempotencyCommand);
         if (idempotencyDecision.type() == PaymentIdempotencyDecisionType.REPLAY) {
             return replayOrReject(idempotencyDecision);
@@ -78,12 +70,12 @@ public class CreateRefundUseCase {
 
         RefundAttemptSnapshot attempt = refundAttemptService.startAttempt(
                 customerId,
-                paymentId,
-                idempotencyKey,
-                request.reason()
+                command.paymentId(),
+                command.idempotencyKey(),
+                command.reason()
         );
 
-        RefundResponse response;
+        RefundAttemptResponse response;
         int httpStatus = HttpStatus.OK.value();
         try {
             PaymentRefundProviderResult providerResult = paymentProvider.refundPayment(new PaymentRefundProviderRequest(
@@ -91,15 +83,15 @@ public class CreateRefundUseCase {
                     attempt.providerPaymentId(),
                     attempt.amount(),
                     attempt.currency(),
-                    providerIdempotencyKey(customerId, attempt, idempotencyKey),
-                    providerMetadata(request)
+                    providerIdempotencyKey(customerId, attempt, command.idempotencyKey()),
+                    providerMetadata(command)
             ));
-            response = refundAttemptService.completeAttempt(attempt.refundId(), providerResult, currentUser);
+            response = refundAttemptService.completeAttempt(attempt.refundId(), providerResult, command.currentUser());
         } catch (PaymentProviderTimeoutException exception) {
             response = refundAttemptService.markProviderTimeout(
                     attempt.refundId(),
                     exception.getMessage(),
-                    currentUser
+                    command.currentUser()
             );
             httpStatus = HttpStatus.SERVICE_UNAVAILABLE.value();
         }
@@ -117,17 +109,6 @@ public class CreateRefundUseCase {
             throw new ConflictException("Refund request is already in progress");
         }
         throw new IllegalStateException("Unexpected idempotency decision: " + decision.type());
-    }
-
-    private CreateRefundRequest parseRequest(String requestBody) {
-        if (requestBody == null || requestBody.isBlank()) {
-            throw new IllegalArgumentException("refund request body is required");
-        }
-        try {
-            return objectMapper.readValue(requestBody, CreateRefundRequest.class);
-        } catch (JsonProcessingException exception) {
-            throw new IllegalArgumentException("refund request body is invalid", exception);
-        }
     }
 
     private long resolveCustomerId(CurrentUser currentUser) {
@@ -148,15 +129,15 @@ public class CreateRefundUseCase {
         return "refund:%d:%s:%s".formatted(customerId, attempt.paymentId(), idempotencyKey.trim());
     }
 
-    private Map<String, String> providerMetadata(CreateRefundRequest request) {
+    private Map<String, String> providerMetadata(CreateRefundCommand command) {
         Map<String, String> metadata = new HashMap<>();
-        metadata.put("refundReason", request.reason());
-        if (PROVIDER_OUTCOME_FAILED_REASON.equalsIgnoreCase(request.reason())) {
+        metadata.put("refundReason", command.reason());
+        if (PROVIDER_OUTCOME_FAILED_REASON.equalsIgnoreCase(command.reason())) {
             metadata.put(
                     PaymentProviderOutcomeMetadata.OUTCOME_METADATA_KEY,
                     PaymentProviderOutcomeMetadata.OUTCOME_FAILURE
             );
-        } else if (PROVIDER_OUTCOME_TIMEOUT_REASON.equalsIgnoreCase(request.reason())) {
+        } else if (PROVIDER_OUTCOME_TIMEOUT_REASON.equalsIgnoreCase(command.reason())) {
             metadata.put(
                     PaymentProviderOutcomeMetadata.OUTCOME_METADATA_KEY,
                     PaymentProviderOutcomeMetadata.OUTCOME_TIMEOUT
@@ -165,7 +146,7 @@ public class CreateRefundUseCase {
         return metadata;
     }
 
-    private String serialize(RefundResponse response) {
+    private String serialize(RefundAttemptResponse response) {
         try {
             return objectMapper.writeValueAsString(response);
         } catch (JsonProcessingException exception) {

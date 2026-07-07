@@ -45,7 +45,7 @@ class CartServiceAuthorizationTest {
 
     @Test
     void ownerCanReadCartItems() {
-        CartModel cart = cartOwnedBy("customer@example.com", "customer@example.com");
+        CartModel cart = cartOwnedBy("subject-1", "customer@example.com", "customer@example.com");
         when(cartRepo.findWithItemsById(10L)).thenReturn(Optional.of(cart));
 
         assertThat(cartService.getCartItems(10L, currentUser("customer@example.com")).isEmpty())
@@ -54,7 +54,7 @@ class CartServiceAuthorizationTest {
 
     @Test
     void crossCustomerCartReadIsDenied() {
-        CartModel cart = cartOwnedBy("owner@example.com", "owner@example.com");
+        CartModel cart = cartOwnedBy("owner-subject", "owner@example.com", "owner@example.com");
         when(cartRepo.findWithItemsById(10L)).thenReturn(Optional.of(cart));
 
         assertThatThrownBy(() -> cartService.getCartItems(10L, currentUser("attacker@example.com")))
@@ -62,8 +62,19 @@ class CartServiceAuthorizationTest {
                 .hasMessage("Cart does not belong to current user");
     }
 
-    private CartModel cartOwnedBy(String username, String email) {
+    @Test
+    void matchingUsernameAndEmailDoNotGrantOwnershipWhenSubjectDiffers() {
+        CartModel cart = cartOwnedBy("owner-subject", "customer@example.com", "customer@example.com");
+        when(cartRepo.findWithItemsById(10L)).thenReturn(Optional.of(cart));
+
+        assertThatThrownBy(() -> cartService.getCartItems(10L, currentUser("customer@example.com")))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessage("Cart does not belong to current user");
+    }
+
+    private CartModel cartOwnedBy(String identitySubject, String username, String email) {
         UserModel owner = UserModel.builder()
+                .identitySubject(identitySubject)
                 .username(username)
                 .email(email)
                 .build();
