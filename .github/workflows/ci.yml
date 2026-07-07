@@ -91,7 +91,7 @@ jobs:
           cache: maven
 
       - name: Cache vulnerability database
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.dependency-check
           key: dependency-check-${{ runner.os }}-${{ hashFiles('pom.xml') }}
