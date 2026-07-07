@@ -1,6 +1,26 @@
 # EcommerceAPI
 
+[![CI](https://github.com/HuuPhu-Nguyen/EcommerceAPI/actions/workflows/ci.yml/badge.svg)](https://github.com/HuuPhu-Nguyen/EcommerceAPI/actions/workflows/ci.yml)
+
 Banking-grade e-commerce API portfolio project built with Spring Boot, PostgreSQL, Flyway, OAuth2 resource-server security, immutable ledger records, tamper-evident audit events, and reliable asynchronous stock updates.
+
+## CI Quality Gates
+
+GitHub Actions runs on pushes and pull requests to `main`. The pipeline compiles the application, runs the Testcontainers-backed test suite, executes architecture and security tests, enforces Checkstyle, and generates a JaCoCo coverage report. Pull requests also run GitHub dependency review and block high-severity vulnerable dependency changes. A scheduled/manual OWASP Dependency-Check job produces HTML/JSON vulnerability reports and fails on dependencies with CVSS 7.0 or higher.
+
+Local quality gate:
+
+```shell
+./mvnw.cmd verify
+```
+
+Local dependency scan:
+
+```shell
+./mvnw.cmd -Pdependency-scan -DskipTests "-Djacoco.skip=true" verify
+```
+
+The first dependency scan may take a while because OWASP Dependency-Check bootstraps its local vulnerability database.
 
 ## Stock Update Stream
 
