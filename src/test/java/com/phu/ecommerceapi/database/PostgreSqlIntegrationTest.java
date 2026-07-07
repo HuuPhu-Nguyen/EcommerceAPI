@@ -1,0 +1,121 @@
+package com.phu.ecommerceapi.database;
+
+import org.flywaydb.core.Flyway;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
+
+import java.math.BigDecimal;
+import java.util.List;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowable;
+
+@SpringBootTest
+@ActiveProfiles("test")
+class PostgreSqlIntegrationTest {
+
+    private static final String ROLLBACK_PRODUCT_NAME = "rollback-proof-product";
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private Flyway flyway;
+
+    @Autowired
+    private PlatformTransactionManager transactionManager;
+
+    @BeforeEach
+    void cleanUp() {
+        jdbcTemplate.update("DELETE FROM product_model WHERE name = ?", ROLLBACK_PRODUCT_NAME);
+    }
+
+    @Test
+    void flywayMigrationsCreateBankingCoreSchema() {
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("16");
+
+        assertThat(tableNames()).contains(
+                "user_model",
+                "product_model",
+                "inventory",
+                "customer_order",
+                "payment_idempotency_record",
+                "payment_record",
+                "refund_record",
+                "provider_webhook_event",
+                "ledger_account",
+                "ledger_transaction",
+                "ledger_entry",
+                "audit_event",
+                "outbox_event"
+        );
+
+        assertThat(columnDataType("product_model", "price")).isEqualTo("numeric");
+        assertThat(columnDataType("product_model", "stock")).isEqualTo("integer");
+        assertThat(columnDataType("product_model", "currency")).isEqualTo("character varying");
+    }
+
+    @Test
+    void databaseTransactionRollsBackPartialPersistence() {
+        TransactionTemplate transactionTemplate = new TransactionTemplate(transactionManager);
+
+        Throwable thrown = catchThrowable(() -> transactionTemplate.executeWithoutResult(status -> {
+            jdbcTemplate.update(
+                    """
+                            INSERT INTO product_model (name, price, stock, active, currency)
+                            VALUES (?, ?, ?, ?, ?)
+                            """,
+                    ROLLBACK_PRODUCT_NAME,
+                    new BigDecimal("19.99"),
+                    3,
+                    true,
+                    "USD"
+            );
+            throw new IllegalStateException("force rollback");
+        }));
+
+        assertThat(thrown).isInstanceOf(IllegalStateException.class);
+        assertThat(productCount(ROLLBACK_PRODUCT_NAME)).isZero();
+    }
+
+    private List<String> tableNames() {
+        return jdbcTemplate.queryForList(
+                """
+                        SELECT table_name
+                        FROM information_schema.tables
+                        WHERE table_schema = 'public'
+                        """,
+                String.class
+        );
+    }
+
+    private String columnDataType(String tableName, String columnName) {
+        return jdbcTemplate.queryForObject(
+                """
+                        SELECT data_type
+                        FROM information_schema.columns
+                        WHERE table_schema = 'public'
+                          AND table_name = ?
+                          AND column_name = ?
+                        """,
+                String.class,
+                tableName,
+                columnName
+        );
+    }
+
+    private int productCount(String productName) {
+        Integer count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM product_model WHERE name = ?",
+                Integer.class,
+                productName
+        );
+        return count == null ? 0 : count;
+    }
+}
