@@ -2,6 +2,7 @@ package com.phu.ecommerceapi.payment.infrastructure;
 
 import com.phu.ecommerceapi.order.infrastructure.CustomerOrderRecord;
 import com.phu.ecommerceapi.payment.application.PaymentProviderResult;
+import com.phu.ecommerceapi.payment.domain.PaymentStateMachine;
 import com.phu.ecommerceapi.payment.domain.PaymentStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -86,10 +87,11 @@ public class PaymentRecord {
     }
 
     public void markSucceeded(PaymentProviderResult providerResult) {
-        if (status.isTerminal()) {
+        PaymentStatus nextStatus = PaymentStateMachine.providerSucceeded(status);
+        if (nextStatus == status) {
             return;
         }
-        this.status = PaymentStatus.SUCCEEDED;
+        this.status = nextStatus;
         this.providerPaymentId = requireText(providerResult.providerPaymentId(), "provider payment id");
         this.providerStatus = providerResult.status().name();
         this.providerMessage = providerResult.message();
@@ -97,10 +99,11 @@ public class PaymentRecord {
     }
 
     public void markFailed(PaymentProviderResult providerResult) {
-        if (status.isTerminal()) {
+        PaymentStatus nextStatus = PaymentStateMachine.providerFailed(status);
+        if (nextStatus == status) {
             return;
         }
-        this.status = PaymentStatus.FAILED;
+        this.status = nextStatus;
         this.providerPaymentId = requireText(providerResult.providerPaymentId(), "provider payment id");
         this.providerStatus = providerResult.status().name();
         this.failureCode = requireText(providerResult.failureCode(), "provider failure code");
@@ -109,10 +112,11 @@ public class PaymentRecord {
     }
 
     public void markProviderTimeout(String message) {
-        if (status.isTerminal()) {
+        PaymentStatus nextStatus = PaymentStateMachine.providerTimedOut(status);
+        if (nextStatus == status) {
             return;
         }
-        this.status = PaymentStatus.PROVIDER_TIMEOUT;
+        this.status = nextStatus;
         this.providerStatus = "TIMEOUT";
         this.failureCode = "provider_timeout";
         this.providerMessage = message;
@@ -120,13 +124,11 @@ public class PaymentRecord {
     }
 
     public void markRefunded() {
-        if (status == PaymentStatus.REFUNDED) {
+        PaymentStatus nextStatus = PaymentStateMachine.refund(status);
+        if (nextStatus == status) {
             return;
         }
-        if (status != PaymentStatus.SUCCEEDED) {
-            throw new IllegalStateException("Only successful payments can be refunded");
-        }
-        this.status = PaymentStatus.REFUNDED;
+        this.status = nextStatus;
     }
 
     public UUID getId() {

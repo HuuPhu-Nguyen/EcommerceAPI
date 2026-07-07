@@ -1,11 +1,10 @@
 package com.phu.ecommerceapi.ledger.application;
 
 import com.phu.ecommerceapi.ledger.domain.LedgerEntryDirection;
+import com.phu.ecommerceapi.ledger.domain.LedgerEntryLine;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.Locale;
-import java.util.Objects;
 
 public record LedgerEntryDraft(
         String accountCode,
@@ -19,18 +18,13 @@ public record LedgerEntryDraft(
             throw new IllegalArgumentException("ledger account code is required");
         }
         accountCode = accountCode.trim().toUpperCase(Locale.ROOT);
-        Objects.requireNonNull(direction, "ledger entry direction is required");
-        Objects.requireNonNull(amount, "ledger entry amount is required");
-        amount = amount.setScale(2, RoundingMode.UNNECESSARY);
-        if (amount.signum() <= 0) {
-            throw new IllegalArgumentException("ledger entry amount must be positive");
-        }
-        if (currency == null || currency.isBlank()) {
-            throw new IllegalArgumentException("ledger entry currency is required");
-        }
-        currency = currency.trim().toUpperCase(Locale.ROOT);
-        if (currency.length() != 3) {
-            throw new IllegalArgumentException("ledger entry currency must be an ISO 4217 code");
-        }
+        LedgerEntryLine line = new LedgerEntryLine(direction, amount, currency);
+        direction = line.direction();
+        amount = line.amount();
+        currency = line.currency();
+    }
+
+    public LedgerEntryLine toLedgerEntryLine() {
+        return new LedgerEntryLine(direction, amount, currency);
     }
 }

@@ -1,6 +1,7 @@
 package com.phu.ecommerceapi.payment.infrastructure;
 
 import com.phu.ecommerceapi.payment.application.PaymentRefundProviderResult;
+import com.phu.ecommerceapi.payment.domain.RefundStateMachine;
 import com.phu.ecommerceapi.payment.domain.RefundStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -93,10 +94,11 @@ public class RefundRecord {
     }
 
     public void markSucceeded(PaymentRefundProviderResult providerResult) {
-        if (status.isTerminal()) {
+        RefundStatus nextStatus = RefundStateMachine.providerSucceeded(status);
+        if (nextStatus == status) {
             return;
         }
-        this.status = RefundStatus.SUCCEEDED;
+        this.status = nextStatus;
         this.providerRefundId = requireText(providerResult.providerRefundId(), "provider refund id");
         this.providerStatus = providerResult.status().name();
         this.providerMessage = providerResult.message();
@@ -104,10 +106,11 @@ public class RefundRecord {
     }
 
     public void markFailed(PaymentRefundProviderResult providerResult) {
-        if (status.isTerminal()) {
+        RefundStatus nextStatus = RefundStateMachine.providerFailed(status);
+        if (nextStatus == status) {
             return;
         }
-        this.status = RefundStatus.FAILED;
+        this.status = nextStatus;
         this.providerRefundId = requireText(providerResult.providerRefundId(), "provider refund id");
         this.providerStatus = providerResult.status().name();
         this.failureCode = requireText(providerResult.failureCode(), "provider refund failure code");
@@ -116,10 +119,11 @@ public class RefundRecord {
     }
 
     public void markProviderTimeout(String message) {
-        if (status.isTerminal()) {
+        RefundStatus nextStatus = RefundStateMachine.providerTimedOut(status);
+        if (nextStatus == status) {
             return;
         }
-        this.status = RefundStatus.PROVIDER_TIMEOUT;
+        this.status = nextStatus;
         this.providerStatus = "TIMEOUT";
         this.failureCode = "provider_timeout";
         this.providerMessage = message;
