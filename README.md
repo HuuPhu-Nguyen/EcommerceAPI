@@ -348,4 +348,4 @@ No real card data, JWTs, private keys, or production secrets should be committed
 
 The current public story is the banking-grade MVP slice: secure customer checkout, idempotent payments/refunds, immutable ledger entries, tamper-evident audit, reconciliation, threat model, operational observability, OpenAPI docs, and CI proof.
 
-Remaining polish work is documentation-focused: final architecture diagram polish and final portfolio review.
+The project is ready for recruiter review. Final readiness evidence is captured in [docs/final-portfolio-review.md](docs/final-portfolio-review.md).

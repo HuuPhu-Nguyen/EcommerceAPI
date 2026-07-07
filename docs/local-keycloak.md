@@ -8,6 +8,8 @@ This project uses Keycloak as the local OAuth2/OIDC issuer for the Spring Securi
 docker compose up -d postgres keycloak
 ```
 
+For a clean demo import of the current realm, run `docker compose down -v` first. That command deletes the local PostgreSQL and Keycloak demo volumes, so run it intentionally.
+
 Keycloak is available at `http://localhost:8081`.
 
 Admin console:
@@ -48,9 +50,11 @@ Use the token against protected API endpoints:
 
 ```powershell
 Invoke-RestMethod `
-  -Uri "http://localhost:8080/allUserInfo" `
+  -Uri "http://localhost:8080/customer/profile/me" `
   -Headers @{ Authorization = "Bearer $accessToken" }
 ```
+
+Admin and auditor users can call review endpoints such as `/admin/customer-profiles`, `/ledger/transactions`, `/audit/events`, and `/reconciliation/report` when their token contains the matching role and scope.
 
 ## Token Validation Settings
 
@@ -70,5 +74,6 @@ The realm import also includes local API scopes used by method security:
 - `payment:create`
 - `payment:refund`
 - `audit:read`
+- `ledger:read`
 - `product:write`
 - `user:read`
