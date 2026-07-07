@@ -1,6 +1,6 @@
 package com.phu.ecommerceapi.reconciliation.api;
 
-import com.phu.ecommerceapi.Security.SecurityConfig;
+import com.phu.ecommerceapi.config.SecurityConfig;
 import com.phu.ecommerceapi.identity.application.CurrentUserProvider;
 import com.phu.ecommerceapi.reconciliation.application.ReconciliationReport;
 import com.phu.ecommerceapi.reconciliation.application.ReconciliationService;

@@ -8,6 +8,8 @@ import com.tngtech.archunit.lang.ArchCondition;
 import com.tngtech.archunit.lang.ConditionEvents;
 import com.tngtech.archunit.lang.SimpleConditionEvent;
 import jakarta.persistence.Entity;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.stereotype.Controller;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -58,6 +60,20 @@ class ArchitectureTest {
                 .should()
                 .dependOnClassesThat()
                 .resideInAnyPackage("..infrastructure..")
+                .check(CLASSES);
+    }
+
+    @Test
+    void legacyPrototypePackagesMustNotExposeSpringPublicBoundaries() {
+        noClasses()
+                .that()
+                .resideInAnyPackage("..User..", "..Product..", "..Security..", "..Stripe..", "..CartItem..")
+                .should()
+                .beAnnotatedWith(RestController.class)
+                .orShould()
+                .beAnnotatedWith(Controller.class)
+                .orShould()
+                .beAnnotatedWith(Configuration.class)
                 .check(CLASSES);
     }
 

@@ -1,16 +1,20 @@
-package com.phu.ecommerceapi.User;
+package com.phu.ecommerceapi.customer.api;
 
+import com.phu.ecommerceapi.User.UserModel;
+import com.phu.ecommerceapi.User.UserService;
 import com.phu.ecommerceapi.customer.application.CustomerProfile;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-public class UserController {
+public class CustomerRegistrationController {
 
-    @Autowired
-    UserService userService;
+    private final UserService userService;
+
+    public CustomerRegistrationController(UserService userService) {
+        this.userService = userService;
+    }
 
     @PostMapping("/register")
     public CustomerProfile registerUser(@RequestBody UserModel user) {
@@ -24,6 +28,4 @@ public class UserController {
                 savedUser.getEmail()
         );
     }
-
-
 }

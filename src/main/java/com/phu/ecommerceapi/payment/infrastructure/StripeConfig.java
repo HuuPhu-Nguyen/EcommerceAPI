@@ -1,4 +1,4 @@
-package com.phu.ecommerceapi.Stripe;
+package com.phu.ecommerceapi.payment.infrastructure;
 
 import com.phu.ecommerceapi.config.AppProperties;
 import com.stripe.Stripe;

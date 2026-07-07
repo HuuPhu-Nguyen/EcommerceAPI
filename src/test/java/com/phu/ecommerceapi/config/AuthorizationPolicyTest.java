@@ -1,4 +1,4 @@
-package com.phu.ecommerceapi.Security;
+package com.phu.ecommerceapi.config;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -60,7 +60,7 @@ class AuthorizationPolicyTest {
                 }
                 """;
 
-        mockMvc.perform(post("/products/add")
+        mockMvc.perform(post("/admin/products")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(requestBody)
                         .with(jwt().authorities(
@@ -69,13 +69,13 @@ class AuthorizationPolicyTest {
                         )))
                 .andExpect(status().isForbidden());
 
-        mockMvc.perform(post("/products/add")
+        mockMvc.perform(post("/admin/products")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(requestBody)
                         .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_ADMIN"))))
                 .andExpect(status().isForbidden());
 
-        mockMvc.perform(post("/products/add")
+        mockMvc.perform(post("/admin/products")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(requestBody)
                         .with(jwt().authorities(
