@@ -1,9 +1,11 @@
 package com.phu.ecommerceapi.config;
 
+import com.phu.ecommerceapi.payment.api.FakeProviderWebhookController;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.MediaType;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.test.context.ActiveProfiles;
@@ -16,6 +18,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest
@@ -42,6 +45,23 @@ class SecurityConfigTest {
     }
 
     @Test
+    void exactFakeWebhookPostPathIsAnonymous() throws Exception {
+        mockMvc.perform(post("/payments/provider-webhooks/fake")
+                        .header(FakeProviderWebhookController.WEBHOOK_SECRET_HEADER, "wrong-secret")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(webhookBody("evt-security-fake-anonymous")))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void unknownWebhookPostPathRequiresAuthentication() throws Exception {
+        mockMvc.perform(post("/payments/provider-webhooks/stripe")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(webhookBody("evt-security-stripe-protected")))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
     void jwtConverterMapsKeycloakRealmAndClientRoles() {
         Jwt jwt = Jwt.withTokenValue("token")
                 .header("alg", "none")
@@ -59,5 +79,16 @@ class SecurityConfigTest {
         assertThat(authentication.getAuthorities())
                 .extracting("authority")
                 .contains("ROLE_CUSTOMER", "ROLE_ADMIN");
+    }
+
+    private String webhookBody(String eventId) {
+        return """
+                {
+                  "eventId": "%s",
+                  "type": "payment.succeeded",
+                  "paymentId": "00000000-0000-0000-0000-000000000001",
+                  "providerPaymentId": "fake_security_payment"
+                }
+                """.formatted(eventId);
     }
 }

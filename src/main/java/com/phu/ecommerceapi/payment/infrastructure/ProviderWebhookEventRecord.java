@@ -11,6 +11,7 @@ import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 
 import java.time.OffsetDateTime;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -61,11 +62,11 @@ public class ProviderWebhookEventRecord {
             String providerName,
             String providerEventId,
             ProviderWebhookEventType eventType,
-            String payloadHash,
-            String payload
+        String payloadHash,
+        String payload
     ) {
         this.id = UUID.randomUUID();
-        this.providerName = requireText(providerName, "provider name");
+        this.providerName = requireText(providerName, "provider name").toLowerCase(Locale.ROOT);
         this.providerEventId = requireText(providerEventId, "provider event id");
         this.eventType = Objects.requireNonNull(eventType, "provider event type is required");
         this.payloadHash = requireText(payloadHash, "provider event payload hash");

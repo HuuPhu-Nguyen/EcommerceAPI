@@ -2,9 +2,9 @@ package com.phu.ecommerceapi.payment.api;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.phu.ecommerceapi.payment.application.FakeProviderWebhookCommand;
-import com.phu.ecommerceapi.payment.application.FakeProviderWebhookResult;
 import com.phu.ecommerceapi.payment.application.FakeProviderWebhookUseCase;
+import com.phu.ecommerceapi.payment.application.ProviderWebhookCommand;
+import com.phu.ecommerceapi.payment.application.ProviderWebhookResult;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -15,6 +15,8 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/payments/provider-webhooks/fake")
 public class FakeProviderWebhookController {
+
+    private static final String PROVIDER_CODE = "fake";
 
     public static final String WEBHOOK_SECRET_HEADER = "X-Fake-Provider-Webhook-Secret";
 
@@ -35,7 +37,8 @@ public class FakeProviderWebhookController {
             @RequestBody(required = false) String requestBody
     ) {
         FakeProviderWebhookRequest request = parseRequest(requestBody);
-        FakeProviderWebhookResult result = fakeProviderWebhookUseCase.handle(new FakeProviderWebhookCommand(
+        ProviderWebhookResult result = fakeProviderWebhookUseCase.handle(new ProviderWebhookCommand(
+                PROVIDER_CODE,
                 webhookSecret,
                 requestBody,
                 request.eventId(),

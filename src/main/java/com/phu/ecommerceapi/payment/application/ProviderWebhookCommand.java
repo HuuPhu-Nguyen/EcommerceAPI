@@ -2,12 +2,14 @@ package com.phu.ecommerceapi.payment.application;
 
 import com.phu.ecommerceapi.payment.domain.ProviderWebhookEventType;
 
+import java.util.Locale;
 import java.util.UUID;
 
-public record FakeProviderWebhookCommand(
+public record ProviderWebhookCommand(
+        String providerCode,
         String webhookSecret,
         String requestBody,
-        String eventId,
+        String providerEventId,
         ProviderWebhookEventType eventType,
         UUID paymentId,
         UUID refundId,
@@ -17,17 +19,21 @@ public record FakeProviderWebhookCommand(
         String message
 ) {
 
-    public FakeProviderWebhookCommand {
+    public ProviderWebhookCommand {
+        if (providerCode == null || providerCode.isBlank()) {
+            throw new IllegalArgumentException("provider code is required");
+        }
+        providerCode = providerCode.trim().toLowerCase(Locale.ROOT);
         if (requestBody == null || requestBody.isBlank()) {
             throw new IllegalArgumentException("provider webhook request body is required");
         }
-        if (eventId == null || eventId.isBlank()) {
+        if (providerEventId == null || providerEventId.isBlank()) {
             throw new IllegalArgumentException("provider event id is required");
         }
         if (eventType == null) {
             throw new IllegalArgumentException("provider webhook event type is required");
         }
-        eventId = eventId.trim();
+        providerEventId = providerEventId.trim();
         providerPaymentId = trimToNull(providerPaymentId);
         providerRefundId = trimToNull(providerRefundId);
         failureCode = trimToNull(failureCode);

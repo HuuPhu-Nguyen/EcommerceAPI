@@ -22,7 +22,7 @@ public class JpaProviderWebhookPersistenceAdapter implements ProviderWebhookPers
         UUID eventId = UUID.randomUUID();
         int insertedRows = eventRepository.insertReceived(
                 eventId,
-                command.providerName(),
+                command.providerCode(),
                 command.providerEventId(),
                 command.eventType().name(),
                 command.payloadHash(),
@@ -31,7 +31,7 @@ public class JpaProviderWebhookPersistenceAdapter implements ProviderWebhookPers
         );
 
         ProviderWebhookEventRecord event = eventRepository
-                .findByProviderNameAndProviderEventId(command.providerName(), command.providerEventId())
+                .findByProviderNameAndProviderEventId(command.providerCode(), command.providerEventId())
                 .orElseThrow(() -> new IllegalStateException("Provider webhook event was not persisted"));
         return new ProviderWebhookRegistration(
                 toView(event),
@@ -69,7 +69,9 @@ public class JpaProviderWebhookPersistenceAdapter implements ProviderWebhookPers
     private ProviderWebhookEventView toView(ProviderWebhookEventRecord event) {
         return new ProviderWebhookEventView(
                 event.getId(),
+                event.getProviderName(),
                 event.getProviderEventId(),
+                event.getEventType(),
                 event.getProcessingStatus(),
                 event.getProcessingMessage()
         );

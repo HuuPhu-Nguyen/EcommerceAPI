@@ -26,7 +26,8 @@ class PaymentProviderPersistenceConstraintTest {
     @BeforeEach
     void cleanUp() {
         jdbcTemplate.execute(
-                "TRUNCATE TABLE refund_record, payment_record, customer_order, cart_model, user_model "
+                "TRUNCATE TABLE provider_webhook_event, refund_record, payment_record, "
+                        + "customer_order, cart_model, user_model "
                         + "RESTART IDENTITY CASCADE"
         );
     }
@@ -109,6 +110,16 @@ class PaymentProviderPersistenceConstraintTest {
                 "different_provider_id",
                 "shared-provider-key"
         ))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    void databaseScopesWebhookEventIdsByProvider() {
+        insertWebhookEvent("fake", "evt-shared-provider-id");
+        insertWebhookEvent("stripe", "evt-shared-provider-id");
+
+        assertThat(webhookEventCount("evt-shared-provider-id")).isEqualTo(2);
+        assertThatThrownBy(() -> insertWebhookEvent("fake", "evt-shared-provider-id"))
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
 
@@ -235,11 +246,47 @@ class PaymentProviderPersistenceConstraintTest {
         };
     }
 
+    private void insertWebhookEvent(String providerCode, String providerEventId) {
+        jdbcTemplate.update(
+                """
+                        INSERT INTO provider_webhook_event (
+                            id,
+                            provider_name,
+                            provider_event_id,
+                            event_type,
+                            payload_hash,
+                            payload,
+                            processing_status,
+                            received_at,
+                            version
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
+                        """,
+                UUID.randomUUID(),
+                providerCode,
+                providerEventId,
+                "PAYMENT_SUCCEEDED",
+                UUID.randomUUID().toString().replace("-", "") + UUID.randomUUID().toString().replace("-", ""),
+                "{}",
+                "RECEIVED",
+                OffsetDateTime.now()
+        );
+    }
+
     private int paymentCount(UUID orderId) {
         Integer count = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM payment_record WHERE order_id = ?",
                 Integer.class,
                 orderId
+        );
+        return count == null ? 0 : count;
+    }
+
+    private int webhookEventCount(String providerEventId) {
+        Integer count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM provider_webhook_event WHERE provider_event_id = ?",
+                Integer.class,
+                providerEventId
         );
         return count == null ? 0 : count;
     }

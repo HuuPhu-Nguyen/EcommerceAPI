@@ -142,8 +142,16 @@ class ProviderWebhookHandlingTest {
         assertThat(payment.getProviderPaymentId()).isEqualTo(providerPaymentId);
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
         assertThat(paymentCaptureTransactions()).hasSize(1);
+        assertThat(event.getProviderName()).isEqualTo("fake");
         assertThat(event.getProcessingStatus()).isEqualTo(ProviderWebhookProcessingStatus.PROCESSED);
         assertThat(auditActions()).contains("PAYMENT_SUCCEEDED", "PROVIDER_WEBHOOK_PROCESSED");
+        assertWebhookAuditDetails(
+                "PROVIDER_WEBHOOK_PROCESSED",
+                "provider=fake",
+                "eventId=evt-payment-success-1",
+                "eventType=PAYMENT_SUCCEEDED",
+                "status=PROCESSED"
+        );
     }
 
     @Test
@@ -247,6 +255,43 @@ class ProviderWebhookHandlingTest {
     }
 
     @Test
+    void fakeWebhookCannotUpdatePaymentStoredForDifferentProvider() throws Exception {
+        String username = "webhook-provider-mismatch@example.com";
+        PaymentFixture fixture = pendingPayment(username, "stripe");
+
+        sendWebhook(paymentWebhookJson(
+                        "evt-provider-mismatch-1",
+                        "payment.succeeded",
+                        fixture.paymentId(),
+                        "fake_provider_mismatch_payment",
+                        null,
+                        "wrong provider event"
+                ))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.status").value("REJECTED"))
+                .andExpect(jsonPath("$.message").value("Payment not found for provider webhook event"));
+
+        PaymentRecord payment = paymentRepository.findById(fixture.paymentId()).orElseThrow();
+        CustomerOrderRecord order = orderRepository.findById(fixture.orderId()).orElseThrow();
+        ProviderWebhookEventRecord event = webhookEventRepository.findAll().get(0);
+
+        assertThat(payment.getProviderCode()).isEqualTo("stripe");
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.PENDING);
+        assertThat(payment.getProviderPaymentId()).isNull();
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING_PAYMENT);
+        assertThat(paymentCaptureTransactions()).isEmpty();
+        assertThat(event.getProviderName()).isEqualTo("fake");
+        assertThat(event.getProcessingStatus()).isEqualTo(ProviderWebhookProcessingStatus.REJECTED);
+        assertWebhookAuditDetails(
+                "PROVIDER_WEBHOOK_REJECTED",
+                "provider=fake",
+                "eventId=evt-provider-mismatch-1",
+                "eventType=PAYMENT_SUCCEEDED",
+                "status=REJECTED"
+        );
+    }
+
+    @Test
     void invalidWebhookSecretIsForbiddenAndDoesNotStoreEvent() throws Exception {
         sendWebhookWithSecret("wrong-secret", paymentWebhookJson(
                         "evt-payment-forbidden-1",
@@ -312,14 +357,18 @@ class ProviderWebhookHandlingTest {
     }
 
     private PaymentFixture pendingPayment(String username) throws Exception {
+        return pendingPayment(username, "fake");
+    }
+
+    private PaymentFixture pendingPayment(String username, String providerCode) throws Exception {
         UUID orderId = pendingOrder(username);
         CustomerOrderRecord order = orderRepository.findWithCustomerById(orderId).orElseThrow();
         String idempotencyKey = "pending-webhook-payment-" + UUID.randomUUID();
         PaymentRecord payment = paymentRepository.saveAndFlush(PaymentRecord.pending(
                 order,
                 idempotencyKey,
-                "fake",
-                providerPaymentIdempotencyKey(order, idempotencyKey)
+                providerCode,
+                providerPaymentIdempotencyKey(order, providerCode, idempotencyKey)
         ));
         return new PaymentFixture(orderId, payment.getId(), null);
     }
@@ -478,8 +527,13 @@ class ProviderWebhookHandlingTest {
         return "\"" + value + "\"";
     }
 
-    private String providerPaymentIdempotencyKey(CustomerOrderRecord order, String idempotencyKey) {
-        return "payment:fake:%d:%s:%s".formatted(
+    private String providerPaymentIdempotencyKey(
+            CustomerOrderRecord order,
+            String providerCode,
+            String idempotencyKey
+    ) {
+        return "payment:%s:%d:%s:%s".formatted(
+                providerCode,
                 order.getCustomer().getId(),
                 order.getId(),
                 idempotencyKey
@@ -518,6 +572,18 @@ class ProviderWebhookHandlingTest {
                 .stream()
                 .map(AuditEventRecord::getAction)
                 .toList();
+    }
+
+    private void assertWebhookAuditDetails(String action, String... fragments) {
+        List<String> details = auditEventRepository.findAll()
+                .stream()
+                .filter(event -> action.equals(event.getAction()))
+                .map(AuditEventRecord::getDetails)
+                .toList();
+
+        assertThat(details).isNotEmpty();
+        assertThat(details)
+                .anySatisfy(value -> assertThat(value).contains(fragments));
     }
 
     private record PaymentFixture(UUID orderId, UUID paymentId, String providerPaymentId) {
