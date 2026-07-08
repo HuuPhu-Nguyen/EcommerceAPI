@@ -34,12 +34,20 @@ public class PaymentAttemptService {
     }
 
     @Transactional(readOnly = true)
-    public void validatePayable(long customerId, UUID orderId) {
-        paymentAttempts.validatePayable(customerId, orderId);
+    public PaymentPayableOrder validatePayable(long customerId, UUID orderId) {
+        return paymentAttempts.validatePayable(customerId, orderId);
     }
 
     @Transactional
-    public PaymentAttemptSnapshot startAttempt(long customerId, UUID orderId, String idempotencyKey) {
+    public PaymentAttemptSnapshot startAttempt(
+            long customerId,
+            UUID orderId,
+            String idempotencyKey,
+            String providerCode
+    ) {
+        if (providerCode == null || providerCode.isBlank()) {
+            throw new IllegalArgumentException("payment provider code is required");
+        }
         return paymentAttempts.startAttempt(customerId, orderId, idempotencyKey);
     }
 
@@ -111,6 +119,7 @@ public class PaymentAttemptService {
         return new PaymentAttemptResponse(
                 payment.paymentId(),
                 payment.orderId(),
+                null,
                 payment.status().name(),
                 payment.providerStatus(),
                 payment.providerPaymentId(),

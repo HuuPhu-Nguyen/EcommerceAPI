@@ -9,6 +9,7 @@ public record CreatePaymentCommand(
         String idempotencyKey,
         String requestBody,
         UUID orderId,
+        String provider,
         String paymentMethodToken
 ) {
 
@@ -22,6 +23,7 @@ public record CreatePaymentCommand(
         if (paymentMethodToken == null || paymentMethodToken.isBlank()) {
             throw new IllegalArgumentException("payment method token is required");
         }
+        provider = provider == null ? null : provider.trim();
         paymentMethodToken = paymentMethodToken.trim();
     }
 }

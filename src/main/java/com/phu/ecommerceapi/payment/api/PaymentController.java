@@ -30,7 +30,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/payments")
-@Tag(name = "Payments", description = "Idempotent fake-provider payment creation with stable replay semantics.")
+@Tag(name = "Payments", description = "Idempotent provider-selected payment creation with stable replay semantics.")
 public class PaymentController {
 
     private final CreatePaymentUseCase createPaymentUseCase;
@@ -119,6 +119,7 @@ public class PaymentController {
                 idempotencyKey,
                 requestBody,
                 request.orderId(),
+                request.provider(),
                 request.paymentMethodToken()
         ));
         return ResponseEntity

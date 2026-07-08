@@ -6,6 +6,7 @@ import java.util.UUID;
 public record PaymentResponse(
         UUID paymentId,
         UUID orderId,
+        String provider,
         String status,
         String providerStatus,
         String providerPaymentId,

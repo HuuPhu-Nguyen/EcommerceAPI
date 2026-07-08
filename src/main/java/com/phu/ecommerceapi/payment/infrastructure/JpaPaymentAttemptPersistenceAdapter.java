@@ -7,6 +7,7 @@ import com.phu.ecommerceapi.payment.application.PaymentAttemptPersistencePort;
 import com.phu.ecommerceapi.payment.application.PaymentAttemptSnapshot;
 import com.phu.ecommerceapi.payment.application.PaymentAttemptUpdate;
 import com.phu.ecommerceapi.payment.application.PaymentAttemptView;
+import com.phu.ecommerceapi.payment.application.PaymentPayableOrder;
 import com.phu.ecommerceapi.payment.application.PaymentProviderResult;
 import com.phu.ecommerceapi.payment.application.PaymentWebhookAttempt;
 import com.phu.ecommerceapi.shared.api.ConflictException;
@@ -34,7 +35,7 @@ public class JpaPaymentAttemptPersistenceAdapter implements PaymentAttemptPersis
     }
 
     @Override
-    public void validatePayable(long customerId, UUID orderId) {
+    public PaymentPayableOrder validatePayable(long customerId, UUID orderId) {
         CustomerOrderRecord order = orderRepository.findWithCustomerById(orderId)
                 .orElseThrow(() -> new NotFoundException("Order not found"));
         assertOrderOwner(order, customerId);
@@ -42,6 +43,7 @@ public class JpaPaymentAttemptPersistenceAdapter implements PaymentAttemptPersis
         if (paymentRepository.existsByOrderId(orderId)) {
             throw new ConflictException("Order already has a payment attempt");
         }
+        return new PaymentPayableOrder(order.getId(), order.getTotalAmount(), order.getCurrency());
     }
 
     @Override

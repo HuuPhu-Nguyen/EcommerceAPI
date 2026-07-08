@@ -7,6 +7,7 @@ import com.phu.ecommerceapi.User.UserModel;
 import com.phu.ecommerceapi.User.UserRepo;
 import com.phu.ecommerceapi.audit.infrastructure.AuditEventRecord;
 import com.phu.ecommerceapi.audit.infrastructure.AuditEventRepository;
+import com.phu.ecommerceapi.cart.infrastructure.CartModel;
 import com.phu.ecommerceapi.cart.infrastructure.CartRepo;
 import com.phu.ecommerceapi.inventory.infrastructure.InventoryRecord;
 import com.phu.ecommerceapi.inventory.infrastructure.InventoryRepository;
@@ -119,6 +120,7 @@ class CreatePaymentUseCaseTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.paymentId").exists())
                 .andExpect(jsonPath("$.orderId").value(orderId.toString()))
+                .andExpect(jsonPath("$.provider").value("fake"))
                 .andExpect(jsonPath("$.status").value("SUCCEEDED"))
                 .andExpect(jsonPath("$.providerStatus").value("SUCCEEDED"))
                 .andExpect(jsonPath("$.providerPaymentId").isNotEmpty())
@@ -139,7 +141,7 @@ class CreatePaymentUseCaseTest {
     void repeatedIdempotentPaymentRequestReturnsSameStableResponse() throws Exception {
         String username = "payment-replay@example.com";
         UUID orderId = pendingOrder(username);
-        String requestBody = paymentJson(orderId, "pm_approved");
+        String requestBody = paymentJson(orderId, "fake", "pm_approved");
 
         MvcResult firstResult = createPayment(username, "payment-key-2", requestBody)
                 .andExpect(status().isOk())
@@ -169,12 +171,57 @@ class CreatePaymentUseCaseTest {
     }
 
     @Test
+    void sameIdempotencyKeyWithDifferentProviderReturnsIdempotencyConflict() throws Exception {
+        String username = "payment-provider-conflict@example.com";
+        UUID orderId = pendingOrder(username);
+
+        createPayment(username, "payment-provider-key-1", paymentJson(orderId, "fake", "pm_approved"))
+                .andExpect(status().isOk());
+
+        createPayment(username, "payment-provider-key-1", paymentJson(orderId, "stripe", "pm_approved"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CONFLICT"))
+                .andExpect(jsonPath("$.detail").value("Idempotency key was reused with a different request body"));
+    }
+
+    @Test
+    void unknownProviderReturnsBadRequest() throws Exception {
+        String username = "payment-unknown-provider@example.com";
+        UUID orderId = pendingOrder(username);
+
+        createPayment(username, "payment-provider-key-2", paymentJson(orderId, "unknown", "pm_approved"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.detail").value("Unknown payment provider: unknown"));
+
+        assertThat(paymentRepository.findAll()).isEmpty();
+        assertThat(idempotencyRepository.findAll()).isEmpty();
+    }
+
+    @Test
+    void providerUnsupportedForOrderReturnsConflictBeforePaymentAttempt() throws Exception {
+        String username = "payment-unsupported-provider@example.com";
+        UUID orderId = pendingOrderWithoutCheckout(username, "Euro Payment Product", "10.00", "EUR");
+
+        createPayment(username, "payment-provider-key-3", paymentJson(orderId, "fake", "pm_approved"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CONFLICT"))
+                .andExpect(jsonPath("$.detail").value("Payment provider is not available for this order"));
+
+        CustomerOrderRecord order = orderRepository.findById(orderId).orElseThrow();
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING_PAYMENT);
+        assertThat(paymentRepository.findAll()).isEmpty();
+        assertThat(idempotencyRepository.findAll()).isEmpty();
+    }
+
+    @Test
     void providerFailurePersistsFailedPaymentAndDoesNotMarkOrderPaid() throws Exception {
         String username = "payment-failed@example.com";
         UUID orderId = pendingOrder(username);
 
         createPayment(username, "payment-key-4", paymentJson(orderId, "pm_card_declined"))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.provider").value("fake"))
                 .andExpect(jsonPath("$.status").value("FAILED"))
                 .andExpect(jsonPath("$.providerStatus").value("FAILED"))
                 .andExpect(jsonPath("$.failureCode").value("fake_declined"));
@@ -223,6 +270,20 @@ class CreatePaymentUseCaseTest {
         long cartId = createCart(username);
         addItem(username, cartId, product.getProductId(), 2);
         return checkout(username, cartId);
+    }
+
+    private UUID pendingOrderWithoutCheckout(
+            String username,
+            String productName,
+            String price,
+            String currency
+    ) {
+        UserModel customer = user(username);
+        CartModel cart = cartRepo.save(new CartModel(customer));
+        ProductModel product = product(productName, 10, price, currency);
+        CustomerOrderRecord order = CustomerOrderRecord.pendingPayment(customer, cart.getId(), currency);
+        order.addItem(product, 1, product.priceMoney());
+        return orderRepository.save(order).getId();
     }
 
     private long createCart(String username) throws Exception {
@@ -275,9 +336,14 @@ class CreatePaymentUseCaseTest {
     }
 
     private ProductModel product(String name, int availableQuantity) {
+        return product(name, availableQuantity, "10.00", "USD");
+    }
+
+    private ProductModel product(String name, int availableQuantity, String price, String currency) {
         ProductModel product = productRepo.save(ProductModel.builder()
                 .name(name)
-                .price(new java.math.BigDecimal("10.00"))
+                .price(new java.math.BigDecimal(price))
+                .currency(currency)
                 .stock(availableQuantity)
                 .active(true)
                 .build());
@@ -298,12 +364,25 @@ class CreatePaymentUseCaseTest {
     }
 
     private String paymentJson(UUID orderId, String paymentMethodToken) {
+        return paymentJson(orderId, null, paymentMethodToken);
+    }
+
+    private String paymentJson(UUID orderId, String provider, String paymentMethodToken) {
+        if (provider == null) {
+            return """
+                    {
+                      "orderId": "%s",
+                      "paymentMethodToken": "%s"
+                    }
+                    """.formatted(orderId, paymentMethodToken);
+        }
         return """
                 {
                   "orderId": "%s",
+                  "provider": "%s",
                   "paymentMethodToken": "%s"
                 }
-                """.formatted(orderId, paymentMethodToken);
+                """.formatted(orderId, provider, paymentMethodToken);
     }
 
     private void assertBalancedPaymentLedger(PaymentRecord payment) {

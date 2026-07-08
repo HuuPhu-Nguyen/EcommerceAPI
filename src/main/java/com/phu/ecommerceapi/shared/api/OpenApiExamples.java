@@ -56,6 +56,7 @@ public final class OpenApiExamples {
     public static final String CREATE_PAYMENT_REQUEST = """
             {
               "orderId": "7b3c4aa9-5658-48df-a0a9-fc6f8e9e6f8b",
+              "provider": "fake",
               "paymentMethodToken": "pm_approved"
             }
             """;
@@ -64,6 +65,7 @@ public final class OpenApiExamples {
             {
               "paymentId": "638dc8e7-e7c5-47bf-a62f-a5728f9c19be",
               "orderId": "7b3c4aa9-5658-48df-a0a9-fc6f8e9e6f8b",
+              "provider": "fake",
               "status": "SUCCEEDED",
               "providerStatus": "SUCCEEDED",
               "providerPaymentId": "fake-pay-638dc8e7",

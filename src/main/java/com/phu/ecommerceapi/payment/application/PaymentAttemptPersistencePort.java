@@ -5,7 +5,7 @@ import java.util.UUID;
 
 public interface PaymentAttemptPersistencePort {
 
-    void validatePayable(long customerId, UUID orderId);
+    PaymentPayableOrder validatePayable(long customerId, UUID orderId);
 
     PaymentAttemptSnapshot startAttempt(long customerId, UUID orderId, String idempotencyKey);
 

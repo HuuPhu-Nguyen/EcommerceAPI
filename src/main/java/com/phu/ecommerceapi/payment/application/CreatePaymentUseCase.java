@@ -12,6 +12,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -27,20 +28,23 @@ public class CreatePaymentUseCase {
     private final CustomerProfileLookup customerProfileLookup;
     private final PaymentIdempotencyService idempotencyService;
     private final PaymentAttemptService paymentAttemptService;
-    private final PaymentProvider paymentProvider;
+    private final PaymentProviderRegistry paymentProviderRegistry;
+    private final PaymentProviderAvailabilityService paymentProviderAvailabilityService;
 
     public CreatePaymentUseCase(
             ObjectMapper objectMapper,
             CustomerProfileLookup customerProfileLookup,
             PaymentIdempotencyService idempotencyService,
             PaymentAttemptService paymentAttemptService,
-            PaymentProvider paymentProvider
+            PaymentProviderRegistry paymentProviderRegistry,
+            PaymentProviderAvailabilityService paymentProviderAvailabilityService
     ) {
         this.objectMapper = objectMapper;
         this.customerProfileLookup = customerProfileLookup;
         this.idempotencyService = idempotencyService;
         this.paymentAttemptService = paymentAttemptService;
-        this.paymentProvider = paymentProvider;
+        this.paymentProviderRegistry = paymentProviderRegistry;
+        this.paymentProviderAvailabilityService = paymentProviderAvailabilityService;
     }
 
     public CreatePaymentResult create(CreatePaymentCommand command) {
@@ -59,7 +63,10 @@ public class CreatePaymentUseCase {
             return replayOrReject(existingDecision.get());
         }
 
-        paymentAttemptService.validatePayable(customerId, command.orderId());
+        PaymentProvider paymentProvider = paymentProviderRegistry.resolveForPayment(command.provider());
+        PaymentPayableOrder payableOrder = paymentAttemptService.validatePayable(customerId, command.orderId());
+        assertProviderAllowed(paymentProvider.providerCode(), payableOrder);
+
         PaymentIdempotencyDecision idempotencyDecision = idempotencyService.start(idempotencyCommand);
         if (idempotencyDecision.type() == PaymentIdempotencyDecisionType.REPLAY) {
             return replayOrReject(idempotencyDecision);
@@ -71,7 +78,8 @@ public class CreatePaymentUseCase {
         PaymentAttemptSnapshot attempt = paymentAttemptService.startAttempt(
                 customerId,
                 command.orderId(),
-                command.idempotencyKey()
+                command.idempotencyKey(),
+                paymentProvider.providerCode()
         );
 
         PaymentAttemptResponse response;
@@ -81,16 +89,17 @@ public class CreatePaymentUseCase {
                     attempt.orderId(),
                     attempt.amount(),
                     attempt.currency(),
-                    providerIdempotencyKey(customerId, attempt, command.idempotencyKey()),
+                    providerIdempotencyKey(customerId, paymentProvider.providerCode(), attempt, command.idempotencyKey()),
                     providerMetadata(command)
             ));
-            response = paymentAttemptService.completeAttempt(attempt.paymentId(), providerResult, command.currentUser());
+            response = paymentAttemptService.completeAttempt(attempt.paymentId(), providerResult, command.currentUser())
+                    .withProvider(paymentProvider.providerCode());
         } catch (PaymentProviderTimeoutException exception) {
             response = paymentAttemptService.markProviderTimeout(
                     attempt.paymentId(),
                     exception.getMessage(),
                     command.currentUser()
-            );
+            ).withProvider(paymentProvider.providerCode());
             httpStatus = HttpStatus.SERVICE_UNAVAILABLE.value();
         }
 
@@ -119,8 +128,28 @@ public class CreatePaymentUseCase {
         return customer.customerId();
     }
 
-    private String providerIdempotencyKey(long customerId, PaymentAttemptSnapshot attempt, String idempotencyKey) {
-        return "payment:%d:%s:%s".formatted(customerId, attempt.orderId(), idempotencyKey.trim());
+    private void assertProviderAllowed(String providerCode, PaymentPayableOrder order) {
+        List<String> allowedProviders = paymentProviderAvailabilityService.allowedProviderCodes(
+                order.amount(),
+                order.currency()
+        );
+        if (!allowedProviders.contains(providerCode)) {
+            throw new ConflictException("Payment provider is not available for this order");
+        }
+    }
+
+    private String providerIdempotencyKey(
+            long customerId,
+            String providerCode,
+            PaymentAttemptSnapshot attempt,
+            String idempotencyKey
+    ) {
+        return "payment:%s:%d:%s:%s".formatted(
+                providerCode,
+                customerId,
+                attempt.orderId(),
+                idempotencyKey.trim()
+        );
     }
 
     private Map<String, String> providerMetadata(CreatePaymentCommand command) {
