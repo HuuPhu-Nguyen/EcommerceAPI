@@ -23,6 +23,7 @@ class FakePaymentProviderTest {
         assertThat(provider.providerCode()).isEqualTo("fake");
         assertThat(provider.capabilities().supportedCurrencies()).containsExactly("USD");
         assertThat(provider.capabilities().minimumAmount()).isEqualByComparingTo("0.50");
+        assertThat(provider.capabilities().supportsPayments()).isTrue();
         assertThat(provider.capabilities().supportsRefunds()).isTrue();
         assertThat(provider.capabilities().available()).isTrue();
     }

@@ -30,6 +30,29 @@ public final class OpenApiExamples {
             }
             """;
 
+    public static final String CHECKOUT_RESPONSE = """
+            {
+              "orderId": "7b3c4aa9-5658-48df-a0a9-fc6f8e9e6f8b",
+              "cartId": 42,
+              "customerId": 1001,
+              "status": "PENDING_PAYMENT",
+              "total": 149.98,
+              "currency": "USD",
+              "createdAt": "2026-07-07T15:30:00Z",
+              "items": [
+                {
+                  "productId": 501,
+                  "productName": "Hardware Security Key",
+                  "quantity": 2,
+                  "unitPrice": 74.99,
+                  "currency": "USD",
+                  "lineTotal": 149.98
+                }
+              ],
+              "allowedPaymentProviders": ["fake"]
+            }
+            """;
+
     public static final String CREATE_PAYMENT_REQUEST = """
             {
               "orderId": "7b3c4aa9-5658-48df-a0a9-fc6f8e9e6f8b",

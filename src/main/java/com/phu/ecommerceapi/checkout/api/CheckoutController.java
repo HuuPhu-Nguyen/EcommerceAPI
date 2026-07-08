@@ -1,10 +1,10 @@
 package com.phu.ecommerceapi.checkout.api;
 
+import com.phu.ecommerceapi.checkout.application.CheckoutResponse;
 import com.phu.ecommerceapi.checkout.application.CheckoutService;
 import com.phu.ecommerceapi.identity.api.AuthenticatedUser;
 import com.phu.ecommerceapi.identity.application.CurrentUser;
 import com.phu.ecommerceapi.identity.application.SecurityExpressions;
-import com.phu.ecommerceapi.order.application.OrderResponse;
 import com.phu.ecommerceapi.shared.api.OpenApiExamples;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -55,8 +55,8 @@ public class CheckoutController {
                     description = "Order created and waiting for payment.",
                     content = @Content(
                             mediaType = MediaType.APPLICATION_JSON_VALUE,
-                            schema = @Schema(implementation = OrderResponse.class),
-                            examples = @ExampleObject(value = OpenApiExamples.ORDER_RESPONSE)
+                            schema = @Schema(implementation = CheckoutResponse.class),
+                            examples = @ExampleObject(value = OpenApiExamples.CHECKOUT_RESPONSE)
                     )
             ),
             @ApiResponse(
@@ -96,7 +96,7 @@ public class CheckoutController {
                     )
             )
     })
-    public ResponseEntity<OrderResponse> checkout(
+    public ResponseEntity<CheckoutResponse> checkout(
             @Valid @RequestBody CheckoutRequest request,
             @Parameter(hidden = true)
             @AuthenticatedUser CurrentUser currentUser

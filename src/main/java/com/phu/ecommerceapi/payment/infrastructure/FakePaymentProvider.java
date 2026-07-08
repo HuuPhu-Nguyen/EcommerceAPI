@@ -29,6 +29,7 @@ public class FakePaymentProvider implements PaymentProvider {
             new BigDecimal("999999.99"),
             true,
             true,
+            true,
             null
     );
 

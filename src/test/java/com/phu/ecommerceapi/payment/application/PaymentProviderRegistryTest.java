@@ -121,6 +121,7 @@ class PaymentProviderRegistryTest {
                     new BigDecimal("999999.99"),
                     true,
                     true,
+                    true,
                     null
             );
         }

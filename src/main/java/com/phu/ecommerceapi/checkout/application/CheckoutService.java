@@ -10,10 +10,10 @@ import com.phu.ecommerceapi.cart.infrastructure.CartRepo;
 import com.phu.ecommerceapi.identity.application.CurrentUser;
 import com.phu.ecommerceapi.inventory.application.InventoryReservationService;
 import com.phu.ecommerceapi.order.application.OrderItemResponse;
-import com.phu.ecommerceapi.order.application.OrderResponse;
 import com.phu.ecommerceapi.order.infrastructure.CustomerOrderRecord;
 import com.phu.ecommerceapi.order.infrastructure.CustomerOrderRepository;
 import com.phu.ecommerceapi.order.infrastructure.OrderItemRecord;
+import com.phu.ecommerceapi.payment.application.PaymentProviderAvailabilityService;
 import com.phu.ecommerceapi.shared.api.ConflictException;
 import com.phu.ecommerceapi.shared.api.NotFoundException;
 import com.phu.ecommerceapi.shared.observability.BusinessMetrics;
@@ -21,6 +21,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.util.Comparator;
 import java.util.List;
 
@@ -33,6 +34,7 @@ public class CheckoutService {
     private final CartRepo cartRepo;
     private final InventoryReservationService inventoryReservationService;
     private final CustomerOrderRepository orderRepository;
+    private final PaymentProviderAvailabilityService paymentProviderAvailabilityService;
     private final AuditEventRecorder auditEventRecorder;
     private final BusinessMetrics businessMetrics;
 
@@ -40,18 +42,20 @@ public class CheckoutService {
             CartRepo cartRepo,
             InventoryReservationService inventoryReservationService,
             CustomerOrderRepository orderRepository,
+            PaymentProviderAvailabilityService paymentProviderAvailabilityService,
             AuditEventRecorder auditEventRecorder,
             BusinessMetrics businessMetrics
     ) {
         this.cartRepo = cartRepo;
         this.inventoryReservationService = inventoryReservationService;
         this.orderRepository = orderRepository;
+        this.paymentProviderAvailabilityService = paymentProviderAvailabilityService;
         this.auditEventRecorder = auditEventRecorder;
         this.businessMetrics = businessMetrics;
     }
 
     @Transactional
-    public OrderResponse checkout(long cartId, CurrentUser currentUser) {
+    public CheckoutResponse checkout(long cartId, CurrentUser currentUser) {
         try {
             CartModel cart = cartRepo.findForCheckoutById(cartId)
                     .orElseThrow(() -> new NotFoundException("Cart not found"));
@@ -64,7 +68,13 @@ public class CheckoutService {
                 throw new ConflictException("Cannot checkout an empty cart");
             }
 
-            CustomerOrderRecord order = CustomerOrderRecord.pendingPayment(cart.getOwner(), cart.getId(), DEFAULT_CURRENCY);
+            requireAvailablePaymentProvider(cart.getTotal(), cart.getCurrency());
+
+            CustomerOrderRecord order = CustomerOrderRecord.pendingPayment(
+                    cart.getOwner(),
+                    cart.getId(),
+                    DEFAULT_CURRENCY
+            );
             for (CartItemModel item : cart.getItems()) {
                 inventoryReservationService.reserve(item.getProductId(), item.getQuantity());
                 ProductModel product = item.getProductModel();
@@ -76,7 +86,10 @@ public class CheckoutService {
             cartRepo.save(cart);
             recordAudit(currentUser, savedOrder);
             businessMetrics.checkoutAttempt("success");
-            return toResponse(savedOrder);
+            return toResponse(
+                    savedOrder,
+                    requireAvailablePaymentProvider(savedOrder.getTotalAmount(), savedOrder.getCurrency())
+            );
         } catch (RuntimeException exception) {
             businessMetrics.checkoutAttempt("failure");
             throw exception;
@@ -91,6 +104,14 @@ public class CheckoutService {
 
     private boolean belongsToCurrentUser(UserModel owner, CurrentUser currentUser) {
         return currentUser.hasSubject(owner.getIdentitySubject());
+    }
+
+    private List<String> requireAvailablePaymentProvider(BigDecimal amount, String currency) {
+        List<String> allowedProviders = paymentProviderAvailabilityService.allowedProviderCodes(amount, currency);
+        if (allowedProviders.isEmpty()) {
+            throw new ConflictException("No enabled payment provider is available for this order");
+        }
+        return allowedProviders;
     }
 
     private void recordAudit(CurrentUser actor, CustomerOrderRecord order) {
@@ -108,7 +129,7 @@ public class CheckoutService {
         ));
     }
 
-    private OrderResponse toResponse(CustomerOrderRecord order) {
+    private CheckoutResponse toResponse(CustomerOrderRecord order, List<String> allowedPaymentProviders) {
         List<OrderItemResponse> items = order.getItems()
                 .stream()
                 .sorted(Comparator.comparingLong(OrderItemRecord::getProductId))
@@ -122,7 +143,7 @@ public class CheckoutService {
                 ))
                 .toList();
 
-        return new OrderResponse(
+        return new CheckoutResponse(
                 order.getId(),
                 order.getCartId(),
                 order.getCustomer().getId(),
@@ -130,7 +151,8 @@ public class CheckoutService {
                 order.getTotalAmount(),
                 order.getCurrency(),
                 order.getCreatedAt(),
-                items
+                items,
+                allowedPaymentProviders
         );
     }
 }

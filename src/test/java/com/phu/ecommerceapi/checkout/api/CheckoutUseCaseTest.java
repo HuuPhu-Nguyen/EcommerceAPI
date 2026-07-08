@@ -97,6 +97,8 @@ class CheckoutUseCaseTest {
                 .andExpect(jsonPath("$.status").value("PENDING_PAYMENT"))
                 .andExpect(jsonPath("$.total").value(20.00))
                 .andExpect(jsonPath("$.currency").value("USD"))
+                .andExpect(jsonPath("$.allowedPaymentProviders.length()").value(1))
+                .andExpect(jsonPath("$.allowedPaymentProviders[0]").value("fake"))
                 .andExpect(jsonPath("$.items.length()").value(1))
                 .andExpect(jsonPath("$.items[0].productId").value(product.getProductId()))
                 .andExpect(jsonPath("$.items[0].productName").value("Mechanical Keyboard"))
@@ -145,8 +147,10 @@ class CheckoutUseCaseTest {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("OUT_OF_STOCK"));
 
-        InventoryRecord availableInventory = inventoryRepository.findById(availableProduct.getProductId()).orElseThrow();
-        InventoryRecord contestedInventory = inventoryRepository.findById(contestedProduct.getProductId()).orElseThrow();
+        InventoryRecord availableInventory = inventoryRepository.findById(availableProduct.getProductId())
+                .orElseThrow();
+        InventoryRecord contestedInventory = inventoryRepository.findById(contestedProduct.getProductId())
+                .orElseThrow();
         assertThat(availableInventory.getAvailableQuantity()).isEqualTo(5);
         assertThat(availableInventory.getReservedQuantity()).isEqualTo(0);
         assertThat(contestedInventory.getAvailableQuantity()).isEqualTo(0);
@@ -187,6 +191,70 @@ class CheckoutUseCaseTest {
         assertThat(orderRepository.findAll()).isEmpty();
     }
 
+    @Test
+    void checkoutFailsBeforeInventoryReservationWhenNoProviderSupportsCurrency() throws Exception {
+        String username = "unsupported-currency-customer@example.com";
+        user(username);
+        ProductModel product = product("Euro Keyboard", 5, "10.00", "EUR");
+        long cartId = createCart(username);
+        addItem(username, cartId, product.getProductId(), 2);
+
+        mockMvc.perform(post("/checkout")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "cartId": %d
+                                }
+                                """.formatted(cartId))
+                        .with(customerJwt(username, "checkout:write")))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CONFLICT"))
+                .andExpect(jsonPath("$.detail").value("No enabled payment provider is available for this order"));
+
+        InventoryRecord inventory = inventoryRepository.findById(product.getProductId()).orElseThrow();
+        assertThat(inventory.getAvailableQuantity()).isEqualTo(5);
+        assertThat(inventory.getReservedQuantity()).isEqualTo(0);
+        assertThat(orderRepository.findAll()).isEmpty();
+        assertThat(auditEventRepository.findAll()).isEmpty();
+
+        mockMvc.perform(get("/cart/{cartId}", cartId)
+                        .with(customerJwt(username, "cart:read")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(1));
+    }
+
+    @Test
+    void checkoutFailsBeforeInventoryReservationWhenNoProviderSupportsAmount() throws Exception {
+        String username = "unsupported-amount-customer@example.com";
+        user(username);
+        ProductModel product = product("Large Order", 5, "1000000.00", "USD");
+        long cartId = createCart(username);
+        addItem(username, cartId, product.getProductId(), 1);
+
+        mockMvc.perform(post("/checkout")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "cartId": %d
+                                }
+                                """.formatted(cartId))
+                        .with(customerJwt(username, "checkout:write")))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CONFLICT"))
+                .andExpect(jsonPath("$.detail").value("No enabled payment provider is available for this order"));
+
+        InventoryRecord inventory = inventoryRepository.findById(product.getProductId()).orElseThrow();
+        assertThat(inventory.getAvailableQuantity()).isEqualTo(5);
+        assertThat(inventory.getReservedQuantity()).isEqualTo(0);
+        assertThat(orderRepository.findAll()).isEmpty();
+        assertThat(auditEventRepository.findAll()).isEmpty();
+
+        mockMvc.perform(get("/cart/{cartId}", cartId)
+                        .with(customerJwt(username, "cart:read")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(1));
+    }
+
     private long createCart(String username) throws Exception {
         MvcResult result = mockMvc.perform(post("/cart")
                         .with(customerJwt(username, "cart:write")))
@@ -221,9 +289,14 @@ class CheckoutUseCaseTest {
     }
 
     private ProductModel product(String name, int availableQuantity) {
+        return product(name, availableQuantity, "10.00", "USD");
+    }
+
+    private ProductModel product(String name, int availableQuantity, String price, String currency) {
         ProductModel product = productRepo.save(ProductModel.builder()
                 .name(name)
-                .price(new java.math.BigDecimal("10.00"))
+                .price(new java.math.BigDecimal(price))
+                .currency(currency)
                 .stock(availableQuantity)
                 .active(true)
                 .build());

@@ -8,6 +8,7 @@ public record PaymentProviderCapabilitiesView(
         Set<String> supportedCurrencies,
         BigDecimal minimumAmount,
         BigDecimal maximumAmount,
+        boolean supportsPayments,
         boolean supportsRefunds,
         boolean available,
         String unavailableReason
@@ -20,6 +21,7 @@ public record PaymentProviderCapabilitiesView(
                 capabilities.supportedCurrencies(),
                 capabilities.minimumAmount(),
                 capabilities.maximumAmount(),
+                capabilities.supportsPayments(),
                 capabilities.supportsRefunds(),
                 capabilities.available(),
                 capabilities.unavailableReason()

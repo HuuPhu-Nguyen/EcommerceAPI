@@ -11,6 +11,7 @@ public record PaymentProviderCapabilities(
         Set<String> supportedCurrencies,
         BigDecimal minimumAmount,
         BigDecimal maximumAmount,
+        boolean supportsPayments,
         boolean supportsRefunds,
         boolean available,
         String unavailableReason
