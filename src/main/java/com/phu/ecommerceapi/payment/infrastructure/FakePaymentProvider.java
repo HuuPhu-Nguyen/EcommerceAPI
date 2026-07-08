@@ -7,7 +7,6 @@ import com.phu.ecommerceapi.payment.application.PaymentProviderResult;
 import com.phu.ecommerceapi.payment.application.PaymentProviderTimeoutException;
 import com.phu.ecommerceapi.payment.application.PaymentRefundProviderRequest;
 import com.phu.ecommerceapi.payment.application.PaymentRefundProviderResult;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
@@ -18,7 +17,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 @Component
-@ConditionalOnProperty(name = "app.payment-provider", havingValue = "fake", matchIfMissing = true)
 public class FakePaymentProvider implements PaymentProvider {
 
     private static final String DECLINED_CODE = "fake_declined";
