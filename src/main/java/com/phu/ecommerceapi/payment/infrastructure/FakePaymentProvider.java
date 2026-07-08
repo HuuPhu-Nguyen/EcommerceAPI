@@ -1,6 +1,7 @@
 package com.phu.ecommerceapi.payment.infrastructure;
 
 import com.phu.ecommerceapi.payment.application.PaymentProvider;
+import com.phu.ecommerceapi.payment.application.PaymentProviderCapabilities;
 import com.phu.ecommerceapi.payment.application.PaymentProviderOutcomeMetadata;
 import com.phu.ecommerceapi.payment.application.PaymentProviderRequest;
 import com.phu.ecommerceapi.payment.application.PaymentProviderResult;
@@ -9,9 +10,11 @@ import com.phu.ecommerceapi.payment.application.PaymentRefundProviderRequest;
 import com.phu.ecommerceapi.payment.application.PaymentRefundProviderResult;
 import org.springframework.stereotype.Component;
 
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -20,9 +23,27 @@ import java.util.concurrent.ConcurrentMap;
 public class FakePaymentProvider implements PaymentProvider {
 
     private static final String DECLINED_CODE = "fake_declined";
+    private static final PaymentProviderCapabilities CAPABILITIES = new PaymentProviderCapabilities(
+            Set.of("USD"),
+            new BigDecimal("0.50"),
+            new BigDecimal("999999.99"),
+            true,
+            true,
+            null
+    );
 
     private final ConcurrentMap<String, PaymentProviderResult> processedRequests = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, PaymentRefundProviderResult> processedRefundRequests = new ConcurrentHashMap<>();
+
+    @Override
+    public String providerCode() {
+        return "fake";
+    }
+
+    @Override
+    public PaymentProviderCapabilities capabilities() {
+        return CAPABILITIES;
+    }
 
     @Override
     public PaymentProviderResult createPayment(PaymentProviderRequest request) {

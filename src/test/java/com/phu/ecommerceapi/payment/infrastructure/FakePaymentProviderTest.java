@@ -19,6 +19,15 @@ class FakePaymentProviderTest {
     private final FakePaymentProvider provider = new FakePaymentProvider();
 
     @Test
+    void reportsFakeProviderCapabilities() {
+        assertThat(provider.providerCode()).isEqualTo("fake");
+        assertThat(provider.capabilities().supportedCurrencies()).containsExactly("USD");
+        assertThat(provider.capabilities().minimumAmount()).isEqualByComparingTo("0.50");
+        assertThat(provider.capabilities().supportsRefunds()).isTrue();
+        assertThat(provider.capabilities().available()).isTrue();
+    }
+
+    @Test
     void createsSuccessfulPaymentByDefault() {
         var result = provider.createPayment(request("payment-key-1", Map.of()));
 
