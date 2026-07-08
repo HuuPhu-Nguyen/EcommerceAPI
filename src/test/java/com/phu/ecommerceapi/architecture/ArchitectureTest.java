@@ -135,6 +135,17 @@ class ArchitectureTest {
     }
 
     @Test
+    void applicationPackagesMustNotDependOnStripeSdk() {
+        noClasses()
+                .that()
+                .resideInAnyPackage("..application..")
+                .should()
+                .dependOnClassesThat()
+                .resideInAnyPackage("com.stripe..")
+                .check(CLASSES);
+    }
+
+    @Test
     void coreApplicationPackagesMustUsePortsInsteadOfInfrastructure() {
         noClasses()
                 .that()

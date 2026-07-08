@@ -138,7 +138,8 @@ class PaymentProviderRegistryTest {
                 "test",
                 "keycloak",
                 new AppProperties.PaymentProviderProperties(activeProvider, enabledProviders),
-                new AppProperties.FakeProvider("fake-webhook-secret")
+                new AppProperties.FakeProvider("fake-webhook-secret"),
+                new AppProperties.StripeProviderProperties("", "", "", 2000, 5000)
         );
     }
 

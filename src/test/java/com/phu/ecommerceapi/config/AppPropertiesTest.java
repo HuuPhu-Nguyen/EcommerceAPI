@@ -1,5 +1,7 @@
 package com.phu.ecommerceapi.config;
 
+import com.phu.ecommerceapi.payment.infrastructure.StripeClientConfiguration;
+import com.stripe.StripeClient;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
@@ -98,6 +100,160 @@ class AppPropertiesTest {
                 );
     }
 
+    @Test
+    void stripeDisabledAllowsBlankStripeSecrets() {
+        AppProperties properties = properties(
+                "prod",
+                "fake",
+                List.of("fake"),
+                "fake-webhook-secret"
+        );
+
+        assertThat(validator.validate(properties)).isEmpty();
+    }
+
+    @Test
+    void stripeEnabledRequiresSecretKey() {
+        AppProperties properties = properties(
+                "prod",
+                "stripe",
+                List.of("stripe"),
+                "fake-webhook-secret",
+                new AppProperties.StripeProviderProperties(
+                        "",
+                        "whsec_test_safe_placeholder",
+                        "",
+                        2000,
+                        5000
+                )
+        );
+
+        assertThat(messages(properties))
+                .contains(
+                        "app.stripe.secret-key is required when "
+                                + "app.payment-provider.enabled contains stripe"
+                );
+    }
+
+    @Test
+    void stripeEnabledRequiresWebhookSecret() {
+        AppProperties properties = properties(
+                "prod",
+                "stripe",
+                List.of("stripe"),
+                "fake-webhook-secret",
+                new AppProperties.StripeProviderProperties(
+                        "sk_test_safe_placeholder",
+                        "",
+                        "",
+                        2000,
+                        5000
+                )
+        );
+
+        assertThat(messages(properties))
+                .contains(
+                        "app.stripe.webhook-secret is required when "
+                                + "app.payment-provider.enabled contains stripe"
+                );
+    }
+
+    @Test
+    void stripeEnabledRejectsInvalidTimeouts() {
+        AppProperties properties = properties(
+                "prod",
+                "stripe",
+                List.of("stripe"),
+                "fake-webhook-secret",
+                new AppProperties.StripeProviderProperties(
+                        "sk_test_safe_placeholder",
+                        "whsec_test_safe_placeholder",
+                        "",
+                        0,
+                        30001
+                )
+        );
+
+        assertThat(paths(properties))
+                .contains("stripe.connectTimeoutMs", "stripe.readTimeoutMs");
+    }
+
+    @Test
+    void stripeEnabledAllowsValidSafeTestPlaceholders() {
+        AppProperties properties = properties(
+                "prod",
+                "stripe",
+                List.of("stripe"),
+                "fake-webhook-secret",
+                new AppProperties.StripeProviderProperties(
+                        "sk_test_safe_placeholder",
+                        "whsec_test_safe_placeholder",
+                        "2026-06-30.preview",
+                        2000,
+                        5000
+                )
+        );
+
+        assertThat(validator.validate(properties)).isEmpty();
+    }
+
+    @Test
+    void stripeApiVersionMustNotBeWhitespaceWhenSet() {
+        AppProperties properties = properties(
+                "prod",
+                "stripe",
+                List.of("stripe"),
+                "fake-webhook-secret",
+                new AppProperties.StripeProviderProperties(
+                        "sk_test_safe_placeholder",
+                        "whsec_test_safe_placeholder",
+                        "   ",
+                        2000,
+                        5000
+                )
+        );
+
+        assertThat(messages(properties))
+                .contains("app.stripe.api-version must be nonblank when set");
+    }
+
+    @Test
+    void fakeOnlyContextDoesNotCreateStripeClient() {
+        new ApplicationContextRunner()
+                .withUserConfiguration(AppPropertiesConfiguration.class, StripeClientConfiguration.class)
+                .withPropertyValues(
+                        "app.environment=test",
+                        "app.authentication-provider=test",
+                        "app.payment-provider.active=fake",
+                        "app.payment-provider.enabled=fake",
+                        "app.fake-provider.webhook-secret=fake-webhook-secret"
+                )
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context).doesNotHaveBean(StripeClient.class);
+                });
+    }
+
+    @Test
+    void stripeEnabledWithValidConfigCreatesStripeClient() {
+        new ApplicationContextRunner()
+                .withUserConfiguration(AppPropertiesConfiguration.class, StripeClientConfiguration.class)
+                .withPropertyValues(
+                        "app.environment=test",
+                        "app.authentication-provider=test",
+                        "app.payment-provider.active=stripe",
+                        "app.payment-provider.enabled=stripe",
+                        "app.stripe.secret-key=sk_test_safe_placeholder",
+                        "app.stripe.webhook-secret=whsec_test_safe_placeholder",
+                        "app.stripe.connect-timeout-ms=2000",
+                        "app.stripe.read-timeout-ms=5000"
+                )
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context).hasSingleBean(StripeClient.class);
+                });
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"local", "test"})
     void profileDefaultConfigStartsWithFakeProviderSettings(String profile) {
@@ -112,15 +268,37 @@ class AppPropertiesTest {
                     assertThat(properties.paymentProvider().active()).isEqualTo("fake");
                     assertThat(properties.paymentProvider().enabled()).containsExactly("fake");
                     assertThat(properties.fakeProvider().webhookSecret()).isNotBlank();
+                    assertThat(properties.stripe().secretKey()).isBlank();
+                    assertThat(properties.stripe().webhookSecret()).isBlank();
+                    assertThat(properties.stripe().apiVersion()).isBlank();
+                    assertThat(properties.stripe().connectTimeoutMs()).isEqualTo(2000);
+                    assertThat(properties.stripe().readTimeoutMs()).isEqualTo(5000);
                 });
     }
 
     private AppProperties properties(String environment, String active, List<String> enabled, String webhookSecret) {
+        return properties(
+                environment,
+                active,
+                enabled,
+                webhookSecret,
+                new AppProperties.StripeProviderProperties("", "", "", 2000, 5000)
+        );
+    }
+
+    private AppProperties properties(
+            String environment,
+            String active,
+            List<String> enabled,
+            String webhookSecret,
+            AppProperties.StripeProviderProperties stripe
+    ) {
         return new AppProperties(
                 environment,
                 "keycloak",
                 new AppProperties.PaymentProviderProperties(active, enabled),
-                new AppProperties.FakeProvider(webhookSecret)
+                new AppProperties.FakeProvider(webhookSecret),
+                stripe
         );
     }
 

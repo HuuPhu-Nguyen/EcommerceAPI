@@ -62,7 +62,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @SpringBootTest(properties = {
         "app.payment-provider.active=stripe",
-        "app.payment-provider.enabled=fake,stripe"
+        "app.payment-provider.enabled=fake,stripe",
+        "app.stripe.secret-key=sk_test_safe_placeholder",
+        "app.stripe.webhook-secret=whsec_test_safe_placeholder"
 })
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
