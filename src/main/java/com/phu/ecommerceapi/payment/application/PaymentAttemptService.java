@@ -34,8 +34,11 @@ public class PaymentAttemptService {
     }
 
     @Transactional(readOnly = true)
-    public PaymentPayableOrder validatePayable(long customerId, UUID orderId) {
-        return paymentAttempts.validatePayable(customerId, orderId);
+    public PaymentPayableOrder validatePayable(long customerId, UUID orderId, String providerCode) {
+        if (providerCode == null || providerCode.isBlank()) {
+            throw new IllegalArgumentException("payment provider code is required");
+        }
+        return paymentAttempts.validatePayable(customerId, orderId, providerCode);
     }
 
     @Transactional

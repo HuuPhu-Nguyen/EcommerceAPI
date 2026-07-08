@@ -191,7 +191,7 @@ class RefundFlowTest {
         PaymentRecord payment = paymentRepository.findById(fixture.paymentId()).orElseThrow();
         CustomerOrderRecord order = orderRepository.findById(fixture.orderId()).orElseThrow();
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.FAILED);
-        assertThat(order.getStatus()).isEqualTo(OrderStatus.PAYMENT_FAILED);
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING_PAYMENT);
         assertThat(refundRepository.findAll()).isEmpty();
         assertThat(refundLedgerTransactions()).isEmpty();
     }

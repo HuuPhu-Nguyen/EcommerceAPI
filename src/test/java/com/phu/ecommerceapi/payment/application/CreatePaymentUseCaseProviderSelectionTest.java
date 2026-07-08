@@ -98,7 +98,7 @@ class CreatePaymentUseCaseProviderSelectionTest {
         );
         stubCustomerProfile();
         when(idempotencyService.findExisting(any(PaymentIdempotencyCommand.class))).thenReturn(Optional.empty());
-        when(paymentAttemptService.validatePayable(CUSTOMER_ID, orderId))
+        when(paymentAttemptService.validatePayable(CUSTOMER_ID, orderId, "stripe"))
                 .thenReturn(new PaymentPayableOrder(orderId, new BigDecimal("20.00"), "USD"));
         when(idempotencyService.start(any(PaymentIdempotencyCommand.class)))
                 .thenReturn(PaymentIdempotencyDecision.started(99L));

@@ -66,7 +66,11 @@ public class CreatePaymentUseCase {
 
         PaymentProvider paymentProvider = paymentProviderRegistry.resolveForPayment(command.provider());
         String providerCode = paymentProvider.providerCode();
-        PaymentPayableOrder payableOrder = paymentAttemptService.validatePayable(customerId, command.orderId());
+        PaymentPayableOrder payableOrder = paymentAttemptService.validatePayable(
+                customerId,
+                command.orderId(),
+                providerCode
+        );
         assertProviderAllowed(providerCode, payableOrder);
 
         PaymentIdempotencyDecision idempotencyDecision = idempotencyService.start(idempotencyCommand);

@@ -10,6 +10,7 @@ import com.phu.ecommerceapi.payment.application.PaymentAttemptView;
 import com.phu.ecommerceapi.payment.application.PaymentPayableOrder;
 import com.phu.ecommerceapi.payment.application.PaymentProviderResult;
 import com.phu.ecommerceapi.payment.application.PaymentWebhookAttempt;
+import com.phu.ecommerceapi.payment.domain.PaymentStatus;
 import com.phu.ecommerceapi.shared.api.ConflictException;
 import com.phu.ecommerceapi.shared.api.NotFoundException;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -19,10 +20,16 @@ import org.springframework.stereotype.Component;
 import java.math.BigDecimal;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 @Component
 public class JpaPaymentAttemptPersistenceAdapter implements PaymentAttemptPersistencePort {
+
+    private static final Set<PaymentStatus> SUCCESSFUL_ORDER_BLOCKING_STATUSES = Set.of(
+            PaymentStatus.SUCCEEDED,
+            PaymentStatus.REFUNDED
+    );
 
     private final CustomerOrderRepository orderRepository;
     private final PaymentRecordRepository paymentRepository;
@@ -36,14 +43,13 @@ public class JpaPaymentAttemptPersistenceAdapter implements PaymentAttemptPersis
     }
 
     @Override
-    public PaymentPayableOrder validatePayable(long customerId, UUID orderId) {
+    public PaymentPayableOrder validatePayable(long customerId, UUID orderId, String providerCode) {
+        normalizeProviderCode(providerCode);
         CustomerOrderRecord order = orderRepository.findWithCustomerById(orderId)
                 .orElseThrow(() -> new NotFoundException("Order not found"));
         assertOrderOwner(order, customerId);
         assertPayable(order);
-        if (paymentRepository.existsByOrderId(orderId)) {
-            throw new ConflictException("Order already has a payment attempt");
-        }
+        assertNoBlockingPaymentAttempt(orderId);
         return new PaymentPayableOrder(order.getId(), order.getTotalAmount(), order.getCurrency());
     }
 
@@ -60,15 +66,13 @@ public class JpaPaymentAttemptPersistenceAdapter implements PaymentAttemptPersis
         assertOrderOwner(order, customerId);
         assertPayable(order);
 
-        if (paymentRepository.existsByOrderId(orderId)) {
-            throw new ConflictException("Order already has a payment attempt");
-        }
+        assertNoBlockingPaymentAttempt(orderId);
 
         PaymentRecord payment = PaymentRecord.pending(order, idempotencyKey, providerCode, providerIdempotencyKey);
         try {
             payment = paymentRepository.saveAndFlush(payment);
         } catch (DataIntegrityViolationException exception) {
-            throw new ConflictException("Order already has a payment attempt");
+            throw new ConflictException("Order already has an active or successful payment attempt");
         }
 
         return new PaymentAttemptSnapshot(
@@ -99,7 +103,6 @@ public class JpaPaymentAttemptPersistenceAdapter implements PaymentAttemptPersis
             return new PaymentAttemptUpdate(toView(payment), false);
         }
         payment.markFailed(providerResult);
-        payment.getOrder().markPaymentFailed();
         return new PaymentAttemptUpdate(toView(payment), true);
     }
 
@@ -110,7 +113,6 @@ public class JpaPaymentAttemptPersistenceAdapter implements PaymentAttemptPersis
             return new PaymentAttemptUpdate(toView(payment), false);
         }
         payment.markProviderTimeout(message);
-        payment.getOrder().markPaymentFailed();
         return new PaymentAttemptUpdate(toView(payment), true);
     }
 
@@ -153,6 +155,18 @@ public class JpaPaymentAttemptPersistenceAdapter implements PaymentAttemptPersis
         }
         if (order.getTotalAmount() == null || order.getTotalAmount().compareTo(BigDecimal.ZERO) <= 0) {
             throw new ConflictException("Order total must be positive");
+        }
+    }
+
+    private void assertNoBlockingPaymentAttempt(UUID orderId) {
+        if (paymentRepository.existsByOrderIdAndStatus(orderId, PaymentStatus.PENDING)) {
+            throw new ConflictException("Order already has a payment attempt in progress");
+        }
+        if (paymentRepository.existsByOrderIdAndStatus(orderId, PaymentStatus.PROVIDER_TIMEOUT)) {
+            throw new ConflictException("Order has a payment attempt with unknown provider outcome");
+        }
+        if (paymentRepository.existsByOrderIdAndStatusIn(orderId, SUCCESSFUL_ORDER_BLOCKING_STATUSES)) {
+            throw new ConflictException("Order already has a successful payment");
         }
     }
 

@@ -233,11 +233,111 @@ class CreatePaymentUseCaseTest {
 
         CustomerOrderRecord order = orderRepository.findById(orderId).orElseThrow();
         PaymentRecord payment = paymentRepository.findByOrderId(orderId).orElseThrow();
-        assertThat(order.getStatus()).isEqualTo(OrderStatus.PAYMENT_FAILED);
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING_PAYMENT);
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.FAILED);
         assertThat(ledgerTransactionRepository.findAll()).isEmpty();
         assertThat(auditActions()).contains("PAYMENT_FAILED");
         assertThat(auditActions()).doesNotContain("PAYMENT_SUCCEEDED");
+    }
+
+    @Test
+    void failedAttemptLeavesOrderPayableAndSecondAttemptCanSucceed() throws Exception {
+        String username = "payment-failed-retry@example.com";
+        UUID orderId = pendingOrder(username);
+
+        createPayment(username, "payment-key-failed-retry-1", paymentJson(orderId, "pm_card_declined"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("FAILED"));
+
+        CustomerOrderRecord afterFailure = orderRepository.findById(orderId).orElseThrow();
+        assertThat(afterFailure.getStatus()).isEqualTo(OrderStatus.PENDING_PAYMENT);
+
+        createPayment(username, "payment-key-failed-retry-2", paymentJson(orderId, "pm_approved"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("SUCCEEDED"));
+
+        CustomerOrderRecord afterRetry = orderRepository.findById(orderId).orElseThrow();
+        PaymentRecord latestPayment = paymentRepository.findFirstByOrderIdOrderByCreatedAtDesc(orderId).orElseThrow();
+        assertThat(afterRetry.getStatus()).isEqualTo(OrderStatus.PAID);
+        assertThat(latestPayment.getStatus()).isEqualTo(PaymentStatus.SUCCEEDED);
+        assertThat(paymentRepository.findAll())
+                .extracting(PaymentRecord::getStatus)
+                .containsExactlyInAnyOrder(PaymentStatus.FAILED, PaymentStatus.SUCCEEDED);
+        assertThat(ledgerTransactionRepository.findAll()).hasSize(1);
+        assertThat(auditActions()).contains("PAYMENT_FAILED", "PAYMENT_SUCCEEDED");
+    }
+
+    @Test
+    void pendingAttemptBlocksAnotherAttemptForSameOrder() throws Exception {
+        String username = "payment-pending-blocks@example.com";
+        UUID orderId = pendingOrder(username);
+        CustomerOrderRecord order = orderRepository.findWithCustomerById(orderId).orElseThrow();
+        String providerIdempotencyKey = "payment:fake:%d:%s:seed-pending".formatted(
+                order.getCustomer().getId(),
+                orderId
+        );
+        paymentRepository.saveAndFlush(PaymentRecord.pending(
+                order,
+                "seed-pending",
+                "fake",
+                providerIdempotencyKey
+        ));
+
+        createPayment(username, "payment-key-pending-blocked", paymentJson(orderId, "pm_approved"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CONFLICT"))
+                .andExpect(jsonPath("$.detail").value("Order already has a payment attempt in progress"));
+
+        CustomerOrderRecord unchangedOrder = orderRepository.findById(orderId).orElseThrow();
+        assertThat(unchangedOrder.getStatus()).isEqualTo(OrderStatus.PENDING_PAYMENT);
+        assertThat(paymentRepository.findAll()).hasSize(1);
+        assertThat(idempotencyRepository.findAll()).isEmpty();
+    }
+
+    @Test
+    void providerTimeoutLeavesOrderPayableButBlocksRetryUntilRecovery() throws Exception {
+        String username = "payment-timeout-blocks@example.com";
+        UUID orderId = pendingOrder(username);
+
+        createPayment(username, "payment-key-timeout-1", paymentJson(orderId, "pm_provider_timeout"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.status").value("PROVIDER_TIMEOUT"))
+                .andExpect(jsonPath("$.failureCode").value("provider_timeout"));
+
+        CustomerOrderRecord afterTimeout = orderRepository.findById(orderId).orElseThrow();
+        PaymentRecord timeoutPayment = paymentRepository.findByOrderId(orderId).orElseThrow();
+        assertThat(afterTimeout.getStatus()).isEqualTo(OrderStatus.PENDING_PAYMENT);
+        assertThat(timeoutPayment.getStatus()).isEqualTo(PaymentStatus.PROVIDER_TIMEOUT);
+
+        createPayment(username, "payment-key-timeout-2", paymentJson(orderId, "pm_approved"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CONFLICT"))
+                .andExpect(jsonPath("$.detail").value("Order has a payment attempt with unknown provider outcome"));
+
+        assertThat(paymentRepository.findAll()).hasSize(1);
+        assertThat(idempotencyRepository.findAll()).hasSize(1);
+        assertThat(auditActions()).contains("PAYMENT_PROVIDER_TIMEOUT");
+        assertThat(auditActions()).doesNotContain("PAYMENT_SUCCEEDED");
+    }
+
+    @Test
+    void successfulAttemptBlocksAnotherAttemptForSameOrder() throws Exception {
+        String username = "payment-success-blocks@example.com";
+        UUID orderId = pendingOrder(username);
+
+        createPayment(username, "payment-key-success-blocks-1", paymentJson(orderId, "pm_approved"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("SUCCEEDED"));
+
+        createPayment(username, "payment-key-success-blocks-2", paymentJson(orderId, "pm_approved"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CONFLICT"))
+                .andExpect(jsonPath("$.detail").value("Order is not payable"));
+
+        CustomerOrderRecord order = orderRepository.findById(orderId).orElseThrow();
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
+        assertThat(paymentRepository.findAll()).hasSize(1);
+        assertThat(idempotencyRepository.findAll()).hasSize(1);
     }
 
     @Test
