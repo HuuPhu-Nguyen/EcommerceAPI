@@ -23,6 +23,8 @@ import com.phu.ecommerceapi.payment.domain.PaymentStatus;
 import com.phu.ecommerceapi.payment.infrastructure.PaymentIdempotencyRecordRepository;
 import com.phu.ecommerceapi.payment.infrastructure.PaymentRecord;
 import com.phu.ecommerceapi.payment.infrastructure.PaymentRecordRepository;
+import com.phu.ecommerceapi.payment.infrastructure.RefundRecord;
+import com.phu.ecommerceapi.payment.infrastructure.RefundRecordRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -59,7 +61,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest(properties = {
-        "app.payment-provider.active=fake",
+        "app.payment-provider.active=stripe",
         "app.payment-provider.enabled=fake,stripe"
 })
 @AutoConfigureMockMvc
@@ -88,6 +90,9 @@ class CreatePaymentMultiAttemptConcurrencyTest {
     private PaymentRecordRepository paymentRepository;
 
     @Autowired
+    private RefundRecordRepository refundRepository;
+
+    @Autowired
     private PaymentIdempotencyRecordRepository idempotencyRepository;
 
     @Autowired
@@ -108,6 +113,7 @@ class CreatePaymentMultiAttemptConcurrencyTest {
         truncateLedger();
         auditEventRepository.deleteAll();
         idempotencyRepository.deleteAll();
+        refundRepository.deleteAll();
         paymentRepository.deleteAll();
         orderRepository.deleteAll();
         cartRepo.deleteAll();
@@ -150,6 +156,43 @@ class CreatePaymentMultiAttemptConcurrencyTest {
                 );
         assertThat(stripeProvider.paymentCalls()).isEqualTo(1);
         assertThat(ledgerTransactionRepository.findAll()).hasSize(1);
+    }
+
+    @Test
+    void refundAfterFakePaymentUsesOriginalProviderEvenWhenStripeIsActive() throws Exception {
+        String username = "refund-original-provider@example.com";
+        UUID orderId = pendingOrder(username);
+        MvcResult paymentResult = createPayment(
+                username,
+                "payment-original-provider-key",
+                orderId,
+                "fake",
+                "pm_approved"
+        )
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.provider").value("fake"))
+                .andReturn();
+        UUID paymentId = UUID.fromString(JsonPath.read(
+                paymentResult.getResponse().getContentAsString(),
+                "$.paymentId"
+        ));
+
+        MvcResult refundResult = createRefund(
+                username,
+                "refund-original-provider-key",
+                paymentId,
+                refundJson("stripe", "customer requested")
+        )
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.provider").value("fake"))
+                .andReturn();
+
+        String providerRefundId = JsonPath.read(refundResult.getResponse().getContentAsString(), "$.providerRefundId");
+        RefundRecord refund = refundRepository.findAll().getFirst();
+        assertThat(providerRefundId).startsWith("fake_refund_");
+        assertThat(refund.getProviderCode()).isEqualTo("fake");
+        assertThat(stripeProvider.refundCalls()).isZero();
+        assertThat(ledgerTransactionRepository.findAll()).hasSize(2);
     }
 
     @Test
@@ -244,6 +287,19 @@ class CreatePaymentMultiAttemptConcurrencyTest {
                 .with(customerJwt(username, "payment:create")));
     }
 
+    private ResultActions createRefund(
+            String username,
+            String idempotencyKey,
+            UUID paymentId,
+            String requestBody
+    ) throws Exception {
+        return mockMvc.perform(post("/payments/{paymentId}/refunds", paymentId)
+                .header("Idempotency-Key", idempotencyKey)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(requestBody)
+                .with(customerJwt(username, "payment:refund")));
+    }
+
     private UUID pendingOrder(String username) throws Exception {
         user(username);
         ProductModel product = product("Multi Attempt Product", 10);
@@ -335,6 +391,15 @@ class CreatePaymentMultiAttemptConcurrencyTest {
                 """.formatted(orderId, provider, paymentMethodToken);
     }
 
+    private String refundJson(String requestedProvider, String reason) {
+        return """
+                {
+                  "provider": "%s",
+                  "reason": "%s"
+                }
+                """.formatted(requestedProvider, reason);
+    }
+
     private void truncateLedger() {
         jdbcTemplate.execute("TRUNCATE TABLE ledger_entry, ledger_transaction RESTART IDENTITY");
     }
@@ -362,6 +427,7 @@ class CreatePaymentMultiAttemptConcurrencyTest {
         );
 
         private final AtomicInteger paymentCalls = new AtomicInteger();
+        private final AtomicInteger refundCalls = new AtomicInteger();
         private CountDownLatch paymentCallEntered = new CountDownLatch(1);
         private CountDownLatch releasePayments = new CountDownLatch(0);
         private boolean blockPayments;
@@ -386,11 +452,13 @@ class CreatePaymentMultiAttemptConcurrencyTest {
 
         @Override
         public PaymentRefundProviderResult refundPayment(PaymentRefundProviderRequest request) {
+            refundCalls.incrementAndGet();
             return PaymentRefundProviderResult.succeeded(providerRefundId(request), "Stripe test refund approved");
         }
 
         void reset() {
             paymentCalls.set(0);
+            refundCalls.set(0);
             paymentCallEntered = new CountDownLatch(1);
             releasePayments = new CountDownLatch(0);
             blockPayments = false;
@@ -412,6 +480,10 @@ class CreatePaymentMultiAttemptConcurrencyTest {
 
         int paymentCalls() {
             return paymentCalls.get();
+        }
+
+        int refundCalls() {
+            return refundCalls.get();
         }
 
         private void awaitReleaseIfBlocked() {

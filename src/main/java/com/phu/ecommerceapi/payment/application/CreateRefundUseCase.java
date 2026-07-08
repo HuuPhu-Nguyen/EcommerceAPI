@@ -7,6 +7,7 @@ import com.phu.ecommerceapi.customer.application.CustomerProfileLookup;
 import com.phu.ecommerceapi.identity.application.CurrentUser;
 import com.phu.ecommerceapi.shared.api.ConflictException;
 import com.phu.ecommerceapi.shared.api.NotFoundException;
+import com.phu.ecommerceapi.shared.api.ServiceUnavailableException;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
@@ -27,20 +28,20 @@ public class CreateRefundUseCase {
     private final CustomerProfileLookup customerProfileLookup;
     private final PaymentIdempotencyService idempotencyService;
     private final RefundAttemptService refundAttemptService;
-    private final PaymentProvider paymentProvider;
+    private final PaymentProviderRegistry paymentProviderRegistry;
 
     public CreateRefundUseCase(
             ObjectMapper objectMapper,
             CustomerProfileLookup customerProfileLookup,
             PaymentIdempotencyService idempotencyService,
             RefundAttemptService refundAttemptService,
-            PaymentProvider paymentProvider
+            PaymentProviderRegistry paymentProviderRegistry
     ) {
         this.objectMapper = objectMapper;
         this.customerProfileLookup = customerProfileLookup;
         this.idempotencyService = idempotencyService;
         this.refundAttemptService = refundAttemptService;
-        this.paymentProvider = paymentProvider;
+        this.paymentProviderRegistry = paymentProviderRegistry;
     }
 
     public CreateRefundResult refund(CreateRefundCommand command) {
@@ -59,7 +60,8 @@ public class CreateRefundUseCase {
             return replayOrReject(existingDecision.get());
         }
 
-        refundAttemptService.validateRefundable(customerId, command.paymentId());
+        RefundablePayment refundablePayment = refundAttemptService.validateRefundable(customerId, command.paymentId());
+        PaymentProvider refundProvider = resolveRefundProvider(refundablePayment, command.currentUser());
         PaymentIdempotencyDecision idempotencyDecision = idempotencyService.start(idempotencyCommand);
         if (idempotencyDecision.type() == PaymentIdempotencyDecisionType.REPLAY) {
             return replayOrReject(idempotencyDecision);
@@ -84,7 +86,7 @@ public class CreateRefundUseCase {
         RefundAttemptResponse response;
         int httpStatus = HttpStatus.OK.value();
         try {
-            PaymentRefundProviderResult providerResult = paymentProvider.refundPayment(new PaymentRefundProviderRequest(
+            PaymentRefundProviderResult providerResult = refundProvider.refundPayment(new PaymentRefundProviderRequest(
                     attempt.paymentId(),
                     attempt.providerPaymentId(),
                     attempt.amount(),
@@ -105,6 +107,22 @@ public class CreateRefundUseCase {
         String responseBody = serialize(response);
         idempotencyService.complete(idempotencyDecision.recordId(), httpStatus, responseBody);
         return new CreateRefundResult(httpStatus, responseBody);
+    }
+
+    private PaymentProvider resolveRefundProvider(RefundablePayment payment, CurrentUser actor) {
+        try {
+            return paymentProviderRegistry.resolveExistingProvider(payment.providerCode());
+        } catch (IllegalArgumentException | IllegalStateException exception) {
+            refundAttemptService.recordProviderUnavailable(
+                    actor,
+                    payment.paymentId(),
+                    payment.providerCode(),
+                    exception.getMessage()
+            );
+            throw new ServiceUnavailableException(
+                    "Payment provider is unavailable for refund: " + payment.providerCode()
+            );
+        }
     }
 
     private CreateRefundResult replayOrReject(PaymentIdempotencyDecision decision) {

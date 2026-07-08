@@ -5,7 +5,7 @@ import java.util.UUID;
 
 public interface RefundAttemptPersistencePort {
 
-    void validateRefundable(long customerId, UUID paymentId);
+    RefundablePayment validateRefundable(long customerId, UUID paymentId);
 
     RefundAttemptSnapshot startAttempt(long customerId, UUID paymentId, String idempotencyKey, String reason);
 

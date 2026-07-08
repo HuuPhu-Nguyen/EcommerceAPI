@@ -45,6 +45,21 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
+    void serviceUnavailableUsesSpecificErrorCode() {
+        MockHttpServletRequest request = requestWithId("/payments/99/refunds", "req-503");
+
+        ResponseEntity<ProblemDetail> response = handler.handleApiException(
+                new ServiceUnavailableException("Payment provider is unavailable for refund: stripe"),
+                request
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+        assertThat(response.getBody().getDetail())
+                .isEqualTo("Payment provider is unavailable for refund: stripe");
+        assertThat(response.getBody().getProperties()).containsEntry("code", "SERVICE_UNAVAILABLE");
+    }
+
+    @Test
     void accessDeniedMapsToForbidden() {
         MockHttpServletRequest request = requestWithId("/admin/products", "req-789");
 

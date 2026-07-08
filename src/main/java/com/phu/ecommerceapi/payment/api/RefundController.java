@@ -103,6 +103,15 @@ public class RefundController {
                             schema = @Schema(implementation = ProblemDetail.class),
                             examples = @ExampleObject(value = OpenApiExamples.CONFLICT_PROBLEM)
                     )
+            ),
+            @ApiResponse(
+                    responseCode = "503",
+                    description = "Original payment provider is unavailable for refund routing.",
+                    content = @Content(
+                            mediaType = MediaType.APPLICATION_JSON_VALUE,
+                            schema = @Schema(implementation = ProblemDetail.class),
+                            examples = @ExampleObject(value = OpenApiExamples.SERVICE_UNAVAILABLE_PROBLEM)
+                    )
             )
     })
     public ResponseEntity<String> createRefund(

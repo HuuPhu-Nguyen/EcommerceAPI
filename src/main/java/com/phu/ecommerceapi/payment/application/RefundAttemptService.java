@@ -34,8 +34,8 @@ public class RefundAttemptService {
     }
 
     @Transactional(readOnly = true)
-    public void validateRefundable(long customerId, UUID paymentId) {
-        refundAttempts.validateRefundable(customerId, paymentId);
+    public RefundablePayment validateRefundable(long customerId, UUID paymentId) {
+        return refundAttempts.validateRefundable(customerId, paymentId);
     }
 
     @Transactional
@@ -68,6 +68,7 @@ public class RefundAttemptService {
                     refund.customerId(),
                     refund.amount(),
                     refund.currency(),
+                    refund.providerCode(),
                     refund.providerRefundId()
             ));
             recordAudit(actor, "REFUND_SUCCEEDED", refund);
@@ -91,6 +92,27 @@ public class RefundAttemptService {
         }
         businessMetrics.refundOutcome(update.attempt().status().name());
         return toResponse(update.attempt());
+    }
+
+    @Transactional
+    public void recordProviderUnavailable(
+            CurrentUser actor,
+            UUID paymentId,
+            String providerCode,
+            String message
+    ) {
+        auditEventRecorder.record(new AuditEventCommand(
+                actor == null ? null : actor.subject(),
+                "REFUND_PROVIDER_UNAVAILABLE",
+                "PAYMENT",
+                paymentId.toString(),
+                "provider=%s; paymentId=%s; status=UNAVAILABLE; message=%s".formatted(
+                        providerCode,
+                        paymentId,
+                        message
+                )
+        ));
+        businessMetrics.refundOutcome("PROVIDER_UNAVAILABLE");
     }
 
     private boolean isSuccessful(PaymentRefundProviderResult providerResult) {

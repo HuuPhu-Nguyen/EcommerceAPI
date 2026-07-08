@@ -215,6 +215,29 @@ class RefundFlowTest {
     }
 
     @Test
+    void refundFailsWithServiceUnavailableWhenOriginalProviderIsUnavailable() throws Exception {
+        String username = "refund-provider-unavailable@example.com";
+        PaymentFixture fixture = successfulPayment(username);
+        PaymentRecord payment = paymentRepository.findById(fixture.paymentId()).orElseThrow();
+        replacePaymentProviderWithUnavailableStripe(payment, fixture.orderId());
+
+        createRefund(username, fixture.paymentId(), "refund-unavailable-key", refundJson("customer requested"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code").value("SERVICE_UNAVAILABLE"))
+                .andExpect(jsonPath("$.detail").value("Payment provider is unavailable for refund: stripe"));
+
+        assertThat(refundRepository.findAll()).isEmpty();
+        assertThat(refundLedgerTransactions()).isEmpty();
+        assertThat(auditEventRepository.findAll())
+                .anySatisfy(event -> {
+                    assertThat(event.getAction()).isEqualTo("REFUND_PROVIDER_UNAVAILABLE");
+                    assertThat(event.getResourceType()).isEqualTo("PAYMENT");
+                    assertThat(event.getResourceId()).isEqualTo(fixture.paymentId().toString());
+                    assertThat(event.getDetails()).contains("provider=stripe");
+                });
+    }
+
+    @Test
     void concurrentDoubleRefundAllowsOnlyOneSuccess() throws Exception {
         String username = "refund-concurrent@example.com";
         PaymentFixture fixture = successfulPayment(username);
@@ -408,6 +431,24 @@ class RefundFlowTest {
                   "reason": "%s"
                 }
                 """.formatted(reason);
+    }
+
+    private void replacePaymentProviderWithUnavailableStripe(PaymentRecord payment, UUID orderId) {
+        jdbcTemplate.update(
+                """
+                        UPDATE payment_record
+                        SET provider_code = 'stripe',
+                            provider_idempotency_key = ?,
+                            provider_payment_id = ?
+                        WHERE id = ?
+                        """,
+                "payment:stripe:%d:%s:provider-unavailable".formatted(
+                        payment.getCustomerId(),
+                        orderId
+                ),
+                "stripe_unavailable_" + payment.getId(),
+                payment.getId()
+        );
     }
 
     private void assertRefundLedgerReversesPayment(RefundRecord refund) {

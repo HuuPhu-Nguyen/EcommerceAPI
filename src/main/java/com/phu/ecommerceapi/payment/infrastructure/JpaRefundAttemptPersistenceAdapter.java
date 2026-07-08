@@ -7,6 +7,7 @@ import com.phu.ecommerceapi.payment.application.RefundAttemptSnapshot;
 import com.phu.ecommerceapi.payment.application.RefundAttemptUpdate;
 import com.phu.ecommerceapi.payment.application.RefundAttemptView;
 import com.phu.ecommerceapi.payment.application.RefundWebhookAttempt;
+import com.phu.ecommerceapi.payment.application.RefundablePayment;
 import com.phu.ecommerceapi.payment.domain.PaymentStatus;
 import com.phu.ecommerceapi.shared.api.ConflictException;
 import com.phu.ecommerceapi.shared.api.NotFoundException;
@@ -34,10 +35,11 @@ public class JpaRefundAttemptPersistenceAdapter implements RefundAttemptPersiste
     }
 
     @Override
-    public void validateRefundable(long customerId, UUID paymentId) {
+    public RefundablePayment validateRefundable(long customerId, UUID paymentId) {
         PaymentRecord payment = paymentRepository.findWithOrderById(paymentId)
                 .orElseThrow(() -> new NotFoundException("Payment not found"));
         assertRefundable(payment, customerId);
+        return new RefundablePayment(payment.getId(), payment.getProviderCode());
     }
 
     @Override

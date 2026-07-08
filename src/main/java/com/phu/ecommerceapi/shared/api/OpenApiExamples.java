@@ -225,6 +225,18 @@ public final class OpenApiExamples {
             }
             """;
 
+    public static final String SERVICE_UNAVAILABLE_PROBLEM = """
+            {
+              "type": "urn:problem:service-unavailable",
+              "title": "Service unavailable",
+              "status": 503,
+              "detail": "Payment provider is unavailable for refund: stripe",
+              "code": "SERVICE_UNAVAILABLE",
+              "path": "/payments/638dc8e7-e7c5-47bf-a62f-a5728f9c19be/refunds",
+              "requestId": "req-7e2c1f"
+            }
+            """;
+
     private OpenApiExamples() {
     }
 }

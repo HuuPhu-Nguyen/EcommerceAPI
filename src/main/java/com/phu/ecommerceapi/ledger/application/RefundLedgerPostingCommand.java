@@ -12,6 +12,7 @@ public record RefundLedgerPostingCommand(
         long customerId,
         BigDecimal amount,
         String currency,
+        String providerCode,
         String providerRefundId
 ) {
 
@@ -30,6 +31,10 @@ public record RefundLedgerPostingCommand(
             throw new IllegalArgumentException("refund currency is required");
         }
         currency = currency.trim().toUpperCase(Locale.ROOT);
+        if (providerCode == null || providerCode.isBlank()) {
+            throw new IllegalArgumentException("refund provider code is required");
+        }
+        providerCode = providerCode.trim().toLowerCase(Locale.ROOT);
         if (providerRefundId == null || providerRefundId.isBlank()) {
             throw new IllegalArgumentException("provider refund id is required");
         }

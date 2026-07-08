@@ -7,5 +7,6 @@ public enum ApiErrorCode {
     OUT_OF_STOCK,
     UNAUTHORIZED,
     FORBIDDEN,
+    SERVICE_UNAVAILABLE,
     INTERNAL_ERROR
 }

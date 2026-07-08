@@ -49,6 +49,41 @@ class PaymentProviderRegistryTest {
     }
 
     @Test
+    void resolvesExistingProviderWhenStoredProviderIsEnabled() {
+        PaymentProvider stripeProvider = provider("stripe");
+        PaymentProviderRegistry registry = registry(
+                properties("fake", List.of("fake", "stripe")),
+                List.of(new FakePaymentProvider(), stripeProvider)
+        );
+
+        assertThat(registry.resolveExistingProvider(" stripe ")).isSameAs(stripeProvider);
+    }
+
+    @Test
+    void rejectsExistingProviderWhenStoredProviderIsDisabled() {
+        PaymentProviderRegistry registry = registry(
+                properties("fake", List.of("fake")),
+                List.of(new FakePaymentProvider(), provider("stripe"))
+        );
+
+        assertThatThrownBy(() -> registry.resolveExistingProvider("stripe"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Payment provider is not enabled: stripe");
+    }
+
+    @Test
+    void rejectsExistingProviderWhenNoAdapterIsRegistered() {
+        PaymentProviderRegistry registry = registry(
+                properties("fake", List.of("fake")),
+                List.of(new FakePaymentProvider())
+        );
+
+        assertThatThrownBy(() -> registry.resolveExistingProvider("stripe"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Payment provider has no registered bean: stripe");
+    }
+
+    @Test
     void rejectsUnknownProviderRequests() {
         PaymentProviderRegistry registry = registry(
                 properties("fake", List.of("fake")),

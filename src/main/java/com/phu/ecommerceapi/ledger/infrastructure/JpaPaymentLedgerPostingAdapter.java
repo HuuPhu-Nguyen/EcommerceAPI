@@ -66,7 +66,10 @@ public class JpaPaymentLedgerPostingAdapter implements PaymentLedgerPostingPort 
                     LedgerTransactionType.REFUND,
                     "REFUND",
                     command.refundId().toString(),
-                    "Refund issued for payment " + command.paymentId(),
+                    "Refund issued via %s for payment %s".formatted(
+                            command.providerCode(),
+                            command.paymentId()
+                    ),
                     List.of(
                             new LedgerEntryDraft(
                                     ORDER_REVENUE_ACCOUNT,
