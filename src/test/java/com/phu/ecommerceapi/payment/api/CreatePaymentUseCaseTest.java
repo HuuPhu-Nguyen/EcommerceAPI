@@ -21,6 +21,7 @@ import com.phu.ecommerceapi.order.domain.OrderStatus;
 import com.phu.ecommerceapi.order.infrastructure.CustomerOrderRecord;
 import com.phu.ecommerceapi.order.infrastructure.CustomerOrderRepository;
 import com.phu.ecommerceapi.payment.domain.PaymentStatus;
+import com.phu.ecommerceapi.payment.infrastructure.PaymentIdempotencyRecord;
 import com.phu.ecommerceapi.payment.infrastructure.PaymentIdempotencyRecordRepository;
 import com.phu.ecommerceapi.payment.infrastructure.PaymentRecord;
 import com.phu.ecommerceapi.payment.infrastructure.PaymentRecordRepository;
@@ -132,7 +133,11 @@ class CreatePaymentUseCaseTest {
         PaymentRecord payment = paymentRepository.findByOrderId(orderId).orElseThrow();
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.SUCCEEDED);
+        assertThat(payment.getProviderCode()).isEqualTo("fake");
+        assertThat(payment.getProviderIdempotencyKey())
+                .isEqualTo("payment:fake:%d:%s:payment-key-1".formatted(payment.getCustomerId(), orderId));
         assertThat(payment.getProviderPaymentId()).startsWith("fake_");
+        assertPaymentIdempotencyLinked(payment, "payment-key-1");
         assertBalancedPaymentLedger(payment);
         assertThat(auditActions()).contains("CHECKOUT_ORDER_CREATED", "PAYMENT_SUCCEEDED");
     }
@@ -422,5 +427,22 @@ class CreatePaymentUseCaseTest {
                 .stream()
                 .map(AuditEventRecord::getAction)
                 .toList();
+    }
+
+    private void assertPaymentIdempotencyLinked(PaymentRecord payment, String idempotencyKey) {
+        PaymentIdempotencyRecord idempotencyRecord = idempotencyRepository
+                .findByCustomerIdAndEndpointAndOperationAndIdempotencyKey(
+                        payment.getCustomerId(),
+                        "/payments",
+                        "CREATE_PAYMENT",
+                        idempotencyKey
+                )
+                .orElseThrow();
+
+        assertThat(idempotencyRecord.getResourceType()).isEqualTo("PAYMENT");
+        assertThat(idempotencyRecord.getResourceId()).isEqualTo(payment.getId());
+        assertThat(idempotencyRecord.getProviderCode()).isEqualTo(payment.getProviderCode());
+        assertThat(idempotencyRecord.getProviderIdempotencyKey()).isEqualTo(payment.getProviderIdempotencyKey());
+        assertThat(idempotencyRecord.getRecoveryStatus()).isEqualTo("NOT_REQUIRED");
     }
 }

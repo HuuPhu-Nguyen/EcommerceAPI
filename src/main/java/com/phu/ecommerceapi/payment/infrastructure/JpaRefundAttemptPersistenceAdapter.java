@@ -15,6 +15,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -50,7 +51,13 @@ public class JpaRefundAttemptPersistenceAdapter implements RefundAttemptPersiste
                 .orElseThrow(() -> new NotFoundException("Payment not found"));
         assertRefundable(payment, customerId);
 
-        RefundRecord refund = RefundRecord.pending(payment, idempotencyKey, reason);
+        String providerIdempotencyKey = providerRefundIdempotencyKey(
+                payment.getProviderCode(),
+                customerId,
+                paymentId,
+                idempotencyKey
+        );
+        RefundRecord refund = RefundRecord.pending(payment, idempotencyKey, providerIdempotencyKey, reason);
         try {
             refund = refundRepository.saveAndFlush(refund);
         } catch (DataIntegrityViolationException exception) {
@@ -61,6 +68,8 @@ public class JpaRefundAttemptPersistenceAdapter implements RefundAttemptPersiste
                 refund.getId(),
                 payment.getId(),
                 payment.getOrder().getId(),
+                refund.getProviderCode(),
+                refund.getProviderIdempotencyKey(),
                 payment.getProviderPaymentId(),
                 payment.getAmount(),
                 payment.getCurrency()
@@ -100,12 +109,21 @@ public class JpaRefundAttemptPersistenceAdapter implements RefundAttemptPersiste
     }
 
     @Override
-    public Optional<RefundWebhookAttempt> findForProviderWebhook(UUID refundId, String providerRefundId) {
+    public Optional<RefundWebhookAttempt> findForProviderWebhook(
+            String providerCode,
+            UUID refundId,
+            String providerRefundId
+    ) {
+        String normalizedProviderCode = normalizeProviderCode(providerCode);
         Optional<RefundRecord> refund;
         if (refundId != null) {
-            refund = refundRepository.findById(refundId);
+            refund = refundRepository.findById(refundId)
+                    .filter(record -> record.getProviderCode().equals(normalizedProviderCode));
         } else if (providerRefundId != null) {
-            refund = refundRepository.findByProviderRefundId(providerRefundId);
+            refund = refundRepository.findByProviderCodeAndProviderRefundId(
+                    normalizedProviderCode,
+                    providerRefundId
+            );
         } else {
             refund = Optional.empty();
         }
@@ -144,6 +162,8 @@ public class JpaRefundAttemptPersistenceAdapter implements RefundAttemptPersiste
                 refund.getPayment().getId(),
                 refund.getOrderId(),
                 refund.getCustomerId(),
+                refund.getProviderCode(),
+                refund.getProviderIdempotencyKey(),
                 refund.getAmount(),
                 refund.getCurrency(),
                 refund.getStatus(),
@@ -152,5 +172,26 @@ public class JpaRefundAttemptPersistenceAdapter implements RefundAttemptPersiste
                 refund.getFailureCode(),
                 refund.getProviderMessage()
         );
+    }
+
+    private String providerRefundIdempotencyKey(
+            String providerCode,
+            long customerId,
+            UUID paymentId,
+            String idempotencyKey
+    ) {
+        return "refund:%s:%d:%s:%s".formatted(
+                normalizeProviderCode(providerCode),
+                customerId,
+                paymentId,
+                idempotencyKey.trim()
+        );
+    }
+
+    private String normalizeProviderCode(String providerCode) {
+        if (providerCode == null || providerCode.isBlank()) {
+            throw new IllegalArgumentException("refund provider code is required");
+        }
+        return providerCode.trim().toLowerCase(Locale.ROOT);
     }
 }

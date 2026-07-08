@@ -7,7 +7,13 @@ public interface PaymentAttemptPersistencePort {
 
     PaymentPayableOrder validatePayable(long customerId, UUID orderId);
 
-    PaymentAttemptSnapshot startAttempt(long customerId, UUID orderId, String idempotencyKey);
+    PaymentAttemptSnapshot startAttempt(
+            long customerId,
+            UUID orderId,
+            String idempotencyKey,
+            String providerCode,
+            String providerIdempotencyKey
+    );
 
     PaymentAttemptUpdate markSucceeded(UUID paymentId, PaymentProviderResult providerResult);
 
@@ -15,5 +21,9 @@ public interface PaymentAttemptPersistencePort {
 
     PaymentAttemptUpdate markProviderTimeout(UUID paymentId, String message);
 
-    Optional<PaymentWebhookAttempt> findForProviderWebhook(UUID paymentId, String providerPaymentId);
+    Optional<PaymentWebhookAttempt> findForProviderWebhook(
+            String providerCode,
+            UUID paymentId,
+            String providerPaymentId
+    );
 }

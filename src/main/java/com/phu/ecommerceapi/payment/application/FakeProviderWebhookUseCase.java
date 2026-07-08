@@ -178,11 +178,19 @@ public class FakeProviderWebhookUseCase {
     }
 
     private Optional<PaymentWebhookAttempt> findPayment(FakeProviderWebhookCommand command) {
-        return paymentAttemptPersistence.findForProviderWebhook(command.paymentId(), command.providerPaymentId());
+        return paymentAttemptPersistence.findForProviderWebhook(
+                PROVIDER_NAME,
+                command.paymentId(),
+                command.providerPaymentId()
+        );
     }
 
     private Optional<RefundWebhookAttempt> findRefund(FakeProviderWebhookCommand command) {
-        return refundAttemptPersistence.findForProviderWebhook(command.refundId(), command.providerRefundId());
+        return refundAttemptPersistence.findForProviderWebhook(
+                PROVIDER_NAME,
+                command.refundId(),
+                command.providerRefundId()
+        );
     }
 
     private FakeProviderWebhookResult duplicateResponse(ProviderWebhookEventView event) {

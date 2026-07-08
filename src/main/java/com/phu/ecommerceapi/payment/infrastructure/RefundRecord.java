@@ -16,6 +16,7 @@ import jakarta.persistence.Version;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -47,6 +48,12 @@ public class RefundRecord {
     @Column(nullable = false, length = 40)
     private RefundStatus status;
 
+    @Column(nullable = false, length = 50)
+    private String providerCode;
+
+    @Column(nullable = false, length = 255)
+    private String providerIdempotencyKey;
+
     private String providerRefundId;
 
     @Column(length = 40)
@@ -76,7 +83,12 @@ public class RefundRecord {
     protected RefundRecord() {
     }
 
-    private RefundRecord(PaymentRecord payment, String idempotencyKey, String reason) {
+    private RefundRecord(
+            PaymentRecord payment,
+            String idempotencyKey,
+            String providerIdempotencyKey,
+            String reason
+    ) {
         this.id = UUID.randomUUID();
         this.payment = Objects.requireNonNull(payment, "refund payment is required");
         this.orderId = payment.getOrder().getId();
@@ -84,13 +96,20 @@ public class RefundRecord {
         this.amount = Objects.requireNonNull(payment.getAmount(), "refund amount is required");
         this.currency = Objects.requireNonNull(payment.getCurrency(), "refund currency is required");
         this.status = RefundStatus.PENDING;
+        this.providerCode = normalizeProviderCode(payment.getProviderCode());
+        this.providerIdempotencyKey = requireText(providerIdempotencyKey, "provider idempotency key");
         this.idempotencyKey = requireText(idempotencyKey, "idempotency key");
         this.reason = normalizeReason(reason);
         this.createdAt = OffsetDateTime.now();
     }
 
-    public static RefundRecord pending(PaymentRecord payment, String idempotencyKey, String reason) {
-        return new RefundRecord(payment, idempotencyKey, reason);
+    public static RefundRecord pending(
+            PaymentRecord payment,
+            String idempotencyKey,
+            String providerIdempotencyKey,
+            String reason
+    ) {
+        return new RefundRecord(payment, idempotencyKey, providerIdempotencyKey, reason);
     }
 
     public void markSucceeded(PaymentRefundProviderResult providerResult) {
@@ -158,6 +177,14 @@ public class RefundRecord {
         return status;
     }
 
+    public String getProviderCode() {
+        return providerCode;
+    }
+
+    public String getProviderIdempotencyKey() {
+        return providerIdempotencyKey;
+    }
+
     public String getProviderRefundId() {
         return providerRefundId;
     }
@@ -206,5 +233,9 @@ public class RefundRecord {
             throw new IllegalArgumentException(fieldName + " is required");
         }
         return value.trim();
+    }
+
+    private String normalizeProviderCode(String value) {
+        return requireText(value, "provider code").toLowerCase(Locale.ROOT);
     }
 }

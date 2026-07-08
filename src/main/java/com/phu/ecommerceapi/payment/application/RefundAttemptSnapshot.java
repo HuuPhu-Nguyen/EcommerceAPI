@@ -7,6 +7,8 @@ public record RefundAttemptSnapshot(
         UUID refundId,
         UUID paymentId,
         UUID orderId,
+        String providerCode,
+        String providerIdempotencyKey,
         String providerPaymentId,
         BigDecimal amount,
         String currency

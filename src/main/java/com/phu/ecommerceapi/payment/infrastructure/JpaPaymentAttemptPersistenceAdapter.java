@@ -17,6 +17,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -47,7 +48,13 @@ public class JpaPaymentAttemptPersistenceAdapter implements PaymentAttemptPersis
     }
 
     @Override
-    public PaymentAttemptSnapshot startAttempt(long customerId, UUID orderId, String idempotencyKey) {
+    public PaymentAttemptSnapshot startAttempt(
+            long customerId,
+            UUID orderId,
+            String idempotencyKey,
+            String providerCode,
+            String providerIdempotencyKey
+    ) {
         CustomerOrderRecord order = orderRepository.findForPaymentById(orderId)
                 .orElseThrow(() -> new NotFoundException("Order not found"));
         assertOrderOwner(order, customerId);
@@ -57,7 +64,7 @@ public class JpaPaymentAttemptPersistenceAdapter implements PaymentAttemptPersis
             throw new ConflictException("Order already has a payment attempt");
         }
 
-        PaymentRecord payment = PaymentRecord.pending(order, idempotencyKey);
+        PaymentRecord payment = PaymentRecord.pending(order, idempotencyKey, providerCode, providerIdempotencyKey);
         try {
             payment = paymentRepository.saveAndFlush(payment);
         } catch (DataIntegrityViolationException exception) {
@@ -67,6 +74,8 @@ public class JpaPaymentAttemptPersistenceAdapter implements PaymentAttemptPersis
         return new PaymentAttemptSnapshot(
                 payment.getId(),
                 order.getId(),
+                payment.getProviderCode(),
+                payment.getProviderIdempotencyKey(),
                 order.getTotalAmount(),
                 order.getCurrency()
         );
@@ -106,12 +115,21 @@ public class JpaPaymentAttemptPersistenceAdapter implements PaymentAttemptPersis
     }
 
     @Override
-    public Optional<PaymentWebhookAttempt> findForProviderWebhook(UUID paymentId, String providerPaymentId) {
+    public Optional<PaymentWebhookAttempt> findForProviderWebhook(
+            String providerCode,
+            UUID paymentId,
+            String providerPaymentId
+    ) {
+        String normalizedProviderCode = normalizeProviderCode(providerCode);
         Optional<PaymentRecord> payment;
         if (paymentId != null) {
-            payment = paymentRepository.findById(paymentId);
+            payment = paymentRepository.findById(paymentId)
+                    .filter(record -> record.getProviderCode().equals(normalizedProviderCode));
         } else if (providerPaymentId != null) {
-            payment = paymentRepository.findByProviderPaymentId(providerPaymentId);
+            payment = paymentRepository.findByProviderCodeAndProviderPaymentId(
+                    normalizedProviderCode,
+                    providerPaymentId
+            );
         } else {
             payment = Optional.empty();
         }
@@ -143,6 +161,8 @@ public class JpaPaymentAttemptPersistenceAdapter implements PaymentAttemptPersis
                 payment.getId(),
                 payment.getOrder().getId(),
                 payment.getCustomerId(),
+                payment.getProviderCode(),
+                payment.getProviderIdempotencyKey(),
                 payment.getAmount(),
                 payment.getCurrency(),
                 payment.getStatus(),
@@ -151,5 +171,12 @@ public class JpaPaymentAttemptPersistenceAdapter implements PaymentAttemptPersis
                 payment.getFailureCode(),
                 payment.getProviderMessage()
         );
+    }
+
+    private String normalizeProviderCode(String providerCode) {
+        if (providerCode == null || providerCode.isBlank()) {
+            throw new IllegalArgumentException("payment provider code is required");
+        }
+        return providerCode.trim().toLowerCase(Locale.ROOT);
     }
 }

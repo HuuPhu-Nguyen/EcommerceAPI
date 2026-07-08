@@ -11,6 +11,9 @@ import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 
 import java.time.OffsetDateTime;
+import java.util.Locale;
+import java.util.Objects;
+import java.util.UUID;
 
 @Entity
 @Table(name = "payment_idempotency_record")
@@ -43,6 +46,25 @@ public class PaymentIdempotencyRecord {
 
     @Column(columnDefinition = "text")
     private String responseBody;
+
+    @Column(length = 30)
+    private String resourceType;
+
+    @Column(columnDefinition = "uuid")
+    private UUID resourceId;
+
+    @Column(length = 50)
+    private String providerCode;
+
+    @Column(length = 255)
+    private String providerIdempotencyKey;
+
+    private OffsetDateTime inProgressExpiresAt;
+
+    private OffsetDateTime lastRecoveryAttemptAt;
+
+    @Column(length = 40)
+    private String recoveryStatus;
 
     @Column(nullable = false)
     private OffsetDateTime createdAt;
@@ -92,6 +114,34 @@ public class PaymentIdempotencyRecord {
         return responseBody;
     }
 
+    public String getResourceType() {
+        return resourceType;
+    }
+
+    public UUID getResourceId() {
+        return resourceId;
+    }
+
+    public String getProviderCode() {
+        return providerCode;
+    }
+
+    public String getProviderIdempotencyKey() {
+        return providerIdempotencyKey;
+    }
+
+    public OffsetDateTime getInProgressExpiresAt() {
+        return inProgressExpiresAt;
+    }
+
+    public OffsetDateTime getLastRecoveryAttemptAt() {
+        return lastRecoveryAttemptAt;
+    }
+
+    public String getRecoveryStatus() {
+        return recoveryStatus;
+    }
+
     public OffsetDateTime getCreatedAt() {
         return createdAt;
     }
@@ -112,6 +162,37 @@ public class PaymentIdempotencyRecord {
         return status == PaymentIdempotencyStatus.COMPLETED;
     }
 
+    public void linkResource(
+            String resourceType,
+            UUID resourceId,
+            String providerCode,
+            String providerIdempotencyKey
+    ) {
+        if (isCompleted()) {
+            return;
+        }
+        String normalizedResourceType = requireText(resourceType, "idempotency resource type").toUpperCase(Locale.ROOT);
+        UUID normalizedResourceId = requireUuid(resourceId, "idempotency resource id");
+        String normalizedProviderCode = requireText(providerCode, "idempotency provider code").toLowerCase(Locale.ROOT);
+        String normalizedProviderKey = requireText(providerIdempotencyKey, "idempotency provider key");
+
+        if (this.resourceId != null) {
+            if (!Objects.equals(this.resourceType, normalizedResourceType)
+                    || !Objects.equals(this.resourceId, normalizedResourceId)
+                    || !Objects.equals(this.providerCode, normalizedProviderCode)
+                    || !Objects.equals(this.providerIdempotencyKey, normalizedProviderKey)) {
+                throw new IllegalStateException("Idempotency record is already linked to another resource");
+            }
+            return;
+        }
+
+        this.resourceType = normalizedResourceType;
+        this.resourceId = normalizedResourceId;
+        this.providerCode = normalizedProviderCode;
+        this.providerIdempotencyKey = normalizedProviderKey;
+        this.recoveryStatus = "NOT_REQUIRED";
+    }
+
     public void complete(int responseStatus, String responseBody) {
         if (isCompleted()) {
             return;
@@ -126,5 +207,19 @@ public class PaymentIdempotencyRecord {
         this.responseStatus = responseStatus;
         this.responseBody = responseBody;
         this.completedAt = OffsetDateTime.now();
+    }
+
+    private String requireText(String value, String fieldName) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(fieldName + " is required");
+        }
+        return value.trim();
+    }
+
+    private UUID requireUuid(UUID value, String fieldName) {
+        if (value == null) {
+            throw new IllegalArgumentException(fieldName + " is required");
+        }
+        return value;
     }
 }

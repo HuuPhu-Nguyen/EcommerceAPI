@@ -17,6 +17,7 @@ import jakarta.persistence.Version;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -45,6 +46,12 @@ public class PaymentRecord {
     @Column(nullable = false, length = 40)
     private PaymentStatus status;
 
+    @Column(nullable = false, length = 50)
+    private String providerCode;
+
+    @Column(nullable = false, length = 255)
+    private String providerIdempotencyKey;
+
     private String providerPaymentId;
 
     @Column(length = 40)
@@ -71,19 +78,31 @@ public class PaymentRecord {
     protected PaymentRecord() {
     }
 
-    private PaymentRecord(CustomerOrderRecord order, String idempotencyKey) {
+    private PaymentRecord(
+            CustomerOrderRecord order,
+            String idempotencyKey,
+            String providerCode,
+            String providerIdempotencyKey
+    ) {
         this.id = UUID.randomUUID();
         this.order = Objects.requireNonNull(order, "payment order is required");
         this.customerId = order.getCustomer().getId();
         this.amount = Objects.requireNonNull(order.getTotalAmount(), "payment amount is required");
         this.currency = Objects.requireNonNull(order.getCurrency(), "payment currency is required");
         this.status = PaymentStatus.PENDING;
+        this.providerCode = normalizeProviderCode(providerCode);
+        this.providerIdempotencyKey = requireText(providerIdempotencyKey, "provider idempotency key");
         this.idempotencyKey = requireText(idempotencyKey, "idempotency key");
         this.createdAt = OffsetDateTime.now();
     }
 
-    public static PaymentRecord pending(CustomerOrderRecord order, String idempotencyKey) {
-        return new PaymentRecord(order, idempotencyKey);
+    public static PaymentRecord pending(
+            CustomerOrderRecord order,
+            String idempotencyKey,
+            String providerCode,
+            String providerIdempotencyKey
+    ) {
+        return new PaymentRecord(order, idempotencyKey, providerCode, providerIdempotencyKey);
     }
 
     public void markSucceeded(PaymentProviderResult providerResult) {
@@ -155,6 +174,14 @@ public class PaymentRecord {
         return status;
     }
 
+    public String getProviderCode() {
+        return providerCode;
+    }
+
+    public String getProviderIdempotencyKey() {
+        return providerIdempotencyKey;
+    }
+
     public String getProviderPaymentId() {
         return providerPaymentId;
     }
@@ -192,5 +219,9 @@ public class PaymentRecord {
             throw new IllegalArgumentException(fieldName + " is required");
         }
         return value.trim();
+    }
+
+    private String normalizeProviderCode(String value) {
+        return requireText(value, "provider code").toLowerCase(Locale.ROOT);
     }
 }

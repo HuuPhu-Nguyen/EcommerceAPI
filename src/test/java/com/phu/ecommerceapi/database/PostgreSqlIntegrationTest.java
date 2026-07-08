@@ -38,7 +38,7 @@ class PostgreSqlIntegrationTest {
 
     @Test
     void flywayMigrationsCreateBankingCoreSchema() {
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("16");
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("17");
 
         assertThat(tableNames()).contains(
                 "user_model",
@@ -59,6 +59,22 @@ class PostgreSqlIntegrationTest {
         assertThat(columnDataType("product_model", "price")).isEqualTo("numeric");
         assertThat(columnDataType("product_model", "stock")).isEqualTo("integer");
         assertThat(columnDataType("product_model", "currency")).isEqualTo("character varying");
+        assertThat(columnNames("payment_record"))
+                .contains("provider_code", "provider_idempotency_key");
+        assertThat(columnNames("refund_record"))
+                .contains("provider_code", "provider_idempotency_key");
+        assertThat(columnNames("payment_idempotency_record"))
+                .contains(
+                        "resource_type",
+                        "resource_id",
+                        "provider_code",
+                        "provider_idempotency_key",
+                        "in_progress_expires_at",
+                        "last_recovery_attempt_at",
+                        "recovery_status"
+                );
+        assertThat(indexNames("payment_idempotency_record"))
+                .contains("idx_payment_idempotency_recovery");
     }
 
     @Test
@@ -107,6 +123,32 @@ class PostgreSqlIntegrationTest {
                 String.class,
                 tableName,
                 columnName
+        );
+    }
+
+    private List<String> columnNames(String tableName) {
+        return jdbcTemplate.queryForList(
+                """
+                        SELECT column_name
+                        FROM information_schema.columns
+                        WHERE table_schema = 'public'
+                          AND table_name = ?
+                        """,
+                String.class,
+                tableName
+        );
+    }
+
+    private List<String> indexNames(String tableName) {
+        return jdbcTemplate.queryForList(
+                """
+                        SELECT indexname
+                        FROM pg_indexes
+                        WHERE schemaname = 'public'
+                          AND tablename = ?
+                        """,
+                String.class,
+                tableName
         );
     }
 

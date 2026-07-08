@@ -9,6 +9,8 @@ public record PaymentAttemptView(
         UUID paymentId,
         UUID orderId,
         long customerId,
+        String providerCode,
+        String providerIdempotencyKey,
         BigDecimal amount,
         String currency,
         PaymentStatus status,

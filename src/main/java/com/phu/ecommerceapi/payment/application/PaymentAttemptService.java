@@ -43,12 +43,22 @@ public class PaymentAttemptService {
             long customerId,
             UUID orderId,
             String idempotencyKey,
-            String providerCode
+            String providerCode,
+            String providerIdempotencyKey
     ) {
         if (providerCode == null || providerCode.isBlank()) {
             throw new IllegalArgumentException("payment provider code is required");
         }
-        return paymentAttempts.startAttempt(customerId, orderId, idempotencyKey);
+        if (providerIdempotencyKey == null || providerIdempotencyKey.isBlank()) {
+            throw new IllegalArgumentException("payment provider idempotency key is required");
+        }
+        return paymentAttempts.startAttempt(
+                customerId,
+                orderId,
+                idempotencyKey,
+                providerCode,
+                providerIdempotencyKey
+        );
     }
 
     @Transactional
@@ -106,7 +116,8 @@ public class PaymentAttemptService {
                 action,
                 PAYMENT_RESOURCE_TYPE,
                 payment.paymentId().toString(),
-                "orderId=%s; status=%s; amount=%s %s".formatted(
+                "provider=%s; orderId=%s; status=%s; amount=%s %s".formatted(
+                        payment.providerCode(),
                         payment.orderId(),
                         payment.status(),
                         payment.amount(),
@@ -119,7 +130,7 @@ public class PaymentAttemptService {
         return new PaymentAttemptResponse(
                 payment.paymentId(),
                 payment.orderId(),
-                null,
+                payment.providerCode(),
                 payment.status().name(),
                 payment.providerStatus(),
                 payment.providerPaymentId(),

@@ -74,6 +74,12 @@ public class CreateRefundUseCase {
                 command.idempotencyKey(),
                 command.reason()
         );
+        idempotencyService.linkRefundAttempt(
+                idempotencyDecision.recordId(),
+                attempt.refundId(),
+                attempt.providerCode(),
+                attempt.providerIdempotencyKey()
+        );
 
         RefundAttemptResponse response;
         int httpStatus = HttpStatus.OK.value();
@@ -83,7 +89,7 @@ public class CreateRefundUseCase {
                     attempt.providerPaymentId(),
                     attempt.amount(),
                     attempt.currency(),
-                    providerIdempotencyKey(customerId, attempt, command.idempotencyKey()),
+                    attempt.providerIdempotencyKey(),
                     providerMetadata(command)
             ));
             response = refundAttemptService.completeAttempt(attempt.refundId(), providerResult, command.currentUser());
@@ -123,10 +129,6 @@ public class CreateRefundUseCase {
 
     private String endpoint(UUID paymentId) {
         return "/payments/%s/refunds".formatted(paymentId);
-    }
-
-    private String providerIdempotencyKey(long customerId, RefundAttemptSnapshot attempt, String idempotencyKey) {
-        return "refund:%d:%s:%s".formatted(customerId, attempt.paymentId(), idempotencyKey.trim());
     }
 
     private Map<String, String> providerMetadata(CreateRefundCommand command) {

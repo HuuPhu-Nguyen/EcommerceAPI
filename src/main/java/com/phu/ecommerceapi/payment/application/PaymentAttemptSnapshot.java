@@ -6,6 +6,8 @@ import java.util.UUID;
 public record PaymentAttemptSnapshot(
         UUID paymentId,
         UUID orderId,
+        String providerCode,
+        String providerIdempotencyKey,
         BigDecimal amount,
         String currency
 ) {

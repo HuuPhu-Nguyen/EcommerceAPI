@@ -15,6 +15,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 
 @Service
 public class CreatePaymentUseCase {
@@ -64,8 +65,9 @@ public class CreatePaymentUseCase {
         }
 
         PaymentProvider paymentProvider = paymentProviderRegistry.resolveForPayment(command.provider());
+        String providerCode = paymentProvider.providerCode();
         PaymentPayableOrder payableOrder = paymentAttemptService.validatePayable(customerId, command.orderId());
-        assertProviderAllowed(paymentProvider.providerCode(), payableOrder);
+        assertProviderAllowed(providerCode, payableOrder);
 
         PaymentIdempotencyDecision idempotencyDecision = idempotencyService.start(idempotencyCommand);
         if (idempotencyDecision.type() == PaymentIdempotencyDecisionType.REPLAY) {
@@ -75,11 +77,24 @@ public class CreatePaymentUseCase {
             return replayOrReject(idempotencyDecision);
         }
 
+        String providerIdempotencyKey = providerIdempotencyKey(
+                customerId,
+                providerCode,
+                command.orderId(),
+                command.idempotencyKey()
+        );
         PaymentAttemptSnapshot attempt = paymentAttemptService.startAttempt(
                 customerId,
                 command.orderId(),
                 command.idempotencyKey(),
-                paymentProvider.providerCode()
+                providerCode,
+                providerIdempotencyKey
+        );
+        idempotencyService.linkPaymentAttempt(
+                idempotencyDecision.recordId(),
+                attempt.paymentId(),
+                attempt.providerCode(),
+                attempt.providerIdempotencyKey()
         );
 
         PaymentAttemptResponse response;
@@ -89,17 +104,16 @@ public class CreatePaymentUseCase {
                     attempt.orderId(),
                     attempt.amount(),
                     attempt.currency(),
-                    providerIdempotencyKey(customerId, paymentProvider.providerCode(), attempt, command.idempotencyKey()),
+                    attempt.providerIdempotencyKey(),
                     providerMetadata(command)
             ));
-            response = paymentAttemptService.completeAttempt(attempt.paymentId(), providerResult, command.currentUser())
-                    .withProvider(paymentProvider.providerCode());
+            response = paymentAttemptService.completeAttempt(attempt.paymentId(), providerResult, command.currentUser());
         } catch (PaymentProviderTimeoutException exception) {
             response = paymentAttemptService.markProviderTimeout(
                     attempt.paymentId(),
                     exception.getMessage(),
                     command.currentUser()
-            ).withProvider(paymentProvider.providerCode());
+            );
             httpStatus = HttpStatus.SERVICE_UNAVAILABLE.value();
         }
 
@@ -141,13 +155,13 @@ public class CreatePaymentUseCase {
     private String providerIdempotencyKey(
             long customerId,
             String providerCode,
-            PaymentAttemptSnapshot attempt,
+            UUID orderId,
             String idempotencyKey
     ) {
         return "payment:%s:%d:%s:%s".formatted(
                 providerCode,
                 customerId,
-                attempt.orderId(),
+                orderId,
                 idempotencyKey.trim()
         );
     }

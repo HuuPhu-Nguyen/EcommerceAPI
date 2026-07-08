@@ -272,6 +272,7 @@ class ProviderWebhookHandlingTest {
         RefundRecord refund = refundRepository.saveAndFlush(RefundRecord.pending(
                 payment,
                 "refund-webhook-key",
+                providerRefundIdempotencyKey(payment, "refund-webhook-key"),
                 "customer_request"
         ));
         String providerRefundId = "fake_webhook_refund_" + UUID.randomUUID();
@@ -313,9 +314,12 @@ class ProviderWebhookHandlingTest {
     private PaymentFixture pendingPayment(String username) throws Exception {
         UUID orderId = pendingOrder(username);
         CustomerOrderRecord order = orderRepository.findWithCustomerById(orderId).orElseThrow();
+        String idempotencyKey = "pending-webhook-payment-" + UUID.randomUUID();
         PaymentRecord payment = paymentRepository.saveAndFlush(PaymentRecord.pending(
                 order,
-                "pending-webhook-payment-" + UUID.randomUUID()
+                idempotencyKey,
+                "fake",
+                providerPaymentIdempotencyKey(order, idempotencyKey)
         ));
         return new PaymentFixture(orderId, payment.getId(), null);
     }
@@ -472,6 +476,23 @@ class ProviderWebhookHandlingTest {
             return "null";
         }
         return "\"" + value + "\"";
+    }
+
+    private String providerPaymentIdempotencyKey(CustomerOrderRecord order, String idempotencyKey) {
+        return "payment:fake:%d:%s:%s".formatted(
+                order.getCustomer().getId(),
+                order.getId(),
+                idempotencyKey
+        );
+    }
+
+    private String providerRefundIdempotencyKey(PaymentRecord payment, String idempotencyKey) {
+        return "refund:%s:%d:%s:%s".formatted(
+                payment.getProviderCode(),
+                payment.getCustomerId(),
+                payment.getId(),
+                idempotencyKey
+        );
     }
 
     private List<LedgerTransactionRecord> paymentCaptureTransactions() {

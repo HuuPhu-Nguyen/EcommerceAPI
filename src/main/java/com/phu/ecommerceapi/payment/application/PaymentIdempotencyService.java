@@ -11,6 +11,7 @@ import java.security.NoSuchAlgorithmException;
 import java.time.OffsetDateTime;
 import java.util.HexFormat;
 import java.util.Optional;
+import java.util.UUID;
 
 @Service
 public class PaymentIdempotencyService {
@@ -50,6 +51,26 @@ public class PaymentIdempotencyService {
     @Transactional
     public void complete(long recordId, int responseStatus, String responseBody) {
         persistencePort.complete(recordId, responseStatus, responseBody);
+    }
+
+    @Transactional
+    public void linkPaymentAttempt(
+            long recordId,
+            UUID paymentId,
+            String providerCode,
+            String providerIdempotencyKey
+    ) {
+        persistencePort.linkResource(recordId, "PAYMENT", paymentId, providerCode, providerIdempotencyKey);
+    }
+
+    @Transactional
+    public void linkRefundAttempt(
+            long recordId,
+            UUID refundId,
+            String providerCode,
+            String providerIdempotencyKey
+    ) {
+        persistencePort.linkResource(recordId, "REFUND", refundId, providerCode, providerIdempotencyKey);
     }
 
     private PaymentIdempotencyDecision existingDecision(PaymentIdempotencyEntry entry, String requestHash) {

@@ -15,5 +15,9 @@ public interface RefundAttemptPersistencePort {
 
     RefundAttemptUpdate markProviderTimeout(UUID refundId, String message);
 
-    Optional<RefundWebhookAttempt> findForProviderWebhook(UUID refundId, String providerRefundId);
+    Optional<RefundWebhookAttempt> findForProviderWebhook(
+            String providerCode,
+            UUID refundId,
+            String providerRefundId
+    );
 }

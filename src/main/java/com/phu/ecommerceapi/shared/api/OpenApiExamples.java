@@ -87,6 +87,7 @@ public final class OpenApiExamples {
               "refundId": "d1dfd665-f26c-4e87-8808-e2367f65076a",
               "paymentId": "638dc8e7-e7c5-47bf-a62f-a5728f9c19be",
               "orderId": "7b3c4aa9-5658-48df-a0a9-fc6f8e9e6f8b",
+              "provider": "fake",
               "status": "SUCCEEDED",
               "providerStatus": "SUCCEEDED",
               "providerRefundId": "fake-ref-d1dfd665",

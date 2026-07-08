@@ -7,6 +7,7 @@ public record RefundResponse(
         UUID refundId,
         UUID paymentId,
         UUID orderId,
+        String provider,
         String status,
         String providerStatus,
         String providerRefundId,

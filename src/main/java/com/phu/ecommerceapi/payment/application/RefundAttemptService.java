@@ -104,7 +104,8 @@ public class RefundAttemptService {
                 action,
                 REFUND_RESOURCE_TYPE,
                 refund.refundId().toString(),
-                "paymentId=%s; orderId=%s; status=%s; amount=%s %s".formatted(
+                "provider=%s; paymentId=%s; orderId=%s; status=%s; amount=%s %s".formatted(
+                        refund.providerCode(),
                         refund.paymentId(),
                         refund.orderId(),
                         refund.status(),
@@ -119,6 +120,7 @@ public class RefundAttemptService {
                 refund.refundId(),
                 refund.paymentId(),
                 refund.orderId(),
+                refund.providerCode(),
                 refund.status().name(),
                 refund.providerStatus(),
                 refund.providerRefundId(),

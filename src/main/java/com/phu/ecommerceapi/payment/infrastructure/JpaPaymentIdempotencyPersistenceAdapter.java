@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 
 import java.time.OffsetDateTime;
 import java.util.Optional;
+import java.util.UUID;
 
 @Component
 public class JpaPaymentIdempotencyPersistenceAdapter implements PaymentIdempotencyPersistencePort {
@@ -48,6 +49,19 @@ public class JpaPaymentIdempotencyPersistenceAdapter implements PaymentIdempoten
                         command.idempotencyKey()
                 )
                 .map(this::toEntry);
+    }
+
+    @Override
+    public void linkResource(
+            long recordId,
+            String resourceType,
+            UUID resourceId,
+            String providerCode,
+            String providerIdempotencyKey
+    ) {
+        PaymentIdempotencyRecord record = repository.findById(recordId)
+                .orElseThrow(() -> new IllegalArgumentException("Idempotency record not found"));
+        record.linkResource(resourceType, resourceId, providerCode, providerIdempotencyKey);
     }
 
     @Override

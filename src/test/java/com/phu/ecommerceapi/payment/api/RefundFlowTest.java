@@ -22,6 +22,7 @@ import com.phu.ecommerceapi.order.infrastructure.CustomerOrderRecord;
 import com.phu.ecommerceapi.order.infrastructure.CustomerOrderRepository;
 import com.phu.ecommerceapi.payment.domain.PaymentStatus;
 import com.phu.ecommerceapi.payment.domain.RefundStatus;
+import com.phu.ecommerceapi.payment.infrastructure.PaymentIdempotencyRecord;
 import com.phu.ecommerceapi.payment.infrastructure.PaymentIdempotencyRecordRepository;
 import com.phu.ecommerceapi.payment.infrastructure.PaymentRecord;
 import com.phu.ecommerceapi.payment.infrastructure.PaymentRecordRepository;
@@ -132,6 +133,7 @@ class RefundFlowTest {
                 .andExpect(jsonPath("$.refundId").exists())
                 .andExpect(jsonPath("$.paymentId").value(fixture.paymentId().toString()))
                 .andExpect(jsonPath("$.orderId").value(fixture.orderId().toString()))
+                .andExpect(jsonPath("$.provider").value("fake"))
                 .andExpect(jsonPath("$.status").value("SUCCEEDED"))
                 .andExpect(jsonPath("$.providerStatus").value("SUCCEEDED"))
                 .andExpect(jsonPath("$.providerRefundId").isNotEmpty())
@@ -147,7 +149,11 @@ class RefundFlowTest {
 
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.REFUNDED);
         assertThat(refund.getStatus()).isEqualTo(RefundStatus.SUCCEEDED);
+        assertThat(refund.getProviderCode()).isEqualTo(payment.getProviderCode());
+        assertThat(refund.getProviderIdempotencyKey())
+                .isEqualTo("refund:fake:%d:%s:refund-key-1".formatted(refund.getCustomerId(), payment.getId()));
         assertThat(order.getStatus()).isEqualTo(OrderStatus.REFUNDED);
+        assertRefundIdempotencyLinked(refund, fixture.paymentId(), "refund-key-1");
         assertRefundLedgerReversesPayment(refund);
         assertThat(auditActions()).contains("PAYMENT_SUCCEEDED", "REFUND_SUCCEEDED");
     }
@@ -466,6 +472,23 @@ class RefundFlowTest {
                 .stream()
                 .map(AuditEventRecord::getAction)
                 .toList();
+    }
+
+    private void assertRefundIdempotencyLinked(RefundRecord refund, UUID paymentId, String idempotencyKey) {
+        PaymentIdempotencyRecord idempotencyRecord = idempotencyRepository
+                .findByCustomerIdAndEndpointAndOperationAndIdempotencyKey(
+                        refund.getCustomerId(),
+                        "/payments/%s/refunds".formatted(paymentId),
+                        "REFUND_PAYMENT",
+                        idempotencyKey
+                )
+                .orElseThrow();
+
+        assertThat(idempotencyRecord.getResourceType()).isEqualTo("REFUND");
+        assertThat(idempotencyRecord.getResourceId()).isEqualTo(refund.getId());
+        assertThat(idempotencyRecord.getProviderCode()).isEqualTo(refund.getProviderCode());
+        assertThat(idempotencyRecord.getProviderIdempotencyKey()).isEqualTo(refund.getProviderIdempotencyKey());
+        assertThat(idempotencyRecord.getRecoveryStatus()).isEqualTo("NOT_REQUIRED");
     }
 
     private record PaymentFixture(UUID orderId, UUID paymentId) {

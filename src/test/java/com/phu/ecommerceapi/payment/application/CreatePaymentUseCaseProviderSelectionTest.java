@@ -102,8 +102,22 @@ class CreatePaymentUseCaseProviderSelectionTest {
                 .thenReturn(new PaymentPayableOrder(orderId, new BigDecimal("20.00"), "USD"));
         when(idempotencyService.start(any(PaymentIdempotencyCommand.class)))
                 .thenReturn(PaymentIdempotencyDecision.started(99L));
-        when(paymentAttemptService.startAttempt(CUSTOMER_ID, orderId, "payment-key", "stripe"))
-                .thenReturn(new PaymentAttemptSnapshot(paymentId, orderId, new BigDecimal("20.00"), "USD"));
+        String providerIdempotencyKey = "payment:stripe:%d:%s:payment-key".formatted(CUSTOMER_ID, orderId);
+        when(paymentAttemptService.startAttempt(
+                CUSTOMER_ID,
+                orderId,
+                "payment-key",
+                "stripe",
+                providerIdempotencyKey
+        ))
+                .thenReturn(new PaymentAttemptSnapshot(
+                        paymentId,
+                        orderId,
+                        "stripe",
+                        providerIdempotencyKey,
+                        new BigDecimal("20.00"),
+                        "USD"
+                ));
         when(paymentAttemptService.completeAttempt(eq(paymentId), any(PaymentProviderResult.class), eq(CURRENT_USER)))
                 .thenReturn(paymentResponse(paymentId, orderId));
 
@@ -112,8 +126,15 @@ class CreatePaymentUseCaseProviderSelectionTest {
         assertThat(result.httpStatus()).isEqualTo(HttpStatus.OK.value());
         assertThat(result.responseBody()).contains("\"provider\":\"stripe\"");
         assertThat(stripeProvider.lastPaymentRequest.idempotencyKey())
-                .isEqualTo("payment:stripe:%d:%s:payment-key".formatted(CUSTOMER_ID, orderId));
-        verify(paymentAttemptService).startAttempt(CUSTOMER_ID, orderId, "payment-key", "stripe");
+                .isEqualTo(providerIdempotencyKey);
+        verify(paymentAttemptService).startAttempt(
+                CUSTOMER_ID,
+                orderId,
+                "payment-key",
+                "stripe",
+                providerIdempotencyKey
+        );
+        verify(idempotencyService).linkPaymentAttempt(99L, paymentId, "stripe", providerIdempotencyKey);
         verify(idempotencyService).complete(eq(99L), eq(HttpStatus.OK.value()), contains("\"provider\":\"stripe\""));
     }
 
@@ -186,7 +207,7 @@ class CreatePaymentUseCaseProviderSelectionTest {
         return new PaymentAttemptResponse(
                 paymentId,
                 orderId,
-                null,
+                "stripe",
                 "SUCCEEDED",
                 "SUCCEEDED",
                 "stripe_payment",

@@ -10,6 +10,8 @@ public record RefundAttemptView(
         UUID paymentId,
         UUID orderId,
         long customerId,
+        String providerCode,
+        String providerIdempotencyKey,
         BigDecimal amount,
         String currency,
         RefundStatus status,
