@@ -130,6 +130,7 @@ class FakePaymentProviderTest {
 
     private PaymentProviderRequest request(String idempotencyKey, Map<String, String> metadata) {
         return new PaymentProviderRequest(
+                UUID.fromString("00000000-0000-0000-0000-000000000010"),
                 UUID.fromString("00000000-0000-0000-0000-000000000001"),
                 new BigDecimal("10.00"),
                 "usd",

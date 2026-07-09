@@ -87,7 +87,13 @@ public class PaymentIdempotencyService {
             recordDecision(decision.type());
             return decision;
         }
-        PaymentIdempotencyDecision decision = PaymentIdempotencyDecision.inProgress(entry.recordId());
+        PaymentIdempotencyDecision decision = PaymentIdempotencyDecision.inProgress(
+                entry.recordId(),
+                entry.resourceType(),
+                entry.resourceId(),
+                entry.providerCode(),
+                entry.providerIdempotencyKey()
+        );
         recordDecision(decision.type());
         return decision;
     }

@@ -112,7 +112,7 @@ public class PaymentRecord {
         }
         this.status = nextStatus;
         this.providerPaymentId = requireText(providerResult.providerPaymentId(), "provider payment id");
-        this.providerStatus = providerResult.status().name();
+        this.providerStatus = requireText(providerResult.providerStatus(), "provider status");
         this.providerMessage = providerResult.message();
         this.completedAt = OffsetDateTime.now();
     }
@@ -124,10 +124,20 @@ public class PaymentRecord {
         }
         this.status = nextStatus;
         this.providerPaymentId = requireText(providerResult.providerPaymentId(), "provider payment id");
-        this.providerStatus = providerResult.status().name();
+        this.providerStatus = requireText(providerResult.providerStatus(), "provider status");
         this.failureCode = requireText(providerResult.failureCode(), "provider failure code");
         this.providerMessage = providerResult.message();
         this.completedAt = OffsetDateTime.now();
+    }
+
+    public boolean markPending(PaymentProviderResult providerResult) {
+        if (status.isTerminal()) {
+            return false;
+        }
+        this.providerPaymentId = requireText(providerResult.providerPaymentId(), "provider payment id");
+        this.providerStatus = requireText(providerResult.providerStatus(), "provider status");
+        this.providerMessage = providerResult.message();
+        return true;
     }
 
     public void markProviderTimeout(String message) {

@@ -77,7 +77,11 @@ public class JpaPaymentIdempotencyPersistenceAdapter implements PaymentIdempoten
                 record.getRequestHash(),
                 record.isCompleted(),
                 record.getResponseStatus(),
-                record.getResponseBody()
+                record.getResponseBody(),
+                record.getResourceType(),
+                record.getResourceId(),
+                record.getProviderCode(),
+                record.getProviderIdempotencyKey()
         );
     }
 }

@@ -19,7 +19,11 @@ public interface PaymentAttemptPersistencePort {
 
     PaymentAttemptUpdate markFailed(UUID paymentId, PaymentProviderResult providerResult);
 
+    PaymentAttemptUpdate markPending(UUID paymentId, PaymentProviderResult providerResult);
+
     PaymentAttemptUpdate markProviderTimeout(UUID paymentId, String message);
+
+    Optional<PaymentAttemptView> findAttempt(UUID paymentId);
 
     Optional<PaymentWebhookAttempt> findForProviderWebhook(
             String providerCode,

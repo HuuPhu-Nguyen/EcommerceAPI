@@ -8,6 +8,7 @@ import java.util.Objects;
 import java.util.UUID;
 
 public record PaymentProviderRequest(
+        UUID paymentId,
         UUID orderId,
         BigDecimal amount,
         String currency,
@@ -16,6 +17,7 @@ public record PaymentProviderRequest(
 ) {
 
     public PaymentProviderRequest {
+        Objects.requireNonNull(paymentId, "payment id is required");
         Objects.requireNonNull(orderId, "order id is required");
         Objects.requireNonNull(amount, "payment amount is required");
         if (amount.signum() <= 0) {

@@ -107,6 +107,13 @@ public class JpaPaymentAttemptPersistenceAdapter implements PaymentAttemptPersis
     }
 
     @Override
+    public PaymentAttemptUpdate markPending(UUID paymentId, PaymentProviderResult providerResult) {
+        PaymentRecord payment = findForUpdate(paymentId);
+        boolean updated = payment.markPending(providerResult);
+        return new PaymentAttemptUpdate(toView(payment), updated);
+    }
+
+    @Override
     public PaymentAttemptUpdate markProviderTimeout(UUID paymentId, String message) {
         PaymentRecord payment = findForUpdate(paymentId);
         if (payment.getStatus().isTerminal()) {
@@ -114,6 +121,12 @@ public class JpaPaymentAttemptPersistenceAdapter implements PaymentAttemptPersis
         }
         payment.markProviderTimeout(message);
         return new PaymentAttemptUpdate(toView(payment), true);
+    }
+
+    @Override
+    public Optional<PaymentAttemptView> findAttempt(UUID paymentId) {
+        return paymentRepository.findWithOrderById(paymentId)
+                .map(this::toView);
     }
 
     @Override

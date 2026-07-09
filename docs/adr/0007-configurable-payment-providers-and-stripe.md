@@ -26,6 +26,8 @@ Refunds use the provider code from the successful payment record. Refund request
 
 Stripe integration uses PaymentIntents, Stripe idempotency keys, webhook signature verification, and provider-scoped webhook lookup. Stripe support is sandbox-only for this portfolio project; live regulated payment operations are not claimed.
 
+The first Stripe adapter supports USD card PaymentIntents only. It uses a portfolio sandbox cap of `999999.99 USD`, represented as `99999999` minor units, until a later task adds a currency minor-unit table and provider-specific amount configuration. The stored provider payment id is the Stripe PaymentIntent id; later Stripe refund work uses that id unless a separate charge-id persistence decision is made and documented.
+
 PostgreSQL remains the durable source of truth for payment and refund idempotency through request hashes, stored responses, transactions, and unique constraints. Redis may be used later for rate limiting or short-lived coordination, but not as the durable idempotency source of truth.
 
 Stripe SDK classes are isolated to infrastructure/configuration adapters. Domain and application types must not depend on Stripe SDK classes.

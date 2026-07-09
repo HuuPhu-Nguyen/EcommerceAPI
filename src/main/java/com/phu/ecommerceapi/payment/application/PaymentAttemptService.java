@@ -9,6 +9,7 @@ import com.phu.ecommerceapi.shared.observability.BusinessMetrics;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -86,6 +87,12 @@ public class PaymentAttemptService {
                     payment.providerPaymentId()
             ));
             recordAudit(actor, "PAYMENT_SUCCEEDED", payment);
+        } else if (providerResult.status() == PaymentProviderStatus.PENDING) {
+            update = paymentAttempts.markPending(paymentId, providerResult);
+            if (!update.transitioned()) {
+                return toResponse(update.attempt());
+            }
+            recordAudit(actor, "PAYMENT_PENDING", update.attempt());
         } else {
             update = paymentAttempts.markFailed(paymentId, providerResult);
             if (!update.transitioned()) {
@@ -106,6 +113,12 @@ public class PaymentAttemptService {
         }
         businessMetrics.paymentOutcome(update.attempt().status().name());
         return toResponse(update.attempt());
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<PaymentAttemptResponse> findAttemptResponse(UUID paymentId) {
+        return paymentAttempts.findAttempt(paymentId)
+                .map(this::toResponse);
     }
 
     private boolean isSuccessful(PaymentProviderResult providerResult) {

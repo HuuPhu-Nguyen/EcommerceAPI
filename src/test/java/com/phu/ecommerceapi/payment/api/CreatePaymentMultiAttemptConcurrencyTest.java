@@ -13,18 +13,17 @@ import com.phu.ecommerceapi.ledger.infrastructure.LedgerTransactionRepository;
 import com.phu.ecommerceapi.order.domain.OrderStatus;
 import com.phu.ecommerceapi.order.infrastructure.CustomerOrderRecord;
 import com.phu.ecommerceapi.order.infrastructure.CustomerOrderRepository;
-import com.phu.ecommerceapi.payment.application.PaymentProvider;
-import com.phu.ecommerceapi.payment.application.PaymentProviderCapabilities;
-import com.phu.ecommerceapi.payment.application.PaymentProviderRequest;
-import com.phu.ecommerceapi.payment.application.PaymentProviderResult;
-import com.phu.ecommerceapi.payment.application.PaymentRefundProviderRequest;
-import com.phu.ecommerceapi.payment.application.PaymentRefundProviderResult;
+import com.phu.ecommerceapi.payment.application.PaymentProviderTimeoutException;
 import com.phu.ecommerceapi.payment.domain.PaymentStatus;
+import com.phu.ecommerceapi.payment.infrastructure.PaymentIdempotencyRecord;
 import com.phu.ecommerceapi.payment.infrastructure.PaymentIdempotencyRecordRepository;
 import com.phu.ecommerceapi.payment.infrastructure.PaymentRecord;
 import com.phu.ecommerceapi.payment.infrastructure.PaymentRecordRepository;
 import com.phu.ecommerceapi.payment.infrastructure.RefundRecord;
 import com.phu.ecommerceapi.payment.infrastructure.RefundRecordRepository;
+import com.phu.ecommerceapi.payment.infrastructure.StripePaymentGateway;
+import com.phu.ecommerceapi.payment.infrastructure.StripePaymentIntentCreateRequest;
+import com.phu.ecommerceapi.payment.infrastructure.StripePaymentIntentResult;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -44,8 +43,6 @@ import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 import java.math.BigDecimal;
-import java.nio.charset.StandardCharsets;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -107,11 +104,11 @@ class CreatePaymentMultiAttemptConcurrencyTest {
     private JdbcTemplate jdbcTemplate;
 
     @Autowired
-    private BlockingStripePaymentProvider stripeProvider;
+    private BlockingStripePaymentGateway stripeGateway;
 
     @BeforeEach
     void resetData() {
-        stripeProvider.reset();
+        stripeGateway.reset();
         truncateLedger();
         auditEventRepository.deleteAll();
         idempotencyRepository.deleteAll();
@@ -126,7 +123,7 @@ class CreatePaymentMultiAttemptConcurrencyTest {
 
     @AfterEach
     void cleanUpData() {
-        stripeProvider.releasePayments();
+        stripeGateway.releasePayments();
         resetData();
     }
 
@@ -156,7 +153,7 @@ class CreatePaymentMultiAttemptConcurrencyTest {
                         org.assertj.core.groups.Tuple.tuple("fake", PaymentStatus.FAILED),
                         org.assertj.core.groups.Tuple.tuple("stripe", PaymentStatus.SUCCEEDED)
                 );
-        assertThat(stripeProvider.paymentCalls()).isEqualTo(1);
+        assertThat(stripeGateway.paymentCalls()).isEqualTo(1);
         assertThat(ledgerTransactionRepository.findAll()).hasSize(1);
     }
 
@@ -193,7 +190,7 @@ class CreatePaymentMultiAttemptConcurrencyTest {
         RefundRecord refund = refundRepository.findAll().getFirst();
         assertThat(providerRefundId).startsWith("fake_refund_");
         assertThat(refund.getProviderCode()).isEqualTo("fake");
-        assertThat(stripeProvider.refundCalls()).isZero();
+        assertThat(stripeGateway.paymentCalls()).isZero();
         assertThat(ledgerTransactionRepository.findAll()).hasSize(2);
     }
 
@@ -201,7 +198,7 @@ class CreatePaymentMultiAttemptConcurrencyTest {
     void concurrentAttemptsWithDifferentIdempotencyKeysCallProviderOnce() throws Exception {
         String username = "payment-concurrent-same-provider@example.com";
         UUID orderId = pendingOrder(username);
-        stripeProvider.blockPayments();
+        stripeGateway.blockPayments();
         ExecutorService executor = Executors.newSingleThreadExecutor();
 
         try {
@@ -215,21 +212,21 @@ class CreatePaymentMultiAttemptConcurrencyTest {
                     .andExpect(status().isOk())
                     .andReturn());
 
-            assertThat(stripeProvider.awaitPaymentCall()).isTrue();
+            assertThat(stripeGateway.awaitPaymentCall()).isTrue();
 
             createPayment(username, "payment-concurrent-key-2", orderId, "stripe", "pm_approved")
                     .andExpect(status().isConflict())
                     .andExpect(jsonPath("$.code").value("CONFLICT"))
                     .andExpect(jsonPath("$.detail").value("Order already has a payment attempt in progress"));
 
-            stripeProvider.releasePayments();
+            stripeGateway.releasePayments();
             firstAttempt.get(5, TimeUnit.SECONDS);
         } finally {
-            stripeProvider.releasePayments();
+            stripeGateway.releasePayments();
             executor.shutdownNow();
         }
 
-        assertThat(stripeProvider.paymentCalls()).isEqualTo(1);
+        assertThat(stripeGateway.paymentCalls()).isEqualTo(1);
         assertThat(paymentRepository.findAll()).hasSize(1);
         assertThat(idempotencyRepository.findAll()).hasSize(1);
         assertThat(orderRepository.findById(orderId).orElseThrow().getStatus()).isEqualTo(OrderStatus.PAID);
@@ -239,7 +236,7 @@ class CreatePaymentMultiAttemptConcurrencyTest {
     void concurrentAttemptsWithDifferentProvidersCallOnlyTheFirstProvider() throws Exception {
         String username = "payment-concurrent-different-provider@example.com";
         UUID orderId = pendingOrder(username);
-        stripeProvider.blockPayments();
+        stripeGateway.blockPayments();
         ExecutorService executor = Executors.newSingleThreadExecutor();
 
         try {
@@ -253,26 +250,110 @@ class CreatePaymentMultiAttemptConcurrencyTest {
                     .andExpect(status().isOk())
                     .andReturn());
 
-            assertThat(stripeProvider.awaitPaymentCall()).isTrue();
+            assertThat(stripeGateway.awaitPaymentCall()).isTrue();
 
             createPayment(username, "payment-concurrent-provider-key-2", orderId, "fake", "pm_approved")
                     .andExpect(status().isConflict())
                     .andExpect(jsonPath("$.code").value("CONFLICT"))
                     .andExpect(jsonPath("$.detail").value("Order already has a payment attempt in progress"));
 
-            stripeProvider.releasePayments();
+            stripeGateway.releasePayments();
             firstAttempt.get(5, TimeUnit.SECONDS);
         } finally {
-            stripeProvider.releasePayments();
+            stripeGateway.releasePayments();
             executor.shutdownNow();
         }
 
         PaymentRecord payment = paymentRepository.findAll().getFirst();
-        assertThat(stripeProvider.paymentCalls()).isEqualTo(1);
+        assertThat(stripeGateway.paymentCalls()).isEqualTo(1);
         assertThat(paymentRepository.findAll()).hasSize(1);
         assertThat(payment.getProviderCode()).isEqualTo("stripe");
         assertThat(idempotencyRepository.findAll()).hasSize(1);
         assertThat(orderRepository.findById(orderId).orElseThrow().getStatus()).isEqualTo(OrderStatus.PAID);
+    }
+
+    @Test
+    void replayAfterLinkedStripeAttemptWithIncompleteIdempotencyDoesNotCreateSecondPaymentIntent() throws Exception {
+        String username = "payment-stripe-replay-local-attempt@example.com";
+        UUID orderId = pendingOrder(username);
+        String idempotencyKey = "payment-stripe-replay-key";
+        String requestBody = paymentJson(orderId, "stripe", "pm_approved");
+
+        MvcResult firstResult = createPayment(username, idempotencyKey, requestBody)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.provider").value("stripe"))
+                .andExpect(jsonPath("$.status").value("SUCCEEDED"))
+                .andExpect(jsonPath("$.providerStatus").value("succeeded"))
+                .andExpect(jsonPath("$.providerPaymentId").value(org.hamcrest.Matchers.startsWith("pi_test_")))
+                .andReturn();
+
+        PaymentRecord payment = paymentRepository.findByOrderId(orderId).orElseThrow();
+        PaymentIdempotencyRecord idempotency = paymentIdempotency(payment, idempotencyKey);
+        markIdempotencyInProgress(idempotency);
+
+        MvcResult replayResult = createPayment(username, idempotencyKey, requestBody)
+                .andExpect(status().isOk())
+                .andReturn();
+
+        assertThat(replayResult.getResponse().getContentAsString())
+                .isEqualTo(firstResult.getResponse().getContentAsString());
+        assertThat(stripeGateway.paymentCalls()).isEqualTo(1);
+        assertThat(idempotencyRepository.findById(idempotency.getId()).orElseThrow().isCompleted()).isTrue();
+    }
+
+    @Test
+    void pendingStripeIntentReplaysFromLocalAttemptWithoutSecondPaymentIntent() throws Exception {
+        String username = "payment-stripe-pending-replay@example.com";
+        UUID orderId = pendingOrder(username);
+        String idempotencyKey = "payment-stripe-pending-key";
+        String requestBody = paymentJson(orderId, "stripe", "pm_processing");
+
+        MvcResult firstResult = createPayment(username, idempotencyKey, requestBody)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.provider").value("stripe"))
+                .andExpect(jsonPath("$.status").value("PENDING"))
+                .andExpect(jsonPath("$.providerStatus").value("processing"))
+                .andExpect(jsonPath("$.providerPaymentId").value(org.hamcrest.Matchers.startsWith("pi_test_")))
+                .andReturn();
+
+        PaymentRecord payment = paymentRepository.findByOrderId(orderId).orElseThrow();
+        PaymentIdempotencyRecord idempotency = paymentIdempotency(payment, idempotencyKey);
+        markIdempotencyInProgress(idempotency);
+
+        MvcResult replayResult = createPayment(username, idempotencyKey, requestBody)
+                .andExpect(status().isOk())
+                .andReturn();
+
+        assertThat(replayResult.getResponse().getContentAsString())
+                .isEqualTo(firstResult.getResponse().getContentAsString());
+        assertThat(stripeGateway.paymentCalls()).isEqualTo(1);
+        assertThat(paymentRepository.findById(payment.getId()).orElseThrow().getStatus())
+                .isEqualTo(PaymentStatus.PENDING);
+        assertThat(orderRepository.findById(orderId).orElseThrow().getStatus())
+                .isEqualTo(OrderStatus.PENDING_PAYMENT);
+        assertThat(ledgerTransactionRepository.findAll()).isEmpty();
+    }
+
+    @Test
+    void stripeTimeoutBlocksSecondAttemptUntilReconciliation() throws Exception {
+        String username = "payment-stripe-timeout-blocks@example.com";
+        UUID orderId = pendingOrder(username);
+
+        createPayment(username, "payment-stripe-timeout-key-1", orderId, "stripe", "pm_provider_timeout")
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.provider").value("stripe"))
+                .andExpect(jsonPath("$.status").value("PROVIDER_TIMEOUT"))
+                .andExpect(jsonPath("$.failureCode").value("provider_timeout"));
+
+        createPayment(username, "payment-stripe-timeout-key-2", orderId, "stripe", "pm_approved")
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.detail").value("Order has a payment attempt with unknown provider outcome"));
+
+        PaymentRecord payment = paymentRepository.findByOrderId(orderId).orElseThrow();
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.PROVIDER_TIMEOUT);
+        assertThat(stripeGateway.paymentCalls()).isEqualTo(1);
+        assertThat(orderRepository.findById(orderId).orElseThrow().getStatus())
+                .isEqualTo(OrderStatus.PENDING_PAYMENT);
     }
 
     private ResultActions createPayment(
@@ -286,6 +367,18 @@ class CreatePaymentMultiAttemptConcurrencyTest {
                 .header("Idempotency-Key", idempotencyKey)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(paymentJson(orderId, provider, paymentMethodToken))
+                .with(customerJwt(username, "payment:create")));
+    }
+
+    private ResultActions createPayment(
+            String username,
+            String idempotencyKey,
+            String requestBody
+    ) throws Exception {
+        return mockMvc.perform(post("/payments")
+                .header("Idempotency-Key", idempotencyKey)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(requestBody)
                 .with(customerJwt(username, "payment:create")));
     }
 
@@ -406,61 +499,63 @@ class CreatePaymentMultiAttemptConcurrencyTest {
         jdbcTemplate.execute("TRUNCATE TABLE ledger_entry, ledger_transaction RESTART IDENTITY");
     }
 
+    private PaymentIdempotencyRecord paymentIdempotency(PaymentRecord payment, String idempotencyKey) {
+        return idempotencyRepository.findByCustomerIdAndEndpointAndOperationAndIdempotencyKey(
+                payment.getCustomerId(),
+                "/payments",
+                "CREATE_PAYMENT",
+                idempotencyKey
+        ).orElseThrow();
+    }
+
+    private void markIdempotencyInProgress(PaymentIdempotencyRecord idempotency) {
+        jdbcTemplate.update("""
+                UPDATE payment_idempotency_record
+                SET status = 'IN_PROGRESS',
+                    response_status = NULL,
+                    response_body = NULL,
+                    completed_at = NULL
+                WHERE id = ?
+                """, idempotency.getId());
+    }
+
     @TestConfiguration
     static class StripeProviderTestConfig {
 
         @Bean
         @Primary
-        BlockingStripePaymentProvider blockingStripePaymentProvider() {
-            return new BlockingStripePaymentProvider();
+        BlockingStripePaymentGateway blockingStripePaymentGateway() {
+            return new BlockingStripePaymentGateway();
         }
     }
 
-    static final class BlockingStripePaymentProvider implements PaymentProvider {
-
-        private static final PaymentProviderCapabilities CAPABILITIES = new PaymentProviderCapabilities(
-                Set.of("USD"),
-                new BigDecimal("0.50"),
-                new BigDecimal("999999.99"),
-                true,
-                true,
-                true,
-                null
-        );
+    static final class BlockingStripePaymentGateway implements StripePaymentGateway {
 
         private final AtomicInteger paymentCalls = new AtomicInteger();
-        private final AtomicInteger refundCalls = new AtomicInteger();
         private CountDownLatch paymentCallEntered = new CountDownLatch(1);
         private CountDownLatch releasePayments = new CountDownLatch(0);
         private boolean blockPayments;
 
         @Override
-        public String providerCode() {
-            return "stripe";
-        }
-
-        @Override
-        public PaymentProviderCapabilities capabilities() {
-            return CAPABILITIES;
-        }
-
-        @Override
-        public PaymentProviderResult createPayment(PaymentProviderRequest request) {
+        public StripePaymentIntentResult createPaymentIntent(StripePaymentIntentCreateRequest request) {
             paymentCalls.incrementAndGet();
             paymentCallEntered.countDown();
             awaitReleaseIfBlocked();
-            return PaymentProviderResult.succeeded(providerPaymentId(request), "Stripe test payment approved");
-        }
-
-        @Override
-        public PaymentRefundProviderResult refundPayment(PaymentRefundProviderRequest request) {
-            refundCalls.incrementAndGet();
-            return PaymentRefundProviderResult.succeeded(providerRefundId(request), "Stripe test refund approved");
+            String paymentIntentId = providerPaymentIntentId(request);
+            return switch (request.paymentMethodToken()) {
+                case "pm_card_declined" ->
+                        new StripePaymentIntentResult(paymentIntentId, "requires_payment_method", "card_declined");
+                case "pm_processing" -> new StripePaymentIntentResult(paymentIntentId, "processing", null);
+                case "pm_requires_action" -> new StripePaymentIntentResult(paymentIntentId, "requires_action", null);
+                case "pm_provider_timeout" -> throw new PaymentProviderTimeoutException(
+                        "Stripe payment provider timed out for payment " + request.paymentId()
+                );
+                default -> new StripePaymentIntentResult(paymentIntentId, "succeeded", null);
+            };
         }
 
         void reset() {
             paymentCalls.set(0);
-            refundCalls.set(0);
             paymentCallEntered = new CountDownLatch(1);
             releasePayments = new CountDownLatch(0);
             blockPayments = false;
@@ -484,10 +579,6 @@ class CreatePaymentMultiAttemptConcurrencyTest {
             return paymentCalls.get();
         }
 
-        int refundCalls() {
-            return refundCalls.get();
-        }
-
         private void awaitReleaseIfBlocked() {
             if (!blockPayments) {
                 return;
@@ -502,18 +593,8 @@ class CreatePaymentMultiAttemptConcurrencyTest {
             }
         }
 
-        private String providerPaymentId(PaymentProviderRequest request) {
-            UUID deterministicId = UUID.nameUUIDFromBytes(
-                    request.idempotencyKey().getBytes(StandardCharsets.UTF_8)
-            );
-            return "stripe_" + deterministicId;
-        }
-
-        private String providerRefundId(PaymentRefundProviderRequest request) {
-            UUID deterministicId = UUID.nameUUIDFromBytes(
-                    request.idempotencyKey().getBytes(StandardCharsets.UTF_8)
-            );
-            return "stripe_refund_" + deterministicId;
+        private String providerPaymentIntentId(StripePaymentIntentCreateRequest request) {
+            return "pi_test_" + request.paymentId();
         }
     }
 }
