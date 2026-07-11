@@ -1,0 +1,17 @@
+.git
+.github
+.idea
+.vscode
+*.iml
+*.iws
+*.ipr
+target
+build
+agent
+.env
+.env.*
+!.env.example
+docker
+docs
+HELP.md
+README.md

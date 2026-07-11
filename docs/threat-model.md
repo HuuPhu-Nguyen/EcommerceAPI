@@ -7,14 +7,14 @@ This threat model covers the banking-grade MVP slice:
 - Customer profile, cart, checkout, order, payment, refund, audit, ledger, reconciliation, and stock event APIs.
 - Local Keycloak-backed OAuth2 Resource Server authentication.
 - PostgreSQL persistence through Flyway-managed schema.
-- Fake payment provider adapter and fake provider webhook endpoint.
+- Fake and Stripe payment provider adapters, including provider webhook endpoints.
 - Transactional outbox and Server-Sent Events stock updates.
 
 Out of scope for this portfolio version:
 
 - Real card processing and PCI storage. The API stores no raw card data.
 - Production network segmentation, WAF rules, SIEM integration, and cloud IAM.
-- Real Stripe webhook signature verification. The fake provider endpoint models replay/idempotency behavior first.
+- Live regulated payment operations. Stripe support is sandbox-oriented for portfolio review.
 
 ## Assets
 
@@ -25,6 +25,7 @@ Out of scope for this portfolio version:
 - Idempotency records and request body hashes.
 - Inventory and outbox records.
 - OAuth2 access tokens and role/scope claims.
+- Provider webhook secrets, Stripe API keys, provider event ids, and provider idempotency keys.
 
 ## Trust Boundaries
 
@@ -32,6 +33,7 @@ Out of scope for this portfolio version:
 - The API trusts Keycloak only after Spring Security validates issuer, signature, roles, and scopes.
 - The API trusts PostgreSQL as the transaction and constraint boundary.
 - Payment provider behavior is isolated behind a provider port.
+- Stripe is trusted only through configured sandbox credentials, webhook signature verification, provider idempotency keys, and reconciliation reads.
 - Stock SSE clients receive advisory events only; checkout never trusts client-visible stock.
 
 ## Threat Matrix
@@ -42,6 +44,11 @@ Out of scope for this portfolio version:
 | Duplicate payment attempts | Retried requests, browser double-clicks, or network retries could charge twice. | Payment and refund endpoints require idempotency keys scoped by customer, endpoint, and operation. Request bodies are hashed. Same key/body replays the original response. Same key/different body returns `409 Conflict`. Unique database constraint enforces the scope. | `PaymentIdempotencyService`, `PaymentIdempotencyRecord`, Flyway `V7__create_payment_idempotency_table.sql`, `PaymentIdempotencyServiceTest`, `CreatePaymentUseCaseTest`, `RefundFlowTest`. |
 | API replay attacks | A captured request could be replayed to repeat sensitive state changes. | OAuth2 access tokens are validated by Spring Security. Payment/refund state changes use idempotency semantics. Provider metadata includes provider idempotency keys. Sensitive reads/writes require roles and scopes. | `SecurityConfig`, `PaymentIdempotencyService`, `CreatePaymentUseCase`, `CreateRefundUseCase`, security integration tests. |
 | Webhook replay | Duplicate provider webhook deliveries could corrupt payment/order/ledger state. | Provider event ids are persisted and processed idempotently. Duplicate events are rejected or replayed safely. State transitions are validated before payment/order/ledger changes. Suspicious webhook outcomes are audited. | `FakeProviderWebhookUseCase`, `ProviderWebhookEventRecord`, Flyway `V11__create_provider_webhook_event_table.sql`, `ProviderWebhookHandlingTest`. |
+| Webhook forgery or payload abuse | An attacker could post fake provider callbacks or oversized bodies to unauthenticated webhook endpoints. | Fake webhooks require the configured provider secret. Stripe webhooks verify provider signatures before parsing. Webhook endpoints have local rate limits and a stricter request body size ceiling. | `StripeWebhookEventParserAdapter`, `FakeProviderWebhookUseCase`, `AbuseRateLimitFilter`, `StripeWebhookEventParserAdapterTest`, `AbuseRateLimitFilterTest`. |
+| Provider switching or double charge | A client could try another provider while a payment outcome is pending or unknown. | Provider selection is server-validated. Active attempts and successful payments are constrained by database state. Unknown or pending provider outcomes block new attempts until webhook/reconciliation/recovery resolves them. | `PaymentProviderRegistry`, `CreatePaymentUseCase`, Flyway provider metadata constraints, `CreatePaymentUseCaseTest`, `PaymentIdempotencyRecoveryServiceTest`. |
+| Provider timeout or outage | Stripe calls could time out after the provider accepted a side effect, leaving local state uncertain. | Stripe timeouts are recorded as unresolved provider outcomes instead of retried blindly. Recovery and reconciliation rebuild stable local responses or flag manual review without creating a second provider side effect. Metrics include provider timeout/error labels. | `StripePaymentProviderAdapter`, `PaymentIdempotencyRecoveryService`, `ReconciliationService`, `BusinessMetricsTest`, `ReconciliationServiceTest`. |
+| Provider secret leakage | Stripe keys or webhook secrets could leak through config, image layers, logs, error responses, or audits. | Secrets are read from environment variables, not tracked files or the Docker image. Startup validation requires provider secrets only when that provider is enabled. Problem Details and audit details avoid raw headers, request bodies, and secret values. CI runs Gitleaks. | `AppProperties`, `.env.example`, `Dockerfile`, `.github/workflows/ci.yml`, `AppPropertiesTest`, `BusinessMetricsTest`. |
+| Sensitive endpoint abuse | Attackers could brute-force registration/profile reads or flood payment, refund, and webhook endpoints. | An in-memory limiter throttles sensitive endpoints by remote address and returns sanitized `429` Problem Details. Production multi-instance deployments should replace or augment this with Redis, gateway, or WAF rate limiting. | `AbuseRateLimitFilter`, `AbuseRateLimitFilterTest`, `README.md`. |
 | PII leakage | API responses, logs, audit views, or errors could expose passwords, tokens, or unnecessary PII. | Controllers return DTOs rather than entities. Profile responses exclude password fields. Problem Details avoid stack traces and secrets. Logs include correlation ids but not authorization headers or raw tokens. Audit views are explicit DTOs. | `CustomerProfile`, `CustomerProfileController`, `GlobalExceptionHandler`, architecture tests preventing controller persistence returns, `CustomerProfileBoundaryTest`. |
 | Audit tampering | An attacker or operator could modify historical audit records without detection. | Audit events store canonical payload hashes and previous hashes. Verification recalculates the chain and reports the first broken event. Audit records are append-style application records. | `AuditHashService`, `AuditHashVerificationService`, Flyway `V13__add_audit_hash_chain.sql`, `AuditHashVerificationTest`, `AuditEventController`. |
 | Privilege escalation | A user with a valid token but insufficient role/scope could access admin, auditor, ledger, or payment operations. | Method security requires both role and scope for sensitive operations. Keycloak roles are mapped from realm/resource roles. Security tests prove missing role or missing scope is forbidden. | `SecurityExpressions`, `SecurityConfig`, `SecurityAuthorizationIntegrationTest`, `AuthorizationPolicyTest`. |
@@ -52,11 +59,13 @@ Out of scope for this portfolio version:
 ## Residual Risks And Follow-Up
 
 - Local demo credentials are intentionally simple and must not be reused outside local development.
-- Fake provider webhooks model replay safety, but real provider integration should add signature verification, timestamp tolerance, and provider-specific idempotency keys.
+- The in-memory rate limiter is single-instance only and should be replaced or augmented with Redis, gateway-level throttling, or WAF controls for horizontally scaled production.
+- Webhook body limits in the app depend on the request content length; production ingress should also enforce body size limits before traffic reaches the JVM.
+- Stripe sandbox support includes signature verification and provider idempotency, but live regulated payment operations would require PCI, operational, and incident-response controls beyond this portfolio scope.
 - The in-memory SSE broadcaster is single-instance only. Multi-instance production deployment should use Redis Pub/Sub, Kafka, or another shared fan-out mechanism behind the existing outbox.
 - The public registration endpoint is legacy-compatible and should be replaced by a subject-bound provisioning flow before production use.
 - Database append-only guarantees are demonstrated by migrations/tests, but production hardening should also restrict application database permissions.
-- Token lifetime, refresh-token policy, TLS termination, rate limiting, and abuse monitoring belong in deployment/platform configuration.
+- Token lifetime, refresh-token policy, TLS termination, centralized rate limiting, and abuse monitoring belong in deployment/platform configuration.
 
 ## Reviewer Checklist
 

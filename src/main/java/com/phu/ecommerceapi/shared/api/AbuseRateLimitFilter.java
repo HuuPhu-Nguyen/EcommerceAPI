@@ -1,0 +1,235 @@
+package com.phu.ecommerceapi.shared.api;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ProblemDetail;
+import org.springframework.stereotype.Component;
+import org.springframework.web.filter.OncePerRequestFilter;
+
+import java.io.IOException;
+import java.net.URI;
+import java.time.Clock;
+import java.util.Locale;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
+@Component
+@Order(Ordered.HIGHEST_PRECEDENCE + 10)
+public class AbuseRateLimitFilter extends OncePerRequestFilter {
+
+    private static final String PAYMENT_GROUP = "payment-create";
+    private static final String REFUND_GROUP = "refund-create";
+    private static final String WEBHOOK_GROUP = "provider-webhook";
+    private static final String REGISTRATION_GROUP = "registration";
+    private static final String PROFILE_GROUP = "customer-profile";
+
+    private final ObjectMapper objectMapper;
+    private final Clock clock;
+    private final boolean enabled;
+    private final long windowSeconds;
+    private final int sensitiveRequestLimit;
+    private final int webhookRequestLimit;
+    private final int registrationRequestLimit;
+    private final int profileRequestLimit;
+    private final long webhookMaxBodyBytes;
+    private final Map<String, WindowCounter> counters = new ConcurrentHashMap<>();
+
+    @Autowired
+    public AbuseRateLimitFilter(
+            ObjectMapper objectMapper,
+            @Value("${app.security.rate-limit.enabled:true}") boolean enabled,
+            @Value("${app.security.rate-limit.window-seconds:60}") long windowSeconds,
+            @Value("${app.security.rate-limit.sensitive-requests-per-window:30}") int sensitiveRequestLimit,
+            @Value("${app.security.rate-limit.webhook-requests-per-window:120}") int webhookRequestLimit,
+            @Value("${app.security.rate-limit.registration-requests-per-window:10}") int registrationRequestLimit,
+            @Value("${app.security.rate-limit.profile-requests-per-window:60}") int profileRequestLimit,
+            @Value("${app.security.webhook.max-body-bytes:65536}") long webhookMaxBodyBytes
+    ) {
+        this(objectMapper, Clock.systemUTC(), enabled, windowSeconds, sensitiveRequestLimit,
+                webhookRequestLimit, registrationRequestLimit, profileRequestLimit, webhookMaxBodyBytes);
+    }
+
+    AbuseRateLimitFilter(
+            ObjectMapper objectMapper,
+            Clock clock,
+            boolean enabled,
+            long windowSeconds,
+            int sensitiveRequestLimit,
+            int webhookRequestLimit,
+            int registrationRequestLimit,
+            int profileRequestLimit,
+            long webhookMaxBodyBytes
+    ) {
+        this.objectMapper = objectMapper;
+        this.clock = clock;
+        this.enabled = enabled;
+        this.windowSeconds = Math.max(1, windowSeconds);
+        this.sensitiveRequestLimit = Math.max(1, sensitiveRequestLimit);
+        this.webhookRequestLimit = Math.max(1, webhookRequestLimit);
+        this.registrationRequestLimit = Math.max(1, registrationRequestLimit);
+        this.profileRequestLimit = Math.max(1, profileRequestLimit);
+        this.webhookMaxBodyBytes = Math.max(1, webhookMaxBodyBytes);
+    }
+
+    @Override
+    protected void doFilterInternal(
+            HttpServletRequest request,
+            HttpServletResponse response,
+            FilterChain filterChain
+    ) throws ServletException, IOException {
+        String normalizedPath = normalizePath(request.getRequestURI());
+        if (isOversizedWebhook(request, normalizedPath)) {
+            writePayloadTooLargeResponse(request, response);
+            return;
+        }
+
+        RateLimitRule rule = ruleFor(request, normalizedPath);
+        if (rule == null || allow(rule, clientKey(request, rule))) {
+            filterChain.doFilter(request, response);
+            return;
+        }
+
+        writeRateLimitedResponse(request, response);
+    }
+
+    private boolean allow(RateLimitRule rule, String clientKey) {
+        long now = clock.instant().getEpochSecond();
+        WindowCounter counter = counters.computeIfAbsent(clientKey, ignored -> new WindowCounter(now));
+        synchronized (counter) {
+            if (now - counter.windowStartedAt >= windowSeconds) {
+                counter.windowStartedAt = now;
+                counter.count = 0;
+            }
+            if (counter.count >= rule.limit()) {
+                return false;
+            }
+            counter.count++;
+            return true;
+        }
+    }
+
+    private RateLimitRule ruleFor(HttpServletRequest request, String path) {
+        if (!enabled) {
+            return null;
+        }
+        String method = request.getMethod();
+        if ("POST".equals(method) && "/payments".equals(path)) {
+            return new RateLimitRule(PAYMENT_GROUP, sensitiveRequestLimit);
+        }
+        if ("POST".equals(method) && isRefundPath(path)) {
+            return new RateLimitRule(REFUND_GROUP, sensitiveRequestLimit);
+        }
+        if ("POST".equals(method) && isProviderWebhookPath(path)) {
+            return new RateLimitRule(WEBHOOK_GROUP, webhookRequestLimit);
+        }
+        if ("POST".equals(method) && "/register".equals(path)) {
+            return new RateLimitRule(REGISTRATION_GROUP, registrationRequestLimit);
+        }
+        if ("GET".equals(method) && "/customer/profile/me".equals(path)) {
+            return new RateLimitRule(PROFILE_GROUP, profileRequestLimit);
+        }
+        return null;
+    }
+
+    private boolean isOversizedWebhook(HttpServletRequest request, String path) {
+        return "POST".equals(request.getMethod())
+                && isProviderWebhookPath(path)
+                && request.getContentLengthLong() > webhookMaxBodyBytes;
+    }
+
+    private boolean isRefundPath(String path) {
+        return path.startsWith("/payments/") && path.endsWith("/refunds");
+    }
+
+    private boolean isProviderWebhookPath(String path) {
+        return "/payments/provider-webhooks/fake".equals(path)
+                || "/payments/provider-webhooks/stripe".equals(path);
+    }
+
+    private String clientKey(HttpServletRequest request, RateLimitRule rule) {
+        return rule.group() + ":" + clientAddress(request);
+    }
+
+    private String clientAddress(HttpServletRequest request) {
+        String remoteAddress = request.getRemoteAddr();
+        return remoteAddress == null || remoteAddress.isBlank() ? "unknown" : remoteAddress.trim();
+    }
+
+    private void writeRateLimitedResponse(
+            HttpServletRequest request,
+            HttpServletResponse response
+    ) throws IOException {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.TOO_MANY_REQUESTS,
+                "Too many requests for this sensitive endpoint"
+        );
+        problem.setTitle("Rate limited");
+        problem.setType(URI.create("urn:problem:rate-limited"));
+        problem.setProperty("code", ApiErrorCode.RATE_LIMITED.name());
+        problem.setProperty("path", request.getRequestURI());
+        problem.setProperty("requestId", requestId(request));
+
+        response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
+        response.setHeader("Retry-After", Long.toString(windowSeconds));
+        response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
+        objectMapper.writeValue(response.getOutputStream(), problem);
+    }
+
+    private void writePayloadTooLargeResponse(
+            HttpServletRequest request,
+            HttpServletResponse response
+    ) throws IOException {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.PAYLOAD_TOO_LARGE,
+                "Webhook request body is too large"
+        );
+        problem.setTitle("Payload too large");
+        problem.setType(URI.create("urn:problem:payload-too-large"));
+        problem.setProperty("code", ApiErrorCode.VALIDATION_FAILED.name());
+        problem.setProperty("path", request.getRequestURI());
+        problem.setProperty("requestId", requestId(request));
+
+        response.setStatus(HttpStatus.PAYLOAD_TOO_LARGE.value());
+        response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
+        objectMapper.writeValue(response.getOutputStream(), problem);
+    }
+
+    private String requestId(HttpServletRequest request) {
+        Object requestId = request.getAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE);
+        if (requestId instanceof String value && !value.isBlank()) {
+            return value;
+        }
+        return "unknown";
+    }
+
+    private String normalizePath(String path) {
+        if (path == null || path.isBlank()) {
+            return "/";
+        }
+        String normalized = path.trim().toLowerCase(Locale.ROOT);
+        return normalized.length() > 1 && normalized.endsWith("/")
+                ? normalized.substring(0, normalized.length() - 1)
+                : normalized;
+    }
+
+    private record RateLimitRule(String group, int limit) {
+    }
+
+    private static final class WindowCounter {
+        private long windowStartedAt;
+        private int count;
+
+        private WindowCounter(long windowStartedAt) {
+            this.windowStartedAt = windowStartedAt;
+        }
+    }
+}

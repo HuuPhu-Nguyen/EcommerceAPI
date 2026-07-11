@@ -8,36 +8,28 @@ on:
     branches:
       - main
   workflow_dispatch:
-  schedule:
-    - cron: "24 3 * * 1"
 
 permissions:
   contents: read
+  security-events: write
+  pull-requests: read
 
 jobs:
-  quality-gates:
-    name: Maven Quality Gates
+  verify:
+    name: Maven Verify
     runs-on: ubuntu-latest
-    timeout-minutes: 35
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Java 21
+      - name: Set up Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "21"
+          java-version: '21'
           cache: maven
 
-      - name: Validate Maven wrapper
-        run: test -f mvnw && test -f .mvn/wrapper/maven-wrapper.properties
-
-      - name: Compile
-        run: ./mvnw -B -ntp -DskipTests compile
-
-      - name: Run tests, style checks, architecture checks, and coverage
+      - name: Verify
         run: ./mvnw -B -ntp verify
 
       - name: Upload test reports
@@ -45,7 +37,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: surefire-reports
-          path: target/surefire-reports/
+          path: target/surefire-reports
           if-no-files-found: ignore
 
       - name: Upload coverage report
@@ -53,17 +45,13 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: jacoco-report
-          path: target/site/jacoco/
+          path: target/site/jacoco
           if-no-files-found: ignore
 
   dependency-review:
     name: Dependency Review
-    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: read
-
+    if: github.event_name == 'pull_request'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -73,38 +61,39 @@ jobs:
         with:
           fail-on-severity: high
 
-  dependency-scan:
-    name: OWASP Dependency Scan
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+  secret-scan:
+    name: Gitleaks Secret Scan
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+
+  container-scan:
+    name: Docker Build And Trivy Scan
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Java 21
-        uses: actions/setup-java@v4
+      - name: Build image
+        run: docker build -t ecommerce-api:${{ github.sha }} .
+
+      - name: Scan image
+        uses: aquasecurity/trivy-action@0.28.0
         with:
-          distribution: temurin
-          java-version: "21"
-          cache: maven
+          image-ref: ecommerce-api:${{ github.sha }}
+          format: sarif
+          output: trivy-results.sarif
+          severity: CRITICAL,HIGH
+          exit-code: '1'
 
-      - name: Cache vulnerability database
-        uses: actions/cache@v4
-        with:
-          path: ~/.dependency-check
-          key: dependency-check-${{ runner.os }}-${{ hashFiles('pom.xml') }}
-          restore-keys: |
-            dependency-check-${{ runner.os }}-
-
-      - name: Scan dependencies
-        run: ./mvnw -B -ntp -Pdependency-scan -DskipTests -Djacoco.skip=true verify
-
-      - name: Upload dependency scan report
+      - name: Upload Trivy results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: github/codeql-action/upload-sarif@v3
         with:
-          name: dependency-check-report
-          path: target/dependency-check-report/
-          if-no-files-found: ignore
+          sarif_file: trivy-results.sarif

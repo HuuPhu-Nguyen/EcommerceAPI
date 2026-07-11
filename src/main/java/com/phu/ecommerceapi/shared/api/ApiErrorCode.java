@@ -8,5 +8,6 @@ public enum ApiErrorCode {
     UNAUTHORIZED,
     FORBIDDEN,
     SERVICE_UNAVAILABLE,
+    RATE_LIMITED,
     INTERNAL_ERROR
 }

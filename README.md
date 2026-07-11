@@ -15,13 +15,13 @@ This is intentionally not a basic CRUD shop. The project uses an e-commerce chec
 - Subject-based ownership checks for customer carts, orders, payments, refunds, and profile data.
 - Atomic inventory reservation during checkout.
 - Idempotent payment and refund APIs using scoped keys plus request-body hashing.
-- Fake payment provider behind an application port for deterministic local demos and tests.
+- Configurable payment provider boundary with fake local provider and Stripe sandbox adapter.
 - Immutable double-entry-style ledger transactions for payment captures and refunds.
 - Tamper-evident audit hash chain with verification endpoint.
 - Reconciliation report for payments, refunds, ledger transactions, and orphan records.
 - Transactional outbox plus Server-Sent Events for advisory stock updates.
 - OpenAPI/Swagger documentation with realistic examples.
-- CI quality gates for compile, tests, architecture rules, Checkstyle, coverage, dependency review, and scheduled OWASP dependency scans.
+- CI quality gates for compile, tests, architecture rules, Checkstyle, coverage, Docker build, secret scan, container scan, dependency review, and scheduled OWASP dependency scans.
 
 ## Architecture
 
@@ -37,7 +37,7 @@ flowchart LR
     API --> Reconciliation[Reconciliation module]
     Checkout --> Inventory[Inventory reservation]
     Checkout --> Outbox[Transactional outbox]
-    Payment --> Provider[Fake payment provider]
+    Payment --> Provider[Payment provider: fake / Stripe]
     Payment --> Ledger
     Payment --> Audit
     Reconciliation --> Ledger
@@ -85,6 +85,21 @@ Important authorities:
 - `ROLE_AUDITOR` or `ROLE_ADMIN` plus `ledger:read` for ledger reads.
 
 Ownership checks use the durable OAuth2 subject, not username or email claims.
+
+## Runtime Security Controls
+
+The API includes an application-level in-memory abuse limiter for sensitive local and portfolio deployments:
+
+- `POST /payments`
+- `POST /payments/{paymentId}/refunds`
+- `POST /payments/provider-webhooks/fake`
+- `POST /payments/provider-webhooks/stripe`
+- `POST /register`
+- `GET /customer/profile/me`
+
+Repeated requests from the same remote address receive a `429 Too Many Requests` Problem Details response with a `Retry-After` header. Provider webhook endpoints also reject oversized bodies before controller logic using `WEBHOOK_MAX_BODY_BYTES`.
+
+For production multi-instance deployments, use Redis-backed rate limiting, an API gateway, or WAF-level throttling with trusted proxy configuration. Keep durable payment/refund idempotency records in PostgreSQL; do not move money-movement idempotency to Redis.
 
 ## Payment, Idempotency, And Ledger
 
@@ -151,6 +166,35 @@ Local URLs:
 - PostgreSQL: `localhost:5433`
 
 The local profile loads safe demo data from `demo-data.sql`, including one customer profile whose subject matches the imported Keycloak customer and two active products with inventory.
+
+## Production Container
+
+Build the API image from a clean checkout:
+
+```powershell
+docker build -t ecommerce-api:local .
+```
+
+Run the container with production configuration injected through environment variables or a secret manager. Do not bake secrets into the image or commit real `.env` files.
+
+```powershell
+docker run --rm -p 8080:8080 `
+    -e SPRING_PROFILES_ACTIVE=prod `
+    -e ECOMMERCE_DB_URL="jdbc:postgresql://db.example.internal:5432/ecommerce" `
+    -e ECOMMERCE_DB_USERNAME="ecommerce_app" `
+    -e ECOMMERCE_DB_PASSWORD="<from-secret-manager>" `
+    -e OAUTH2_ISSUER_URI="https://issuer.example.com/realms/ecommerce" `
+    -e PAYMENT_PROVIDER_ACTIVE="stripe" `
+    -e PAYMENT_PROVIDER_ENABLED="stripe" `
+    -e STRIPE_SECRET_KEY="<from-secret-manager>" `
+    -e STRIPE_WEBHOOK_SECRET="<from-secret-manager>" `
+    -e JAVA_OPTS="-XX:MaxRAMPercentage=75" `
+    ecommerce-api:local
+```
+
+The Docker image builds the Spring Boot jar with Maven and runs it as a non-root `ecommerce` user. Flyway migrations run on application startup because `spring.flyway.enabled=true`; the production profile uses `spring.jpa.hibernate.ddl-auto=validate`, so schema drift fails fast instead of mutating production tables.
+
+Graceful shutdown is enabled with `server.shutdown=graceful`. Tune `SHUTDOWN_TIMEOUT` for the platform termination window so in-flight requests and lifecycle beans have time to drain.
 
 ## Demo Script
 
@@ -314,10 +358,13 @@ The main quality gate:
 - Runs unit, security, architecture, and Testcontainers-backed integration tests.
 - Enforces Checkstyle import/format hygiene.
 - Generates and checks JaCoCo coverage.
+- Builds the production Docker image.
 - Uploads test and coverage reports.
 
 Dependency safety:
 
+- Gitleaks scans repository history for committed secrets.
+- Trivy scans the Docker image and uploads SARIF results.
 - Pull requests run GitHub dependency review and block high-severity vulnerable dependency changes.
 - Dependabot opens weekly Maven and GitHub Actions update PRs.
 - A scheduled/manual OWASP Dependency-Check job generates HTML/JSON vulnerability reports and fails on CVSS 7.0 or higher.
@@ -336,11 +383,14 @@ Safe local defaults are documented in `.env.example`.
 
 Important environment variables:
 
-- `ECOMMERCE_DB_URL`, `ECOMMERCE_DB_USERNAME`, `ECOMMERCE_DB_PASSWORD`
-- `OAUTH2_ISSUER_URI`, `OAUTH2_JWK_SET_URI`
-- `PAYMENT_PROVIDER_ACTIVE`, default local provider such as `fake`
-- `PAYMENT_PROVIDER_ENABLED`, comma-separated enabled providers such as `fake`
-- `FAKE_PROVIDER_WEBHOOK_SECRET`
+- Database: `ECOMMERCE_DB_URL`, `ECOMMERCE_DB_USERNAME`, `ECOMMERCE_DB_PASSWORD`
+- OAuth2: `OAUTH2_ISSUER_URI`; local profile can also use `OAUTH2_JWK_SET_URI`
+- Providers: `PAYMENT_PROVIDER_ACTIVE`, `PAYMENT_PROVIDER_ENABLED`
+- Fake provider: `FAKE_PROVIDER_WEBHOOK_SECRET` when `fake` is enabled
+- Stripe provider: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_API_VERSION`, `STRIPE_CONNECT_TIMEOUT_MS`, `STRIPE_READ_TIMEOUT_MS` when `stripe` is enabled
+- Payment idempotency recovery: `PAYMENT_IDEMPOTENCY_IN_PROGRESS_LEASE_SECONDS`
+- Abuse protection: `RATE_LIMIT_ENABLED`, `RATE_LIMIT_WINDOW_SECONDS`, `RATE_LIMIT_SENSITIVE_REQUESTS_PER_WINDOW`, `RATE_LIMIT_WEBHOOK_REQUESTS_PER_WINDOW`, `RATE_LIMIT_REGISTRATION_REQUESTS_PER_WINDOW`, `RATE_LIMIT_PROFILE_REQUESTS_PER_WINDOW`, `WEBHOOK_MAX_BODY_BYTES`
+- Operations: `APP_ENVIRONMENT`, `SHUTDOWN_TIMEOUT`, `LOG_STRUCTURED_FORMAT`, `OUTBOX_PROCESSING_ENABLED`, `RECONCILIATION_SCHEDULING_ENABLED`
 
 No real card data, JWTs, private keys, or production secrets should be committed.
 
