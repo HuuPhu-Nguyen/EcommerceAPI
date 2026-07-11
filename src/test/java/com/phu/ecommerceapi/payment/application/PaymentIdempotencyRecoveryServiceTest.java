@@ -15,9 +15,12 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -63,6 +66,47 @@ class PaymentIdempotencyRecoveryServiceTest {
     }
 
     @Test
+    void recoversStuckFakePaymentIdempotencyFromLocalFailureWithoutProviderCreateCall() {
+        UUID paymentId = UUID.randomUUID();
+        PaymentIdempotencyRecoveryEntry entry = entry(13L, "PAYMENT", paymentId, "fake", "secret-provider-key");
+        when(recoveryPort.claimExpired(any(OffsetDateTime.class), eq(100))).thenReturn(List.of(entry));
+        when(paymentAttemptService.findAttemptResponse(paymentId)).thenReturn(Optional.of(paymentResponse(
+                paymentId,
+                "fake",
+                "FAILED",
+                "fake_failed"
+        )));
+
+        int processed = recoveryService.recoverExpired();
+
+        assertThat(processed).isEqualTo(1);
+        ArgumentCaptor<String> responseBody = ArgumentCaptor.forClass(String.class);
+        verify(recoveryPort).completeRecovered(eq(13L), eq(200), responseBody.capture(), any(OffsetDateTime.class));
+        assertThat(responseBody.getValue()).contains("\"provider\":\"fake\"", "\"status\":\"FAILED\"");
+        verify(refundAttemptService, never()).findAttemptResponse(any(UUID.class));
+    }
+
+    @Test
+    void recoversStuckPaymentIdempotencyFromLocalPendingWithProviderReference() {
+        UUID paymentId = UUID.randomUUID();
+        PaymentIdempotencyRecoveryEntry entry = entry(14L, "PAYMENT", paymentId, "stripe", "secret-provider-key");
+        when(recoveryPort.claimExpired(any(OffsetDateTime.class), eq(100))).thenReturn(List.of(entry));
+        when(paymentAttemptService.findAttemptResponse(paymentId)).thenReturn(Optional.of(paymentResponse(
+                paymentId,
+                "stripe",
+                "PENDING",
+                "pi_pending"
+        )));
+
+        int processed = recoveryService.recoverExpired();
+
+        assertThat(processed).isEqualTo(1);
+        ArgumentCaptor<String> responseBody = ArgumentCaptor.forClass(String.class);
+        verify(recoveryPort).completeRecovered(eq(14L), eq(200), responseBody.capture(), any(OffsetDateTime.class));
+        assertThat(responseBody.getValue()).contains("\"status\":\"PENDING\"", "\"providerPaymentId\":\"pi_pending\"");
+    }
+
+    @Test
     void recoversStuckStripeRefundIdempotencyFromLocalSuccessWithoutProviderRefundCreateCall() {
         UUID refundId = UUID.randomUUID();
         UUID paymentId = UUID.randomUUID();
@@ -86,7 +130,53 @@ class PaymentIdempotencyRecoveryServiceTest {
     }
 
     @Test
-    void unresolvedStripeTimeoutIsMarkedManualReviewAndAuditDoesNotLeakProviderKey() {
+    void recoversStuckFakeRefundIdempotencyFromLocalFailureWithoutProviderRefundCreateCall() {
+        UUID refundId = UUID.randomUUID();
+        UUID paymentId = UUID.randomUUID();
+        PaymentIdempotencyRecoveryEntry entry = entry(15L, "REFUND", refundId, "fake", "secret-provider-key");
+        when(recoveryPort.claimExpired(any(OffsetDateTime.class), eq(100))).thenReturn(List.of(entry));
+        when(refundAttemptService.findAttemptResponse(refundId)).thenReturn(Optional.of(refundResponse(
+                refundId,
+                paymentId,
+                "fake",
+                "FAILED",
+                "fake_refund_failed"
+        )));
+
+        int processed = recoveryService.recoverExpired();
+
+        assertThat(processed).isEqualTo(1);
+        ArgumentCaptor<String> responseBody = ArgumentCaptor.forClass(String.class);
+        verify(recoveryPort).completeRecovered(eq(15L), eq(200), responseBody.capture(), any(OffsetDateTime.class));
+        assertThat(responseBody.getValue()).contains("\"provider\":\"fake\"", "\"status\":\"FAILED\"");
+        verify(paymentAttemptService, never()).findAttemptResponse(any(UUID.class));
+    }
+
+    @Test
+    void recoversStuckRefundIdempotencyFromLocalPendingWithProviderReference() {
+        UUID refundId = UUID.randomUUID();
+        UUID paymentId = UUID.randomUUID();
+        PaymentIdempotencyRecoveryEntry entry = entry(16L, "REFUND", refundId, "stripe", "secret-provider-key");
+        when(recoveryPort.claimExpired(any(OffsetDateTime.class), eq(100))).thenReturn(List.of(entry));
+        when(refundAttemptService.findAttemptResponse(refundId)).thenReturn(Optional.of(refundResponse(
+                refundId,
+                paymentId,
+                "stripe",
+                "PENDING",
+                "re_pending"
+        )));
+
+        int processed = recoveryService.recoverExpired();
+
+        assertThat(processed).isEqualTo(1);
+        ArgumentCaptor<String> responseBody = ArgumentCaptor.forClass(String.class);
+        verify(recoveryPort).completeRecovered(eq(16L), eq(200), responseBody.capture(), any(OffsetDateTime.class));
+        assertThat(responseBody.getValue()).contains("\"status\":\"PENDING\"", "\"providerRefundId\":\"re_pending\"");
+        verify(paymentAttemptService, never()).findAttemptResponse(any(UUID.class));
+    }
+
+    @Test
+    void unresolvedStripeTimeoutIsMarkedPendingReconciliationAndAuditDoesNotLeakProviderKey() {
         UUID paymentId = UUID.randomUUID();
         PaymentIdempotencyRecoveryEntry entry = entry(12L, "PAYMENT", paymentId, "stripe", "secret-provider-key");
         when(recoveryPort.claimExpired(any(OffsetDateTime.class), eq(100))).thenReturn(List.of(entry));
@@ -100,7 +190,8 @@ class PaymentIdempotencyRecoveryServiceTest {
         int processed = recoveryService.recoverExpired();
 
         assertThat(processed).isEqualTo(1);
-        verify(recoveryPort).markManualReview(eq(12L), any(OffsetDateTime.class));
+        verify(recoveryPort).markPendingReconciliation(eq(12L), any(OffsetDateTime.class));
+        verify(recoveryPort, never()).markManualReview(eq(12L), any(OffsetDateTime.class));
         verify(recoveryPort, never()).completeRecovered(
                 eq(12L),
                 any(Integer.class),
@@ -110,9 +201,63 @@ class PaymentIdempotencyRecoveryServiceTest {
 
         ArgumentCaptor<AuditEventCommand> audit = ArgumentCaptor.forClass(AuditEventCommand.class);
         verify(auditEventRecorder).record(audit.capture());
+        assertThat(audit.getValue().action()).isEqualTo("PAYMENT_IDEMPOTENCY_PENDING_RECONCILIATION");
         assertThat(audit.getValue().details())
                 .contains("provider=stripe", "recoveryStatus=PROVIDER_TIMEOUT")
                 .doesNotContain("secret-provider-key");
+    }
+
+    @Test
+    void missingLinkedPaymentIsMarkedManualReview() {
+        UUID paymentId = UUID.randomUUID();
+        PaymentIdempotencyRecoveryEntry entry = entry(17L, "PAYMENT", paymentId, "fake", "secret-provider-key");
+        when(recoveryPort.claimExpired(any(OffsetDateTime.class), eq(100))).thenReturn(List.of(entry));
+        when(paymentAttemptService.findAttemptResponse(paymentId)).thenReturn(Optional.empty());
+
+        int processed = recoveryService.recoverExpired();
+
+        assertThat(processed).isEqualTo(1);
+        verify(recoveryPort).markManualReview(eq(17L), any(OffsetDateTime.class));
+        verify(recoveryPort, never()).completeRecovered(
+                eq(17L),
+                any(Integer.class),
+                any(String.class),
+                any(OffsetDateTime.class)
+        );
+    }
+
+    @Test
+    void recoversMultipleExpiredEntriesInOneClaimBatch() {
+        UUID paymentId = UUID.randomUUID();
+        UUID refundId = UUID.randomUUID();
+        UUID refundedPaymentId = UUID.randomUUID();
+        when(recoveryPort.claimExpired(any(OffsetDateTime.class), eq(2))).thenReturn(List.of(
+                entry(18L, "PAYMENT", paymentId, "fake", "payment-key"),
+                entry(19L, "REFUND", refundId, "fake", "refund-key")
+        ));
+        when(paymentAttemptService.findAttemptResponse(paymentId)).thenReturn(Optional.of(paymentResponse(
+                paymentId,
+                "fake",
+                "SUCCEEDED",
+                "fake_payment"
+        )));
+        when(refundAttemptService.findAttemptResponse(refundId)).thenReturn(Optional.of(refundResponse(
+                refundId,
+                refundedPaymentId,
+                "fake",
+                "SUCCEEDED",
+                "fake_refund"
+        )));
+
+        int processed = recoveryService.recoverExpired(2);
+
+        assertThat(processed).isEqualTo(2);
+        verify(recoveryPort, times(2)).completeRecovered(
+                anyLong(),
+                anyInt(),
+                any(String.class),
+                any(OffsetDateTime.class)
+        );
     }
 
     private PaymentIdempotencyRecoveryEntry entry(

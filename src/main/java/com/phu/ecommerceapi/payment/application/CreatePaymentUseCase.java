@@ -23,6 +23,8 @@ public class CreatePaymentUseCase {
     private static final String ENDPOINT = "/payments";
     private static final String OPERATION = "CREATE_PAYMENT";
     private static final String PAYMENT_RESOURCE_TYPE = "PAYMENT";
+    private static final String PENDING_STATUS = "PENDING";
+    private static final String PROVIDER_TIMEOUT_STATUS = "PROVIDER_TIMEOUT";
     private static final String PROVIDER_TOKEN_DECLINED = "pm_card_declined";
     private static final String PROVIDER_TOKEN_TIMEOUT = "pm_provider_timeout";
 
@@ -145,10 +147,10 @@ public class CreatePaymentUseCase {
         PaymentAttemptResponse response = paymentAttemptService.findAttemptResponse(decision.resourceId())
                 .orElseThrow(() -> new ConflictException("Payment request is already in progress"));
 
-        if ("PROVIDER_TIMEOUT".equals(response.status())) {
+        if (PROVIDER_TIMEOUT_STATUS.equals(response.status())) {
             throw new ConflictException("Payment provider outcome is unknown; retry after reconciliation");
         }
-        if ("PENDING".equals(response.status()) && response.providerPaymentId() == null) {
+        if (PENDING_STATUS.equals(response.status()) && response.providerPaymentId() == null) {
             throw new ConflictException("Payment request is already in progress");
         }
 

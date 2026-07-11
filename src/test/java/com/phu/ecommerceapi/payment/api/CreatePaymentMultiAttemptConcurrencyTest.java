@@ -301,6 +301,67 @@ class CreatePaymentMultiAttemptConcurrencyTest {
     }
 
     @Test
+    void replayAfterLinkedStripeRefundWithIncompleteIdempotencyDoesNotCreateSecondRefund() throws Exception {
+        String username = "refund-stripe-replay-local-attempt@example.com";
+        PaymentFixture fixture = successfulStripePayment(username);
+        String idempotencyKey = "refund-stripe-replay-key";
+        String requestBody = refundJson("stripe", "customer requested");
+
+        MvcResult firstResult = createRefund(username, idempotencyKey, fixture.paymentId(), requestBody)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.provider").value("stripe"))
+                .andExpect(jsonPath("$.status").value("SUCCEEDED"))
+                .andReturn();
+
+        UUID refundId = UUID.fromString(JsonPath.read(firstResult.getResponse().getContentAsString(), "$.refundId"));
+        RefundRecord refund = refundRepository.findById(refundId).orElseThrow();
+        PaymentIdempotencyRecord idempotency = refundIdempotency(refund, fixture.paymentId(), idempotencyKey);
+        markIdempotencyInProgress(idempotency);
+
+        MvcResult replayResult = createRefund(username, idempotencyKey, fixture.paymentId(), requestBody)
+                .andExpect(status().isOk())
+                .andReturn();
+
+        assertThat(replayResult.getResponse().getContentAsString())
+                .isEqualTo(firstResult.getResponse().getContentAsString());
+        assertThat(stripeGateway.refundCalls()).isEqualTo(1);
+        assertThat(idempotencyRepository.findById(idempotency.getId()).orElseThrow().isCompleted()).isTrue();
+        assertThat(ledgerTransactionRepository.findAll()).hasSize(2);
+    }
+
+    @Test
+    void pendingStripeRefundReplaysFromLocalAttemptWithoutSecondRefund() throws Exception {
+        String username = "refund-stripe-pending-replay@example.com";
+        PaymentFixture fixture = successfulStripePayment(username);
+        stripeGateway.refundStatus("pending");
+        String idempotencyKey = "refund-stripe-pending-replay-key";
+        String requestBody = refundJson("stripe", "customer requested");
+
+        MvcResult firstResult = createRefund(username, idempotencyKey, fixture.paymentId(), requestBody)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.provider").value("stripe"))
+                .andExpect(jsonPath("$.status").value("PENDING"))
+                .andExpect(jsonPath("$.providerRefundId").value(org.hamcrest.Matchers.startsWith("re_test_")))
+                .andReturn();
+
+        UUID refundId = UUID.fromString(JsonPath.read(firstResult.getResponse().getContentAsString(), "$.refundId"));
+        RefundRecord refund = refundRepository.findById(refundId).orElseThrow();
+        PaymentIdempotencyRecord idempotency = refundIdempotency(refund, fixture.paymentId(), idempotencyKey);
+        markIdempotencyInProgress(idempotency);
+
+        MvcResult replayResult = createRefund(username, idempotencyKey, fixture.paymentId(), requestBody)
+                .andExpect(status().isOk())
+                .andReturn();
+
+        assertThat(replayResult.getResponse().getContentAsString())
+                .isEqualTo(firstResult.getResponse().getContentAsString());
+        assertThat(stripeGateway.refundCalls()).isEqualTo(1);
+        assertThat(refundRepository.findById(refund.getId()).orElseThrow().getStatus())
+                .isEqualTo(RefundStatus.PENDING);
+        assertThat(ledgerTransactionRepository.findAll()).hasSize(1);
+    }
+
+    @Test
     void stripeRefundTimeoutBlocksSecondRefundUntilReconciliation() throws Exception {
         String username = "refund-stripe-timeout@example.com";
         PaymentFixture fixture = successfulStripePayment(username);
@@ -702,6 +763,19 @@ class CreatePaymentMultiAttemptConcurrencyTest {
                 payment.getCustomerId(),
                 "/payments",
                 "CREATE_PAYMENT",
+                idempotencyKey
+        ).orElseThrow();
+    }
+
+    private PaymentIdempotencyRecord refundIdempotency(
+            RefundRecord refund,
+            UUID paymentId,
+            String idempotencyKey
+    ) {
+        return idempotencyRepository.findByCustomerIdAndEndpointAndOperationAndIdempotencyKey(
+                refund.getCustomerId(),
+                "/payments/%s/refunds".formatted(paymentId),
+                "REFUND_PAYMENT",
                 idempotencyKey
         ).orElseThrow();
     }
