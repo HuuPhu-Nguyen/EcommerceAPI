@@ -25,22 +25,20 @@ public class InventoryReservationService {
     }
 
     @Transactional
-    public void initializeInventory(long productId, int availableQuantity) {
+    public InventorySnapshot initializeInventory(long productId, int availableQuantity) {
         InventoryState inventory = inventoryPersistencePort.initialize(productId, availableQuantity);
         recordStockChanged(inventory, "INITIALIZED");
+        return toSnapshot(inventory);
     }
 
     @Transactional
-    public void setAvailableQuantity(long productId, int availableQuantity) {
+    public InventorySnapshot setAvailableQuantity(long productId, int availableQuantity) {
         if (availableQuantity < 0) {
             throw new IllegalArgumentException("Available quantity cannot be negative");
         }
-        boolean updated = inventoryPersistencePort.setAvailableQuantity(productId, availableQuantity);
-        if (!updated) {
-            initializeInventory(productId, availableQuantity);
-            return;
-        }
-        recordStockChanged(inventory(productId), "AVAILABLE_QUANTITY_SET");
+        InventoryState inventory = inventoryPersistencePort.setAvailableQuantity(productId, availableQuantity);
+        recordStockChanged(inventory, "AVAILABLE_QUANTITY_SET");
+        return toSnapshot(inventory);
     }
 
     @Transactional
@@ -66,6 +64,14 @@ public class InventoryReservationService {
     private InventoryState inventory(long productId) {
         return inventoryPersistencePort.findByProductId(productId)
                 .orElseThrow(() -> new NotFoundException("Inventory not found"));
+    }
+
+    private InventorySnapshot toSnapshot(InventoryState inventory) {
+        return new InventorySnapshot(
+                inventory.productId(),
+                inventory.availableQuantity(),
+                inventory.reservedQuantity()
+        );
     }
 
     private void recordStockChanged(InventoryState inventory, String reason) {

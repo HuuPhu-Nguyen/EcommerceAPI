@@ -6,6 +6,7 @@ import com.phu.ecommerceapi.audit.application.AuditEventCommand;
 import com.phu.ecommerceapi.audit.application.AuditEventRecorder;
 import com.phu.ecommerceapi.identity.application.CurrentUser;
 import com.phu.ecommerceapi.inventory.application.InventoryReservationService;
+import com.phu.ecommerceapi.inventory.application.InventorySnapshot;
 import com.phu.ecommerceapi.shared.api.NotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -40,25 +41,32 @@ public class AdminProductService {
                 .build();
 
         ProductModel savedProduct = productRepo.save(product);
-        inventoryReservationService.initializeInventory(savedProduct.getProductId(), command.stock());
+        InventorySnapshot inventory = inventoryReservationService.initializeInventory(
+                savedProduct.getProductId(),
+                command.stock()
+        );
+        savedProduct.setStock(inventory.availableQuantity());
         recordAudit(actor, "PRODUCT_CREATED", savedProduct);
-        return toResponse(savedProduct);
+        return toResponse(savedProduct, inventory);
     }
 
     @Transactional
     public ProductAdminResponse update(long productId, AdminProductCommand command, CurrentUser actor) {
-        ProductModel product = productRepo.findById(productId)
+        ProductModel product = productRepo.findByIdForUpdate(productId)
                 .orElseThrow(() -> new NotFoundException("Product not found"));
 
         product.setName(command.name());
         product.setPrice(command.price());
-        product.setStock(command.stock());
         product.setActive(command.activeOrDefault(product.isActive()));
 
+        InventorySnapshot inventory = inventoryReservationService.setAvailableQuantity(
+                product.getProductId(),
+                command.stock()
+        );
+        product.setStock(inventory.availableQuantity());
         ProductModel savedProduct = productRepo.save(product);
-        inventoryReservationService.setAvailableQuantity(savedProduct.getProductId(), command.stock());
         recordAudit(actor, "PRODUCT_UPDATED", savedProduct);
-        return toResponse(savedProduct);
+        return toResponse(savedProduct, inventory);
     }
 
     @Transactional
@@ -69,7 +77,7 @@ public class AdminProductService {
         product.setActive(false);
         ProductModel savedProduct = productRepo.save(product);
         recordAudit(actor, "PRODUCT_DEACTIVATED", savedProduct);
-        return toResponse(savedProduct);
+        return toResponse(savedProduct, inventoryReservationService.getInventory(savedProduct.getProductId()));
     }
 
     private void recordAudit(CurrentUser actor, String action, ProductModel product) {
@@ -82,13 +90,13 @@ public class AdminProductService {
         ));
     }
 
-    private ProductAdminResponse toResponse(ProductModel product) {
+    private ProductAdminResponse toResponse(ProductModel product, InventorySnapshot inventory) {
         return new ProductAdminResponse(
                 product.getProductId(),
                 product.getName(),
                 product.getPrice(),
                 product.getCurrency(),
-                product.getStock(),
+                inventory.availableQuantity(),
                 product.isActive()
         );
     }

@@ -41,4 +41,11 @@ public class InventoryRecord {
     public int getReservedQuantity() {
         return reservedQuantity;
     }
+
+    public void setAvailableQuantity(int availableQuantity) {
+        if (availableQuantity < 0) {
+            throw new IllegalArgumentException("Available quantity cannot be negative");
+        }
+        this.availableQuantity = availableQuantity;
+    }
 }

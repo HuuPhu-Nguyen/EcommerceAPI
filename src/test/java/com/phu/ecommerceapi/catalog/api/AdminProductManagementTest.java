@@ -1,11 +1,15 @@
 package com.phu.ecommerceapi.catalog.api;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.phu.ecommerceapi.Product.ProductModel;
 import com.phu.ecommerceapi.Product.ProductRepo;
 import com.phu.ecommerceapi.audit.infrastructure.AuditEventRepository;
 import com.phu.ecommerceapi.cart.infrastructure.CartRepo;
+import com.phu.ecommerceapi.inventory.infrastructure.InventoryRecord;
 import com.phu.ecommerceapi.inventory.infrastructure.InventoryRepository;
 import com.phu.ecommerceapi.order.infrastructure.CustomerOrderRepository;
+import com.phu.ecommerceapi.outbox.infrastructure.OutboxEventRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,6 +22,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -46,8 +51,15 @@ class AdminProductManagementTest {
     @Autowired
     private InventoryRepository inventoryRepository;
 
+    @Autowired
+    private OutboxEventRepository outboxEventRepository;
+
+    @Autowired
+    private ObjectMapper objectMapper;
+
     @BeforeEach
     void resetData() {
+        outboxEventRepository.deleteAll();
         auditEventRepository.deleteAll();
         orderRepository.deleteAll();
         cartRepo.deleteAll();
@@ -116,10 +128,57 @@ class AdminProductManagementTest {
 
         ProductModel savedProduct = productRepo.findById(product.getProductId()).orElseThrow();
         assertThat(savedProduct.getName()).isEqualTo("Updated Product");
+        assertThat(savedProduct.getStock()).isEqualTo(11);
         assertThat(savedProduct.isActive()).isFalse();
+        assertThat(inventoryRepository.findById(product.getProductId()))
+                .get()
+                .satisfies(inventory -> {
+                    assertThat(inventory.getAvailableQuantity()).isEqualTo(11);
+                    assertThat(inventory.getReservedQuantity()).isZero();
+                });
         assertThat(auditEventRepository.findAll())
                 .extracting("action")
                 .containsExactly("PRODUCT_UPDATED", "PRODUCT_DEACTIVATED");
+    }
+
+    @Test
+    void adminStockUpdatePreservesReservedQuantityAndPublishesFinalAvailableStock() throws Exception {
+        ProductModel product = productRepo.save(ProductModel.builder()
+                .name("Reserved Product")
+                .price(new java.math.BigDecimal("10.00"))
+                .stock(4)
+                .active(true)
+                .build());
+        inventoryRepository.save(new InventoryRecord(product.getProductId(), 4, 2));
+        outboxEventRepository.deleteAll();
+
+        mockMvc.perform(put("/admin/products/{productId}", product.getProductId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(productJson("Reserved Product Updated", "15.00", 9, true))
+                        .with(adminJwt()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.stock").value(9));
+
+        InventoryRecord inventory = inventoryRepository.findById(product.getProductId()).orElseThrow();
+        assertThat(inventory.getAvailableQuantity()).isEqualTo(9);
+        assertThat(inventory.getReservedQuantity()).isEqualTo(2);
+        assertThat(productRepo.findById(product.getProductId()).orElseThrow().getStock()).isEqualTo(9);
+
+        mockMvc.perform(get("/products/{id}", product.getProductId()).with(jwt()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.stock").value(inventory.getAvailableQuantity()));
+
+        assertThat(outboxEventRepository.findAll())
+                .singleElement()
+                .satisfies(event -> {
+                    assertThat(event.getAggregateType()).isEqualTo("PRODUCT");
+                    assertThat(event.getAggregateId()).isEqualTo(Long.toString(product.getProductId()));
+                    assertThat(event.getEventType()).isEqualTo("StockChanged");
+                    JsonNode payload = readPayload(event.getPayload());
+                    assertThat(payload.get("availableQuantity").asInt()).isEqualTo(9);
+                    assertThat(payload.get("reservedQuantity").asInt()).isEqualTo(2);
+                    assertThat(payload.get("reason").asText()).isEqualTo("AVAILABLE_QUANTITY_SET");
+                });
     }
 
     private org.springframework.test.web.servlet.request.RequestPostProcessor adminJwt() {
@@ -140,5 +199,13 @@ class AdminProductManagementTest {
                   "active": %s
                 }
                 """.formatted(name, price, stock, active);
+    }
+
+    private JsonNode readPayload(String payload) {
+        try {
+            return objectMapper.readTree(payload);
+        } catch (Exception exception) {
+            throw new AssertionError("Outbox payload is not valid JSON", exception);
+        }
     }
 }

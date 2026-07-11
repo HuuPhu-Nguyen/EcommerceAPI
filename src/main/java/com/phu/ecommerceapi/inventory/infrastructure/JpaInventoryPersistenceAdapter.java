@@ -22,8 +22,11 @@ public class JpaInventoryPersistenceAdapter implements InventoryPersistencePort 
     }
 
     @Override
-    public boolean setAvailableQuantity(long productId, int availableQuantity) {
-        return inventoryRepository.updateAvailableQuantity(productId, availableQuantity) == 1;
+    public InventoryState setAvailableQuantity(long productId, int availableQuantity) {
+        InventoryRecord inventory = inventoryRepository.findByProductIdForUpdate(productId)
+                .orElseGet(() -> inventoryRepository.save(new InventoryRecord(productId, availableQuantity, 0)));
+        inventory.setAvailableQuantity(availableQuantity);
+        return toState(inventory);
     }
 
     @Override

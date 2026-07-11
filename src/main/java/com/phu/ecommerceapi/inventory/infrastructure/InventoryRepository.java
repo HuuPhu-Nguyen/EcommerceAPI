@@ -5,18 +5,20 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Optional;
+
 public interface InventoryRepository extends JpaRepository<InventoryRecord, Long> {
 
-    @Modifying(flushAutomatically = true, clearAutomatically = true)
-    @Query("""
-            update InventoryRecord inventory
-               set inventory.availableQuantity = :availableQuantity
-             where inventory.productId = :productId
-            """)
-    int updateAvailableQuantity(
-            @Param("productId") long productId,
-            @Param("availableQuantity") int availableQuantity
-    );
+    @Query(
+            value = """
+                    select *
+                    from inventory
+                    where product_id = :productId
+                    for update
+                    """,
+            nativeQuery = true
+    )
+    Optional<InventoryRecord> findByProductIdForUpdate(@Param("productId") long productId);
 
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("""

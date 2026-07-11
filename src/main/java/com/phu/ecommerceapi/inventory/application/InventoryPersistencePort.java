@@ -6,7 +6,7 @@ public interface InventoryPersistencePort {
 
     InventoryState initialize(long productId, int availableQuantity);
 
-    boolean setAvailableQuantity(long productId, int availableQuantity);
+    InventoryState setAvailableQuantity(long productId, int availableQuantity);
 
     boolean reserve(long productId, int requestedQuantity);
 

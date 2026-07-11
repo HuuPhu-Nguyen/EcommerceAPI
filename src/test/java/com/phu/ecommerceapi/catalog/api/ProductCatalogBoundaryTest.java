@@ -3,6 +3,7 @@ package com.phu.ecommerceapi.catalog.api;
 import com.phu.ecommerceapi.Product.ProductModel;
 import com.phu.ecommerceapi.Product.ProductRepo;
 import com.phu.ecommerceapi.cart.infrastructure.CartRepo;
+import com.phu.ecommerceapi.inventory.infrastructure.InventoryRecord;
 import com.phu.ecommerceapi.inventory.infrastructure.InventoryRepository;
 import com.phu.ecommerceapi.order.infrastructure.CustomerOrderRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -107,6 +108,21 @@ class ProductCatalogBoundaryTest {
         mockMvc.perform(get("/products/{id}", inactiveProduct.getProductId())
                         .with(jwt()))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void catalogDetailUsesInventoryAvailableQuantityForStock() throws Exception {
+        ProductModel product = productRepo.save(ProductModel.builder()
+                .name("Inventory Backed Product")
+                .price(new java.math.BigDecimal("10.00"))
+                .stock(99)
+                .active(true)
+                .build());
+        inventoryRepository.save(new InventoryRecord(product.getProductId(), 2, 7));
+
+        mockMvc.perform(get("/products/{id}", product.getProductId()).with(jwt()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.stock").value(2));
     }
 
     private ProductModel product(String name, boolean active) {

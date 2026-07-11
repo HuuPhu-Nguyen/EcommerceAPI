@@ -1,6 +1,5 @@
 package com.phu.ecommerceapi.catalog.infrastructure;
 
-import com.phu.ecommerceapi.Product.ProductModel;
 import com.phu.ecommerceapi.Product.ProductRepo;
 import com.phu.ecommerceapi.catalog.application.ProductCatalogItem;
 import com.phu.ecommerceapi.catalog.application.ProductCatalogRepository;
@@ -21,28 +20,15 @@ public class JpaProductCatalogRepository implements ProductCatalogRepository {
 
     @Override
     public Optional<ProductCatalogItem> findActiveById(long id) {
-        return productRepo.findByProductIdAndActiveTrue(id)
-                .map(this::toCatalogItem);
+        return productRepo.findActiveCatalogItemById(id);
     }
 
     @Override
     public Page<ProductCatalogItem> findActiveProducts(String search, Pageable pageable) {
         if (search == null || search.isBlank()) {
-            return productRepo.findByActiveTrue(pageable)
-                    .map(this::toCatalogItem);
+            return productRepo.findActiveCatalogItems(pageable);
         }
 
-        return productRepo.findByActiveTrueAndNameContainingIgnoreCase(search.trim(), pageable)
-                .map(this::toCatalogItem);
-    }
-
-    private ProductCatalogItem toCatalogItem(ProductModel product) {
-        return new ProductCatalogItem(
-                product.getProductId(),
-                product.getName(),
-                product.getPrice(),
-                product.getCurrency(),
-                product.getStock()
-        );
+        return productRepo.findActiveCatalogItemsByName(search.trim(), pageable);
     }
 }
