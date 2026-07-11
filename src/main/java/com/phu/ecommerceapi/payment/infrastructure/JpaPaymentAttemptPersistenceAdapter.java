@@ -137,13 +137,13 @@ public class JpaPaymentAttemptPersistenceAdapter implements PaymentAttemptPersis
         String normalizedProviderCode = normalizeProviderCode(providerCode);
         Optional<PaymentRecord> payment;
         if (paymentId != null) {
-            payment = paymentRepository.findById(paymentId)
+            payment = paymentRepository.findForUpdateById(paymentId)
                     .filter(record -> record.getProviderCode().equals(normalizedProviderCode))
                     .filter(record -> providerPaymentId == null
                             || record.getProviderPaymentId() == null
                             || record.getProviderPaymentId().equals(providerPaymentId));
         } else if (providerPaymentId != null) {
-            payment = paymentRepository.findByProviderCodeAndProviderPaymentId(
+            payment = paymentRepository.findForUpdateByProviderCodeAndProviderPaymentId(
                     normalizedProviderCode,
                     providerPaymentId
             );

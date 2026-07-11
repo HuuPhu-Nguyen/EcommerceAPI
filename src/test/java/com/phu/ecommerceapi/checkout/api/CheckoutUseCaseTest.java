@@ -17,17 +17,30 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.dao.DataAccessException;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
+
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -59,6 +72,12 @@ class CheckoutUseCaseTest {
 
     @Autowired
     private AuditEventRepository auditEventRepository;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private PlatformTransactionManager transactionManager;
 
     @BeforeEach
     void resetData() {
@@ -192,6 +211,21 @@ class CheckoutUseCaseTest {
     }
 
     @Test
+    void concurrentAddItemWhileCheckoutLocksCartReturnsConflictAndCheckoutClearsCart() throws Exception {
+        assertConcurrentMutationWhileCheckoutLocksCartConflicts(this::addItemStatus);
+    }
+
+    @Test
+    void concurrentUpdateItemWhileCheckoutLocksCartReturnsConflictAndCheckoutClearsCart() throws Exception {
+        assertConcurrentMutationWhileCheckoutLocksCartConflicts(this::updateItemStatus);
+    }
+
+    @Test
+    void concurrentRemoveItemWhileCheckoutLocksCartReturnsConflictAndCheckoutClearsCart() throws Exception {
+        assertConcurrentMutationWhileCheckoutLocksCartConflicts(this::removeItemStatus);
+    }
+
+    @Test
     void checkoutFailsBeforeInventoryReservationWhenNoProviderSupportsCurrency() throws Exception {
         String username = "unsupported-currency-customer@example.com";
         user(username);
@@ -265,6 +299,86 @@ class CheckoutUseCaseTest {
         return cartId.longValue();
     }
 
+    private void assertConcurrentMutationWhileCheckoutLocksCartConflicts(CartMutation mutation) throws Exception {
+        String username = "checkout-cart-race-" + System.nanoTime() + "@example.com";
+        user(username);
+        ProductModel product = product("Concurrent Checkout Product", 5);
+        long cartId = createCart(username);
+        addItem(username, cartId, product.getProductId(), 1);
+
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        AtomicReference<Future<Integer>> checkoutFuture = new AtomicReference<>();
+        AtomicReference<Future<Integer>> mutationFuture = new AtomicReference<>();
+
+        try {
+            transactionTemplate().executeWithoutResult(status -> {
+                lockInventory(product.getProductId());
+                checkoutFuture.set(executor.submit(() -> checkoutStatus(username, cartId)));
+                waitForCartLock(cartId);
+                mutationFuture.set(executor.submit(() -> mutation.perform(username, cartId, product.getProductId())));
+            });
+
+            assertThat(checkoutFuture.get().get(5, TimeUnit.SECONDS)).isEqualTo(200);
+            assertThat(mutationFuture.get().get(5, TimeUnit.SECONDS)).isEqualTo(409);
+        } finally {
+            executor.shutdownNow();
+        }
+
+        assertThat(orderRepository.findAll()).hasSize(1);
+        assertThat(cartRepo.findWithItemsById(cartId).orElseThrow().getItems()).isEmpty();
+
+        InventoryRecord inventory = inventoryRepository.findById(product.getProductId()).orElseThrow();
+        assertThat(inventory.getAvailableQuantity()).isEqualTo(4);
+        assertThat(inventory.getReservedQuantity()).isEqualTo(1);
+    }
+
+    private void waitForCartLock(long cartId) {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (System.nanoTime() < deadline) {
+            if (isCartLockedByAnotherTransaction(cartId)) {
+                return;
+            }
+            sleepBriefly();
+        }
+        throw new AssertionError("Checkout did not acquire the cart row lock");
+    }
+
+    private boolean isCartLockedByAnotherTransaction(long cartId) {
+        TransactionTemplate template = transactionTemplate();
+        template.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        try {
+            template.executeWithoutResult(status -> jdbcTemplate.queryForObject(
+                    "SELECT id FROM cart_model WHERE id = ? FOR UPDATE NOWAIT",
+                    Long.class,
+                    cartId
+            ));
+            return false;
+        } catch (DataAccessException exception) {
+            return true;
+        }
+    }
+
+    private void lockInventory(long productId) {
+        jdbcTemplate.queryForObject(
+                "SELECT product_id FROM inventory WHERE product_id = ? FOR UPDATE",
+                Long.class,
+                productId
+        );
+    }
+
+    private void sleepBriefly() {
+        try {
+            Thread.sleep(25);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError("Interrupted while waiting for checkout lock", exception);
+        }
+    }
+
+    private TransactionTemplate transactionTemplate() {
+        return new TransactionTemplate(transactionManager);
+    }
+
     private void addItem(String username, long cartId, long productId, int quantity) throws Exception {
         mockMvc.perform(post("/cart/{cartId}/items", cartId)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -276,6 +390,57 @@ class CheckoutUseCaseTest {
                                 """.formatted(productId, quantity))
                         .with(customerJwt(username, "cart:write")))
                 .andExpect(status().isOk());
+    }
+
+    private int addItemStatus(String username, long cartId, long productId) throws Exception {
+        return mockMvc.perform(post("/cart/{cartId}/items", cartId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "productId": %d,
+                                  "quantity": 1
+                                }
+                                """.formatted(productId))
+                        .with(customerJwt(username, "cart:write")))
+                .andReturn()
+                .getResponse()
+                .getStatus();
+    }
+
+    private int updateItemStatus(String username, long cartId, long productId) throws Exception {
+        return mockMvc.perform(put("/cart/{cartId}/items/{productId}", cartId, productId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "quantity": 2
+                                }
+                                """)
+                        .with(customerJwt(username, "cart:write")))
+                .andReturn()
+                .getResponse()
+                .getStatus();
+    }
+
+    private int removeItemStatus(String username, long cartId, long productId) throws Exception {
+        return mockMvc.perform(delete("/cart/{cartId}/items/{productId}", cartId, productId)
+                        .with(customerJwt(username, "cart:write")))
+                .andReturn()
+                .getResponse()
+                .getStatus();
+    }
+
+    private int checkoutStatus(String username, long cartId) throws Exception {
+        return mockMvc.perform(post("/checkout")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "cartId": %d
+                                }
+                                """.formatted(cartId))
+                        .with(customerJwt(username, "checkout:write")))
+                .andReturn()
+                .getResponse()
+                .getStatus();
     }
 
     private UserModel user(String username) {
@@ -314,5 +479,11 @@ class CheckoutUseCaseTest {
                         new SimpleGrantedAuthority("ROLE_CUSTOMER"),
                         new SimpleGrantedAuthority("SCOPE_" + scope)
                 );
+    }
+
+    @FunctionalInterface
+    private interface CartMutation {
+
+        int perform(String username, long cartId, long productId) throws Exception;
     }
 }

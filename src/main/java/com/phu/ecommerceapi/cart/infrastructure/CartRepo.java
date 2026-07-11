@@ -17,5 +17,10 @@ public interface CartRepo extends JpaRepository<CartModel, Long> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @EntityGraph(attributePaths = {"owner", "items", "items.productModel"})
     @Query("select cart from CartModel cart where cart.id = :id")
+    Optional<CartModel> findForUpdateWithItemsById(@Param("id") long id);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @EntityGraph(attributePaths = {"owner", "items", "items.productModel"})
+    @Query("select cart from CartModel cart where cart.id = :id")
     Optional<CartModel> findForCheckoutById(@Param("id") long id);
 }

@@ -132,13 +132,13 @@ public class JpaRefundAttemptPersistenceAdapter implements RefundAttemptPersiste
         String normalizedProviderCode = normalizeProviderCode(providerCode);
         Optional<RefundRecord> refund;
         if (refundId != null) {
-            refund = refundRepository.findById(refundId)
+            refund = refundRepository.findForUpdateById(refundId)
                     .filter(record -> record.getProviderCode().equals(normalizedProviderCode))
                     .filter(record -> providerRefundId == null
                             || record.getProviderRefundId() == null
                             || record.getProviderRefundId().equals(providerRefundId));
         } else if (providerRefundId != null) {
-            refund = refundRepository.findByProviderCodeAndProviderRefundId(
+            refund = refundRepository.findForUpdateByProviderCodeAndProviderRefundId(
                     normalizedProviderCode,
                     providerRefundId
             );

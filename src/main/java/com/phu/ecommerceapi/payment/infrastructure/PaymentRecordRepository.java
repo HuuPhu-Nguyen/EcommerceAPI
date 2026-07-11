@@ -47,6 +47,18 @@ public interface PaymentRecordRepository extends JpaRepository<PaymentRecord, UU
 
     Optional<PaymentRecord> findByProviderCodeAndProviderPaymentId(String providerCode, String providerPaymentId);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            select payment
+            from PaymentRecord payment
+            where payment.providerCode = :providerCode
+              and payment.providerPaymentId = :providerPaymentId
+            """)
+    Optional<PaymentRecord> findForUpdateByProviderCodeAndProviderPaymentId(
+            @Param("providerCode") String providerCode,
+            @Param("providerPaymentId") String providerPaymentId
+    );
+
     @Query("""
             select payment
             from PaymentRecord payment

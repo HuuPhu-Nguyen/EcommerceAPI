@@ -208,6 +208,104 @@ class ProviderWebhookHandlingTest {
     }
 
     @Test
+    void concurrentFakeSameEventDeliveryProcessesOnce() throws Exception {
+        String username = "webhook-fake-concurrent-same@example.com";
+        PaymentFixture fixture = pendingPayment(username);
+        String requestBody = paymentWebhookJson(
+                "evt-fake-concurrent-same",
+                "payment.succeeded",
+                fixture.paymentId(),
+                "fake_webhook_payment_concurrent_same",
+                null,
+                "concurrent fake duplicate"
+        );
+
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Callable<Integer> delivery = () -> {
+                start.await(5, TimeUnit.SECONDS);
+                return sendWebhook(requestBody)
+                        .andReturn()
+                        .getResponse()
+                        .getStatus();
+            };
+            Future<Integer> first = executor.submit(delivery);
+            Future<Integer> second = executor.submit(delivery);
+            start.countDown();
+
+            assertThat(List.of(first.get(), second.get())).containsOnly(200);
+        } finally {
+            executor.shutdownNow();
+        }
+
+        assertThat(webhookEventRepository.findAll()).hasSize(1);
+        assertThat(paymentCaptureTransactions()).hasSize(1);
+        assertThat(auditActions().stream().filter("PROVIDER_WEBHOOK_PROCESSED"::equals)).hasSize(1);
+    }
+
+    @Test
+    void concurrentFakeDifferentEventsForSamePaymentDoNotDuplicateLedgerEntries() throws Exception {
+        String username = "webhook-fake-concurrent-different@example.com";
+        PaymentFixture fixture = pendingPayment(username);
+        String providerPaymentId = "fake_webhook_payment_concurrent_different";
+        String firstRequest = paymentWebhookJson(
+                "evt-fake-concurrent-different-1",
+                "payment.succeeded",
+                fixture.paymentId(),
+                providerPaymentId,
+                null,
+                "first concurrent fake success"
+        );
+        String secondRequest = paymentWebhookJson(
+                "evt-fake-concurrent-different-2",
+                "payment.succeeded",
+                fixture.paymentId(),
+                providerPaymentId,
+                null,
+                "second concurrent fake success"
+        );
+
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Callable<Integer> firstDelivery = () -> {
+                start.await(5, TimeUnit.SECONDS);
+                return sendWebhook(firstRequest)
+                        .andReturn()
+                        .getResponse()
+                        .getStatus();
+            };
+            Callable<Integer> secondDelivery = () -> {
+                start.await(5, TimeUnit.SECONDS);
+                return sendWebhook(secondRequest)
+                        .andReturn()
+                        .getResponse()
+                        .getStatus();
+            };
+            Future<Integer> first = executor.submit(firstDelivery);
+            Future<Integer> second = executor.submit(secondDelivery);
+            start.countDown();
+
+            assertThat(List.of(first.get(), second.get())).containsOnly(200);
+        } finally {
+            executor.shutdownNow();
+        }
+
+        PaymentRecord payment = paymentRepository.findById(fixture.paymentId()).orElseThrow();
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.SUCCEEDED);
+        assertThat(paymentCaptureTransactions()).hasSize(1);
+        assertThat(webhookEventRepository.findAll())
+                .hasSize(2)
+                .allSatisfy(event -> assertThat(event.getProcessingStatus())
+                        .isIn(
+                                ProviderWebhookProcessingStatus.PROCESSED,
+                                ProviderWebhookProcessingStatus.IGNORED
+                        ));
+        assertThat(auditActions().stream().filter("PAYMENT_SUCCEEDED"::equals)).hasSize(1);
+    }
+
+    @Test
     void sameEventIdWithDifferentPayloadReturnsConflictAndAudits() throws Exception {
         String username = "webhook-conflict@example.com";
         PaymentFixture fixture = pendingPayment(username);
@@ -261,6 +359,37 @@ class ProviderWebhookHandlingTest {
         assertThat(paymentCaptureTransactions()).hasSize(1);
         assertThat(auditActions()).contains("PROVIDER_WEBHOOK_IGNORED");
         assertThat(auditActions()).doesNotContain("PAYMENT_FAILED");
+    }
+
+    @Test
+    void successAfterFailedFakeWebhookIsIgnored() throws Exception {
+        String username = "webhook-success-after-failed@example.com";
+        PaymentFixture fixture = pendingPayment(username);
+        String providerPaymentId = "fake_webhook_payment_failed_before_success";
+        paymentAttemptService.completeAttempt(
+                fixture.paymentId(),
+                PaymentProviderResult.failed(providerPaymentId, "declined", "seeded failure before webhook success"),
+                null
+        );
+
+        sendWebhook(paymentWebhookJson(
+                        "evt-payment-success-after-failed",
+                        "payment.succeeded",
+                        fixture.paymentId(),
+                        providerPaymentId,
+                        null,
+                        "late success after local failure"
+                ))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("IGNORED"));
+
+        PaymentRecord payment = paymentRepository.findById(fixture.paymentId()).orElseThrow();
+        CustomerOrderRecord order = orderRepository.findById(fixture.orderId()).orElseThrow();
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.FAILED);
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING_PAYMENT);
+        assertThat(paymentCaptureTransactions()).isEmpty();
+        assertThat(auditActions()).contains("PROVIDER_WEBHOOK_IGNORED");
+        assertThat(auditActions()).doesNotContain("PAYMENT_SUCCEEDED");
     }
 
     @Test

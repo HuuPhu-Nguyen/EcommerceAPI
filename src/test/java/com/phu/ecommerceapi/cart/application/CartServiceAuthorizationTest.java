@@ -7,6 +7,7 @@ import com.phu.ecommerceapi.cart.infrastructure.CartModel;
 import com.phu.ecommerceapi.cart.infrastructure.CartRepo;
 import com.phu.ecommerceapi.identity.application.CurrentUser;
 import com.phu.ecommerceapi.inventory.application.InventoryReservationService;
+import com.phu.ecommerceapi.order.infrastructure.CustomerOrderRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -36,11 +37,14 @@ class CartServiceAuthorizationTest {
     @Mock
     private InventoryReservationService inventoryReservationService;
 
+    @Mock
+    private CustomerOrderRepository orderRepository;
+
     private CartService cartService;
 
     @BeforeEach
     void setUp() {
-        cartService = new CartService(cartRepo, productRepo, userRepo, inventoryReservationService);
+        cartService = new CartService(cartRepo, productRepo, userRepo, inventoryReservationService, orderRepository);
     }
 
     @Test

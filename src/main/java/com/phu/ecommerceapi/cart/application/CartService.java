@@ -10,6 +10,8 @@ import com.phu.ecommerceapi.cart.infrastructure.CartRepo;
 import com.phu.ecommerceapi.identity.application.CurrentUser;
 import com.phu.ecommerceapi.inventory.application.InventoryReservationService;
 import com.phu.ecommerceapi.inventory.application.InventorySnapshot;
+import com.phu.ecommerceapi.order.infrastructure.CustomerOrderRepository;
+import com.phu.ecommerceapi.shared.api.ConflictException;
 import com.phu.ecommerceapi.shared.api.NotFoundException;
 import com.phu.ecommerceapi.shared.api.OutOfStockException;
 import com.phu.ecommerceapi.shared.domain.Money;
@@ -28,17 +30,20 @@ public class CartService {
     private final ProductRepo productRepo;
     private final UserRepo userRepo;
     private final InventoryReservationService inventoryReservationService;
+    private final CustomerOrderRepository orderRepository;
 
     public CartService(
             CartRepo cartRepo,
             ProductRepo productRepo,
             UserRepo userRepo,
-            InventoryReservationService inventoryReservationService
+            InventoryReservationService inventoryReservationService,
+            CustomerOrderRepository orderRepository
     ) {
         this.cartRepo = cartRepo;
         this.productRepo = productRepo;
         this.userRepo = userRepo;
         this.inventoryReservationService = inventoryReservationService;
+        this.orderRepository = orderRepository;
     }
 
     @Transactional
@@ -61,7 +66,7 @@ public class CartService {
     @Transactional
     public CartResponse addItem(long cartId, long productId, int quantity, CurrentUser currentUser) {
         Quantity requestedQuantity = Quantity.of(quantity);
-        CartModel cart = getOwnedCart(cartId, currentUser);
+        CartModel cart = getOwnedMutableCart(cartId, currentUser);
         ProductModel product = getActiveProduct(productId);
 
         int requestedTotalQuantity = cart.quantityForProduct(productId) + requestedQuantity.value();
@@ -74,7 +79,7 @@ public class CartService {
     @Transactional
     public CartResponse updateItemQuantity(long cartId, long productId, int quantity, CurrentUser currentUser) {
         Quantity requestedQuantity = Quantity.of(quantity);
-        CartModel cart = getOwnedCart(cartId, currentUser);
+        CartModel cart = getOwnedMutableCart(cartId, currentUser);
         ProductModel product = getActiveProduct(productId);
 
         assertInventoryCanSupport(productId, requestedQuantity.value());
@@ -85,9 +90,17 @@ public class CartService {
 
     @Transactional
     public CartResponse removeItem(long cartId, long productId, CurrentUser currentUser) {
-        CartModel cart = getOwnedCart(cartId, currentUser);
+        CartModel cart = getOwnedMutableCart(cartId, currentUser);
         cart.removeItem(productId);
         return toResponse(cart);
+    }
+
+    private CartModel getOwnedMutableCart(long cartId, CurrentUser currentUser) {
+        CartModel cart = cartRepo.findForUpdateWithItemsById(cartId)
+                .orElseThrow(() -> new NotFoundException("Cart not found"));
+        assertCartOwner(cart, currentUser);
+        assertCartNotCheckedOut(cart);
+        return cart;
     }
 
     private CartModel getOwnedCart(long cartId, CurrentUser currentUser) {
@@ -95,6 +108,12 @@ public class CartService {
                 .orElseThrow(() -> new NotFoundException("Cart not found"));
         assertCartOwner(cart, currentUser);
         return cart;
+    }
+
+    private void assertCartNotCheckedOut(CartModel cart) {
+        if (orderRepository.existsByCartId(cart.getId())) {
+            throw new ConflictException("Cart has already been checked out");
+        }
     }
 
     private ProductModel getActiveProduct(long productId) {

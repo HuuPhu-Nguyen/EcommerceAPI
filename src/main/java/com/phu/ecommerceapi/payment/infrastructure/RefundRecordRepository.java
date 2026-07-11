@@ -34,6 +34,18 @@ public interface RefundRecordRepository extends JpaRepository<RefundRecord, UUID
 
     Optional<RefundRecord> findByProviderCodeAndProviderRefundId(String providerCode, String providerRefundId);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            select refund
+            from RefundRecord refund
+            where refund.providerCode = :providerCode
+              and refund.providerRefundId = :providerRefundId
+            """)
+    Optional<RefundRecord> findForUpdateByProviderCodeAndProviderRefundId(
+            @Param("providerCode") String providerCode,
+            @Param("providerRefundId") String providerRefundId
+    );
+
     @Query("""
             select refund
             from RefundRecord refund
