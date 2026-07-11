@@ -8,6 +8,7 @@ import com.phu.ecommerceapi.payment.application.StripeWebhookEvent;
 import com.phu.ecommerceapi.payment.application.StripeWebhookEventParser;
 import com.phu.ecommerceapi.payment.application.StripeWebhookSignatureException;
 import com.phu.ecommerceapi.payment.domain.ProviderWebhookEventType;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import javax.crypto.Mac;
@@ -36,6 +37,7 @@ class StripeWebhookEventParserAdapter implements StripeWebhookEventParser {
     private final AppProperties appProperties;
     private final Clock clock;
 
+    @Autowired
     StripeWebhookEventParserAdapter(ObjectMapper objectMapper, AppProperties appProperties) {
         this(objectMapper, appProperties, Clock.systemUTC());
     }
