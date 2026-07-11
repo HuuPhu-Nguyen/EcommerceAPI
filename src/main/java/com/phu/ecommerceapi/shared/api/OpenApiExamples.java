@@ -49,15 +49,15 @@ public final class OpenApiExamples {
                   "lineTotal": 149.98
                 }
               ],
-              "allowedPaymentProviders": ["fake"]
+              "allowedPaymentProviders": ["fake", "stripe"]
             }
             """;
 
     public static final String CREATE_PAYMENT_REQUEST = """
             {
               "orderId": "7b3c4aa9-5658-48df-a0a9-fc6f8e9e6f8b",
-              "provider": "fake",
-              "paymentMethodToken": "pm_approved"
+              "provider": "stripe",
+              "paymentMethodToken": "pm_card_visa"
             }
             """;
 
@@ -65,12 +65,12 @@ public final class OpenApiExamples {
             {
               "paymentId": "638dc8e7-e7c5-47bf-a62f-a5728f9c19be",
               "orderId": "7b3c4aa9-5658-48df-a0a9-fc6f8e9e6f8b",
-              "provider": "fake",
+              "provider": "stripe",
               "status": "SUCCEEDED",
-              "providerStatus": "SUCCEEDED",
-              "providerPaymentId": "fake-pay-638dc8e7",
+              "providerStatus": "succeeded",
+              "providerPaymentId": "pi_3Pxb6jExample",
               "failureCode": null,
-              "message": "Payment approved by fake provider",
+              "message": "Stripe payment succeeded",
               "amount": 149.98,
               "currency": "USD"
             }
@@ -87,14 +87,48 @@ public final class OpenApiExamples {
               "refundId": "d1dfd665-f26c-4e87-8808-e2367f65076a",
               "paymentId": "638dc8e7-e7c5-47bf-a62f-a5728f9c19be",
               "orderId": "7b3c4aa9-5658-48df-a0a9-fc6f8e9e6f8b",
-              "provider": "fake",
+              "provider": "stripe",
               "status": "SUCCEEDED",
-              "providerStatus": "SUCCEEDED",
-              "providerRefundId": "fake-ref-d1dfd665",
+              "providerStatus": "succeeded",
+              "providerRefundId": "re_3Pxb6jExample",
               "failureCode": null,
-              "message": "Refund approved by fake provider",
+              "message": "Stripe refund succeeded",
               "amount": 149.98,
               "currency": "USD"
+            }
+            """;
+
+    public static final String STRIPE_WEBHOOK_REQUEST = """
+            {
+              "id": "evt_1Pxb6jExample",
+              "type": "payment_intent.succeeded",
+              "created": 1783766400,
+              "data": {
+                "object": {
+                  "id": "pi_3Pxb6jExample",
+                  "object": "payment_intent",
+                  "status": "succeeded",
+                  "metadata": {
+                    "internalPaymentId": "638dc8e7-e7c5-47bf-a62f-a5728f9c19be"
+                  }
+                }
+              }
+            }
+            """;
+
+    public static final String PROVIDER_WEBHOOK_RESPONSE = """
+            {
+              "providerEventId": "evt_1Pxb6jExample",
+              "status": "PROCESSED",
+              "message": "Stripe payment webhook applied to payment 638dc8e7-e7c5-47bf-a62f-a5728f9c19be"
+            }
+            """;
+
+    public static final String PROVIDER_WEBHOOK_REJECTED_RESPONSE = """
+            {
+              "providerEventId": "unknown",
+              "status": "REJECTED",
+              "message": "Invalid Stripe webhook signature"
             }
             """;
 

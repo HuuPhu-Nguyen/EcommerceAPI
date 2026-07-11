@@ -63,6 +63,11 @@ The code is organized as a pragmatic modular monolith under `com.phu.ecommerceap
 - `outbox` and `inventory`: reliable stock events and SSE broadcasting.
 - `reconciliation`: consistency checks across payment, refund, and ledger data.
 
+Relevant ADRs:
+
+- [ADR 0004: Fake Payment Provider First](docs/adr/0004-fake-payment-provider-first.md)
+- [ADR 0007: Configurable Payment Providers And Stripe](docs/adr/0007-configurable-payment-providers-and-stripe.md)
+
 ## Security Model
 
 Authentication uses standard Spring Security OAuth2 Resource Server JWT validation. Local development uses Keycloak from Docker Compose with a preloaded `ecommerce` realm.
@@ -167,6 +172,43 @@ Local URLs:
 
 The local profile loads safe demo data from `demo-data.sql`, including one customer profile whose subject matches the imported Keycloak customer and two active products with inventory.
 
+## Payment Provider Setup
+
+The default local setup is fake-only and does not require Stripe secrets:
+
+```powershell
+$env:PAYMENT_PROVIDER_ACTIVE = "fake"
+$env:PAYMENT_PROVIDER_ENABLED = "fake"
+.\mvnw.cmd spring-boot:run "-Dspring-boot.run.profiles=local"
+```
+
+Use this mode for the main demo, local development, and CI. The fake provider is deterministic, supports success/failure/timeout paths, and keeps tests independent from external accounts.
+
+To review Stripe sandbox behavior, enable both providers and keep `fake` as the active default:
+
+```powershell
+$env:PAYMENT_PROVIDER_ACTIVE = "fake"
+$env:PAYMENT_PROVIDER_ENABLED = "fake,stripe"
+$env:STRIPE_SECRET_KEY = "sk_test_replace_me"
+$env:STRIPE_WEBHOOK_SECRET = "whsec_replace_me"
+$env:STRIPE_CONNECT_TIMEOUT_MS = "2000"
+$env:STRIPE_READ_TIMEOUT_MS = "5000"
+.\mvnw.cmd spring-boot:run "-Dspring-boot.run.profiles=local"
+```
+
+When more than one provider is enabled, payment requests should include `"provider": "fake"` or `"provider": "stripe"`. Refunds do not choose a provider; they route through the provider that captured the original payment.
+
+Stripe webhook local testing can be done with the Stripe CLI:
+
+```powershell
+stripe login
+stripe listen --forward-to localhost:8080/payments/provider-webhooks/stripe
+```
+
+Copy the `whsec_...` value printed by `stripe listen` into `STRIPE_WEBHOOK_SECRET` before starting the API. Then create a Stripe sandbox payment through the API so Stripe sends the matching provider event with the app metadata. Synthetic `stripe trigger ...` events are still useful for checking signature delivery, but events without this app's metadata may be stored as rejected or reconciliation-required.
+
+CI and automated tests use fake providers, mocks, stubs, and Testcontainers. They do not require real Stripe API keys or webhook secrets.
+
 ## Production Container
 
 Build the API image from a clean checkout:
@@ -249,6 +291,7 @@ $paymentHeaders = @{
 
 $paymentBody = @{
     orderId = $order.orderId
+    provider = "fake"
     paymentMethodToken = "pm_approved"
 } | ConvertTo-Json
 
@@ -294,9 +337,51 @@ $reconciliation
 What to look for:
 
 - `$payment.paymentId` and `$paymentReplay.paymentId` match, proving idempotent replay.
+- `$payment.provider` and `$refund.provider` are `fake`, proving provider identity is carried in responses.
 - `$ledger` includes payment capture and refund ledger transactions.
 - `$auditVerification.verified` is `True`.
 - `$reconciliation.healthy` is `True`.
+
+## Optional Stripe Sandbox Smoke Test
+
+Run this only after configuring `PAYMENT_PROVIDER_ACTIVE=fake`, `PAYMENT_PROVIDER_ENABLED=fake,stripe`, and Stripe sandbox secrets as shown above.
+
+1. Start PostgreSQL and Keycloak with `docker compose up -d postgres keycloak`.
+2. Start `stripe listen --forward-to localhost:8080/payments/provider-webhooks/stripe` and copy its `whsec_...` value into `STRIPE_WEBHOOK_SECRET`.
+3. Start the API with the local profile and the fake-plus-Stripe provider environment.
+4. Authenticate as `customer@example.com`.
+5. Create a cart, add a product, and checkout.
+6. Confirm the checkout response contains both `fake` and `stripe` in `allowedPaymentProviders`.
+7. Create a payment with an explicit Stripe provider:
+
+```powershell
+$stripePaymentHeaders = @{
+    Authorization = "Bearer $customerToken"
+    "Idempotency-Key" = "stripe-payment-smoke-001"
+}
+
+$stripePaymentBody = @{
+    orderId = $order.orderId
+    provider = "stripe"
+    paymentMethodToken = "pm_card_visa"
+} | ConvertTo-Json
+
+$stripePayment = Invoke-RestMethod `
+    -Method Post `
+    -Uri "$base/payments" `
+    -Headers $stripePaymentHeaders `
+    -ContentType "application/json" `
+    -Body $stripePaymentBody
+
+$stripePayment.provider
+$stripePayment.providerPaymentId
+```
+
+8. Verify the payment response has `provider` set to `stripe` and a Stripe `providerPaymentId` such as `pi_...`.
+9. Let the Stripe CLI forward the provider webhook, or replay the matching event from the Stripe dashboard/CLI.
+10. Verify the order state, ledger entries, audit event, provider webhook event, and reconciliation report.
+11. Create a refund for the Stripe payment. The refund request body still contains only the reason; the response should contain `provider` set to `stripe` and a Stripe refund id such as `re_...`.
+12. Verify reversing ledger entries, audit, provider webhook replay safety, and a healthy reconciliation report.
 
 ## API Documentation
 
@@ -306,7 +391,7 @@ Swagger UI is the fastest way to inspect and try the API:
 http://localhost:8080/swagger-ui.html
 ```
 
-The OpenAPI document includes examples for checkout, payment, refund, ledger reads, audit events, audit verification, reconciliation, and SSE stock updates.
+The OpenAPI document includes examples for checkout with `allowedPaymentProviders`, provider-selected payment creation, provider-coded payment/refund responses, Stripe provider webhooks, ledger reads, audit events, audit verification, reconciliation, and SSE stock updates. The Stripe webhook path is documented as a provider callback, not a customer API.
 
 ## Stock Event Stream
 
@@ -347,6 +432,30 @@ Focused examples:
 .\mvnw.cmd "-Dtest=SecurityAuthorizationIntegrationTest" test
 .\mvnw.cmd "-Dtest=OpenApiDocumentationTest" test
 ```
+
+## Final Phase 8 Verification
+
+Full local verification for the Stripe/multi-provider phase:
+
+```powershell
+.\mvnw.cmd -B -ntp verify
+.\mvnw.cmd -B -ntp -Pdependency-scan -DskipTests "-Djacoco.skip=true" verify
+docker build -t ecommerce-api:local .
+gitleaks detect --source . --redact
+trivy image ecommerce-api:local
+```
+
+The dependency scan needs a bootstrapped OWASP vulnerability database. The `gitleaks` and `trivy` commands require those CLIs locally; CI runs equivalent maintained GitHub Actions.
+
+Race-safety checklist covered by Phase 8 tests and the final review:
+
+- Concurrent payment attempts for one order result in one provider call.
+- Concurrent payment attempts with different providers for one order result in one provider call.
+- Stripe timeout does not allow a second attempt until reconciliation resolves the outcome.
+- Stripe async pending results do not post ledger entries until success.
+- Stripe webhook duplicate, concurrent, and out-of-order delivery does not duplicate ledger entries or corrupt order state.
+- Stripe refund duplicate, concurrent, timeout, and webhook replay cases do not duplicate provider refunds or reversing ledger entries.
+- Stuck Stripe `IN_PROGRESS` idempotency records are recovered to a stable response or flagged for manual review without a new provider side-effect call.
 
 ## CI Quality Gates
 
