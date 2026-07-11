@@ -92,11 +92,21 @@ public class OutboxEventRecord {
     }
 
     public void markProcessing(Instant lockedAt) {
+        if (status != OutboxEventStatus.PENDING && status != OutboxEventStatus.FAILED) {
+            throw new IllegalStateException("Only pending or failed outbox events can be claimed for processing");
+        }
         this.status = OutboxEventStatus.PROCESSING;
         this.lockedAt = Objects.requireNonNull(lockedAt, "locked at is required");
+        this.lastError = null;
     }
 
     public void markProcessed(Instant processedAt) {
+        if (status == OutboxEventStatus.PROCESSED) {
+            return;
+        }
+        if (status != OutboxEventStatus.PROCESSING) {
+            throw new IllegalStateException("Only processing outbox events can be marked processed");
+        }
         this.status = OutboxEventStatus.PROCESSED;
         this.processedAt = Objects.requireNonNull(processedAt, "processed at is required");
         this.lockedAt = null;
@@ -104,6 +114,12 @@ public class OutboxEventRecord {
     }
 
     public void markFailed(String error, Instant nextAttemptAt) {
+        if (status == OutboxEventStatus.PROCESSED) {
+            return;
+        }
+        if (status != OutboxEventStatus.PROCESSING) {
+            throw new IllegalStateException("Only processing outbox events can be marked failed");
+        }
         this.status = OutboxEventStatus.FAILED;
         this.attempts++;
         this.nextAttemptAt = Objects.requireNonNull(nextAttemptAt, "next attempt at is required");
@@ -113,6 +129,14 @@ public class OutboxEventRecord {
 
     public OutboxEvent toEvent() {
         return new OutboxEvent(id, aggregateType, aggregateId, eventType, payload, createdAt);
+    }
+
+    public boolean isProcessed() {
+        return status == OutboxEventStatus.PROCESSED;
+    }
+
+    public boolean isProcessingClaim(Instant claimedAt) {
+        return status == OutboxEventStatus.PROCESSING && Objects.equals(lockedAt, claimedAt);
     }
 
     private String requireText(String value, String message) {

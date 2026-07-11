@@ -405,7 +405,9 @@ Accept: text/event-stream
 Authorization: Bearer <access-token>
 ```
 
-Stock events are written through the transactional outbox and then published to the in-memory SSE broadcaster. The stream is intentionally advisory. Checkout still revalidates and reserves stock atomically in PostgreSQL.
+Stock events are written through the transactional outbox and then published to the in-memory SSE broadcaster. The processor claims due rows in one transaction, commits that claim, publishes outside the database transaction, and then marks the outbox row processed or failed in a second transaction. Abandoned `PROCESSING` rows time out and retry. Delivery is at least once, so any future non-advisory publisher must use the outbox event id as an idempotency key for external side effects.
+
+The stream is intentionally advisory. Checkout still revalidates and reserves stock atomically in PostgreSQL.
 
 For multiple API instances, keep the outbox table and replace in-memory fan-out with Redis Pub/Sub, Kafka, or another shared event backbone.
 

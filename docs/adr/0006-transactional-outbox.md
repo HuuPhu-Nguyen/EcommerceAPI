@@ -12,11 +12,14 @@ Some workflows need reliable asynchronous events after database changes commit. 
 
 Use a transactional outbox table for important asynchronous events.
 
-Business use cases write outbox records in the same database transaction as the business change. A separate processor publishes pending events and records processing state, retries, and failures.
+Business use cases write outbox records in the same database transaction as the business change. A separate processor claims pending events with row locks, commits that claim, publishes outside the database transaction, and records processing state, retries, and failures in a separate transaction.
+
+Rows left in `PROCESSING` past the timeout are returned to retry. Delivery is at least once, so non-advisory publishers must make external side effects idempotent with the stable outbox event id.
 
 ## Consequences
 
 - Events are not lost when the business transaction commits.
+- Consumers never observe outbox side effects for rolled-back business changes.
 - Stock updates can be delivered through SSE initially.
 - The production scaling path can replace the in-memory broadcaster with Redis Pub/Sub or Kafka.
 - Outbox lag and failures should be observable through metrics and logs.
