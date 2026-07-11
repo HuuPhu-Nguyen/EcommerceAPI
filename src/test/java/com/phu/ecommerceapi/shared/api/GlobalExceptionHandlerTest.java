@@ -1,6 +1,10 @@
 package com.phu.ecommerceapi.shared.api;
 
+import jakarta.persistence.OptimisticLockException;
+import jakarta.persistence.QueryTimeoutException;
 import org.junit.jupiter.api.Test;
+import org.springframework.dao.CannotAcquireLockException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
@@ -70,6 +74,66 @@ class GlobalExceptionHandlerTest {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
         assertThat(response.getBody().getProperties()).containsEntry("code", "FORBIDDEN");
+    }
+
+    @Test
+    void dataIntegrityViolationMapsToSanitizedConflict() {
+        MockHttpServletRequest request = requestWithId("/payments", "req-db-conflict");
+        DataIntegrityViolationException exception = new DataIntegrityViolationException(
+                "duplicate key value violates unique constraint ux_payment_order_active; SQL [insert into payment_record]"
+        );
+
+        ResponseEntity<ProblemDetail> response = handler.handleDatabaseConflict(exception, request);
+
+        ProblemDetail body = response.getBody();
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(body.getDetail()).isEqualTo("Request conflicts with current resource state");
+        assertThat(body.getProperties()).containsEntry("code", "CONFLICT");
+        assertThat(body.getProperties()).containsEntry("path", "/payments");
+        assertThat(body.getProperties()).doesNotContainKeys("trace", "exception");
+        assertThat(body.getDetail()).doesNotContain("SQL", "ux_payment_order_active", "payment_record");
+    }
+
+    @Test
+    void optimisticLockMapsToSanitizedConflict() {
+        MockHttpServletRequest request = requestWithId("/cart/10/items", "req-optimistic");
+
+        ResponseEntity<ProblemDetail> response = handler.handleDatabaseConflict(
+                new OptimisticLockException("stale row version"),
+                request
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(response.getBody().getProperties()).containsEntry("code", "CONFLICT");
+        assertThat(response.getBody().getDetail()).doesNotContain("stale row version");
+    }
+
+    @Test
+    void lockAcquisitionFailureMapsToServiceUnavailable() {
+        MockHttpServletRequest request = requestWithId("/checkout", "req-lock");
+
+        ResponseEntity<ProblemDetail> response = handler.handleTransientDatabaseFailure(
+                new CannotAcquireLockException("could not obtain lock on row"),
+                request
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+        assertThat(response.getBody().getDetail()).isEqualTo("Database is temporarily busy; retry the request");
+        assertThat(response.getBody().getProperties()).containsEntry("code", "SERVICE_UNAVAILABLE");
+    }
+
+    @Test
+    void queryTimeoutMapsToServiceUnavailableWithoutSqlDetails() {
+        MockHttpServletRequest request = requestWithId("/ledger/transactions", "req-timeout");
+
+        ResponseEntity<ProblemDetail> response = handler.handleTransientDatabaseFailure(
+                new QueryTimeoutException("canceling statement due to statement timeout; SQL [select * from ledger]"),
+                request
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+        assertThat(response.getBody().getDetail()).doesNotContain("SQL", "ledger", "statement timeout");
+        assertThat(response.getBody().getProperties()).doesNotContainKeys("trace", "exception");
     }
 
     private MockHttpServletRequest requestWithId(String path, String requestId) {

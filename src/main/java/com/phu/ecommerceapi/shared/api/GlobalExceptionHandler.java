@@ -1,13 +1,23 @@
 package com.phu.ecommerceapi.shared.api;
 
 import jakarta.persistence.EntityNotFoundException;
+import jakarta.persistence.OptimisticLockException;
+import jakarta.persistence.PessimisticLockException;
+import jakarta.persistence.QueryTimeoutException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.dao.CannotAcquireLockException;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
+import org.springframework.transaction.TransactionTimedOutException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -21,6 +31,10 @@ import java.util.NoSuchElementException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+    private static final String DATABASE_CONFLICT_DETAIL = "Request conflicts with current resource state";
+    private static final String TRANSIENT_DATABASE_DETAIL = "Database is temporarily busy; retry the request";
 
     @ExceptionHandler(ApiException.class)
     public ResponseEntity<ProblemDetail> handleApiException(ApiException exception, HttpServletRequest request) {
@@ -97,6 +111,42 @@ public class GlobalExceptionHandler {
         return buildResponse(HttpStatus.NOT_FOUND, ApiErrorCode.NOT_FOUND, exception.getMessage(), request);
     }
 
+    @ExceptionHandler({
+            DataIntegrityViolationException.class,
+            ObjectOptimisticLockingFailureException.class,
+            OptimisticLockException.class
+    })
+    public ResponseEntity<ProblemDetail> handleDatabaseConflict(Exception exception, HttpServletRequest request) {
+        logDatabaseException("conflict", exception, request);
+        return buildResponse(
+                HttpStatus.CONFLICT,
+                ApiErrorCode.CONFLICT,
+                DATABASE_CONFLICT_DETAIL,
+                request
+        );
+    }
+
+    @ExceptionHandler({
+            CannotAcquireLockException.class,
+            PessimisticLockingFailureException.class,
+            PessimisticLockException.class,
+            QueryTimeoutException.class,
+            org.springframework.dao.QueryTimeoutException.class,
+            TransactionTimedOutException.class
+    })
+    public ResponseEntity<ProblemDetail> handleTransientDatabaseFailure(
+            Exception exception,
+            HttpServletRequest request
+    ) {
+        logDatabaseException("transient", exception, request);
+        return buildResponse(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                ApiErrorCode.SERVICE_UNAVAILABLE,
+                TRANSIENT_DATABASE_DETAIL,
+                request
+        );
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ProblemDetail> handleUnexpected(Exception exception, HttpServletRequest request) {
         return buildResponse(
@@ -121,6 +171,16 @@ public class GlobalExceptionHandler {
         problem.setProperty("requestId", requestId(request));
 
         return ResponseEntity.status(status).body(problem);
+    }
+
+    private void logDatabaseException(String category, Exception exception, HttpServletRequest request) {
+        LOGGER.warn(
+                "database exception category={} path={} requestId={} exceptionType={}",
+                category,
+                request.getRequestURI(),
+                requestId(request),
+                exception.getClass().getName()
+        );
     }
 
     private FieldViolation toFieldViolation(FieldError fieldError) {

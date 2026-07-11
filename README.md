@@ -115,6 +115,8 @@ Semantics:
 - Same key plus same body returns the original stable response.
 - Same key plus different body returns `409 Conflict`.
 - Concurrent in-progress duplicates are rejected with a consistent conflict response.
+- Database uniqueness or optimistic race conflicts return a sanitized `409 Conflict` Problem Details response.
+- Transient database lock, deadlock, or query-timeout failures return a sanitized `503 Service Unavailable` Problem Details response and should be retried by the client.
 - Provider behavior is deterministic through fake tokens and refund reasons.
 - Successful payments post balanced ledger entries.
 - Successful refunds post reversing ledger entries.
