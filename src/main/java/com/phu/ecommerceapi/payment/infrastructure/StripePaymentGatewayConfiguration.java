@@ -14,6 +14,10 @@ public class StripePaymentGatewayConfiguration {
     @ConditionalOnBean(StripeClient.class)
     @ConditionalOnMissingBean(StripePaymentGateway.class)
     StripePaymentGateway stripePaymentGateway(StripeClient stripeClient, AppProperties appProperties) {
-        return new StripeClientPaymentGateway(new StripeSdkPaymentIntentClient(stripeClient), appProperties);
+        return new StripeClientPaymentGateway(
+                new StripeSdkPaymentIntentClient(stripeClient),
+                new StripeSdkRefundClient(stripeClient),
+                appProperties
+        );
     }
 }

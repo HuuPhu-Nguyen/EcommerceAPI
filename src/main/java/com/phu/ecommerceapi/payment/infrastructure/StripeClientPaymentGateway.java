@@ -6,20 +6,28 @@ import com.stripe.exception.ApiConnectionException;
 import com.stripe.exception.CardException;
 import com.stripe.exception.StripeException;
 import com.stripe.model.PaymentIntent;
+import com.stripe.model.Refund;
 import com.stripe.model.StripeError;
 import com.stripe.net.RequestOptions;
 import com.stripe.param.PaymentIntentCreateParams;
+import com.stripe.param.RefundCreateParams;
 
 import java.util.Locale;
 
 final class StripeClientPaymentGateway implements StripePaymentGateway {
 
     private final StripePaymentIntentClient paymentIntentClient;
+    private final StripeRefundClient refundClient;
     private final int connectTimeoutMs;
     private final int readTimeoutMs;
 
-    StripeClientPaymentGateway(StripePaymentIntentClient paymentIntentClient, AppProperties appProperties) {
+    StripeClientPaymentGateway(
+            StripePaymentIntentClient paymentIntentClient,
+            StripeRefundClient refundClient,
+            AppProperties appProperties
+    ) {
         this.paymentIntentClient = paymentIntentClient;
+        this.refundClient = refundClient;
         this.connectTimeoutMs = appProperties.stripe().connectTimeoutMs();
         this.readTimeoutMs = appProperties.stripe().readTimeoutMs();
     }
@@ -47,6 +55,29 @@ final class StripeClientPaymentGateway implements StripePaymentGateway {
         }
     }
 
+    @Override
+    public StripeRefundResult createRefund(StripeRefundCreateRequest request) {
+        try {
+            Refund refund = refundClient.create(refundParams(request), requestOptions(request.idempotencyKey()));
+            return new StripeRefundResult(
+                    refund.getId(),
+                    refund.getStatus(),
+                    normalizeFailureCode(refund.getFailureReason(), refund.getStatus(), "refund_failed")
+            );
+        } catch (ApiConnectionException exception) {
+            throw new PaymentProviderTimeoutException(
+                    "Stripe refund provider timed out for payment " + request.paymentId()
+            );
+        } catch (StripeException exception) {
+            String failureCode = failureCode(exception);
+            throw new StripePaymentGatewayException(
+                    failureCode,
+                    "Stripe refund failed: " + failureCode,
+                    exception
+            );
+        }
+    }
+
     private PaymentIntentCreateParams createParams(StripePaymentIntentCreateRequest request) {
         return PaymentIntentCreateParams.builder()
                 .setAmount(request.amountMinorUnits())
@@ -58,9 +89,21 @@ final class StripeClientPaymentGateway implements StripePaymentGateway {
                 .build();
     }
 
+    private RefundCreateParams refundParams(StripeRefundCreateRequest request) {
+        return RefundCreateParams.builder()
+                .setPaymentIntent(request.paymentIntentId())
+                .setAmount(request.amountMinorUnits())
+                .putAllMetadata(request.metadata())
+                .build();
+    }
+
     private RequestOptions requestOptions(StripePaymentIntentCreateRequest request) {
+        return requestOptions(request.idempotencyKey());
+    }
+
+    private RequestOptions requestOptions(String idempotencyKey) {
         return RequestOptions.builder()
-                .setIdempotencyKey(request.idempotencyKey())
+                .setIdempotencyKey(idempotencyKey)
                 .setConnectTimeout(connectTimeoutMs)
                 .setReadTimeout(readTimeoutMs)
                 .build();

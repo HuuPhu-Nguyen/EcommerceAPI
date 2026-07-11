@@ -141,6 +141,7 @@ class FakePaymentProviderTest {
 
     private PaymentRefundProviderRequest refundRequest(String idempotencyKey, Map<String, String> metadata) {
         return new PaymentRefundProviderRequest(
+                UUID.fromString("00000000-0000-0000-0000-000000000003"),
                 UUID.fromString("00000000-0000-0000-0000-000000000002"),
                 "fake_00000000-0000-0000-0000-000000000001",
                 new BigDecimal("10.00"),

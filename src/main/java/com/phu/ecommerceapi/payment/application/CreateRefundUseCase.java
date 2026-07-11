@@ -87,6 +87,7 @@ public class CreateRefundUseCase {
         int httpStatus = HttpStatus.OK.value();
         try {
             PaymentRefundProviderResult providerResult = refundProvider.refundPayment(new PaymentRefundProviderRequest(
+                    attempt.refundId(),
                     attempt.paymentId(),
                     attempt.providerPaymentId(),
                     attempt.amount(),

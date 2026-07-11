@@ -30,4 +30,8 @@ public record PaymentRefundProviderResult(
     public static PaymentRefundProviderResult duplicate(String providerRefundId, String message) {
         return new PaymentRefundProviderResult(providerRefundId, PaymentProviderStatus.DUPLICATE, null, message);
     }
+
+    public static PaymentRefundProviderResult pending(String providerRefundId, String message) {
+        return new PaymentRefundProviderResult(providerRefundId, PaymentProviderStatus.PENDING, null, message);
+    }
 }

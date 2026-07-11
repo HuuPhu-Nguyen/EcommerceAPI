@@ -7,9 +7,11 @@ import com.stripe.exception.ApiException;
 import com.stripe.exception.CardException;
 import com.stripe.exception.StripeException;
 import com.stripe.model.PaymentIntent;
+import com.stripe.model.Refund;
 import com.stripe.model.StripeError;
 import com.stripe.net.RequestOptions;
 import com.stripe.param.PaymentIntentCreateParams;
+import com.stripe.param.RefundCreateParams;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -25,7 +27,11 @@ class StripeClientPaymentGatewayTest {
     void createsConfirmedCardPaymentIntentWithTimeoutsAndIdempotencyKey() {
         CapturingPaymentIntentClient client = new CapturingPaymentIntentClient();
         client.paymentIntent = paymentIntent("pi_client_success", "succeeded", null);
-        StripeClientPaymentGateway gateway = new StripeClientPaymentGateway(client, appProperties());
+        StripeClientPaymentGateway gateway = new StripeClientPaymentGateway(
+                client,
+                unusedRefundClient(),
+                appProperties()
+        );
         UUID paymentId = UUID.randomUUID();
         UUID orderId = UUID.randomUUID();
 
@@ -56,7 +62,11 @@ class StripeClientPaymentGatewayTest {
     void mapsPaymentIntentLastPaymentErrorToResultFailureCode() {
         CapturingPaymentIntentClient client = new CapturingPaymentIntentClient();
         client.paymentIntent = paymentIntent("pi_client_declined", "requires_payment_method", "insufficient_funds");
-        StripeClientPaymentGateway gateway = new StripeClientPaymentGateway(client, appProperties());
+        StripeClientPaymentGateway gateway = new StripeClientPaymentGateway(
+                client,
+                unusedRefundClient(),
+                appProperties()
+        );
 
         StripePaymentIntentResult result = gateway.createPaymentIntent(request());
 
@@ -69,7 +79,11 @@ class StripeClientPaymentGatewayTest {
     void mapsApiConnectionExceptionToProviderTimeout() {
         CapturingPaymentIntentClient client = new CapturingPaymentIntentClient();
         client.exception = new ApiConnectionException("read timed out");
-        StripeClientPaymentGateway gateway = new StripeClientPaymentGateway(client, appProperties());
+        StripeClientPaymentGateway gateway = new StripeClientPaymentGateway(
+                client,
+                unusedRefundClient(),
+                appProperties()
+        );
 
         assertThatThrownBy(() -> gateway.createPaymentIntent(request()))
                 .isInstanceOf(PaymentProviderTimeoutException.class)
@@ -89,7 +103,11 @@ class StripeClientPaymentGatewayTest {
                 402,
                 null
         );
-        StripeClientPaymentGateway gateway = new StripeClientPaymentGateway(client, appProperties());
+        StripeClientPaymentGateway gateway = new StripeClientPaymentGateway(
+                client,
+                unusedRefundClient(),
+                appProperties()
+        );
 
         assertThatThrownBy(() -> gateway.createPaymentIntent(request()))
                 .isInstanceOf(StripePaymentGatewayException.class)
@@ -102,11 +120,97 @@ class StripeClientPaymentGatewayTest {
     void mapsApiExceptionToStableFailureCode() {
         CapturingPaymentIntentClient client = new CapturingPaymentIntentClient();
         client.exception = new ApiException("rate limited", "req_test", "rate_limit", 429, null);
-        StripeClientPaymentGateway gateway = new StripeClientPaymentGateway(client, appProperties());
+        StripeClientPaymentGateway gateway = new StripeClientPaymentGateway(
+                client,
+                unusedRefundClient(),
+                appProperties()
+        );
 
         assertThatThrownBy(() -> gateway.createPaymentIntent(request()))
                 .isInstanceOf(StripePaymentGatewayException.class)
                 .hasMessage("Stripe payment failed: stripe_rate_limit")
+                .extracting(exception -> ((StripePaymentGatewayException) exception).failureCode())
+                .isEqualTo("stripe_rate_limit");
+    }
+
+    @Test
+    void createsRefundWithPaymentIntentTimeoutsAndIdempotencyKey() {
+        CapturingRefundClient refundClient = new CapturingRefundClient();
+        refundClient.refund = refund("re_client_success", "succeeded", null);
+        StripeClientPaymentGateway gateway = new StripeClientPaymentGateway(
+                unusedPaymentIntentClient(),
+                refundClient,
+                appProperties()
+        );
+        UUID refundId = UUID.randomUUID();
+        UUID paymentId = UUID.randomUUID();
+
+        StripeRefundResult result = gateway.createRefund(new StripeRefundCreateRequest(
+                refundId,
+                paymentId,
+                "pi_original_payment",
+                2050L,
+                "USD",
+                "refund:stripe:42:%s:key".formatted(paymentId),
+                Map.of("internalRefundId", refundId.toString(), "providerCode", "stripe")
+        ));
+
+        assertThat(result.refundId()).isEqualTo("re_client_success");
+        assertThat(result.status()).isEqualTo("succeeded");
+        assertThat(refundClient.params.getPaymentIntent()).isEqualTo("pi_original_payment");
+        assertThat(refundClient.params.getAmount()).isEqualTo(2050L);
+        Map<String, String> metadata = refundMetadata(refundClient.params);
+        assertThat(metadata).containsEntry("internalRefundId", refundId.toString());
+        assertThat(refundClient.options.getIdempotencyKey()).isEqualTo("refund:stripe:42:%s:key".formatted(paymentId));
+        assertThat(refundClient.options.getConnectTimeout()).isEqualTo(1234);
+        assertThat(refundClient.options.getReadTimeout()).isEqualTo(5678);
+    }
+
+    @Test
+    void mapsRefundFailureReasonToResultFailureCode() {
+        CapturingRefundClient refundClient = new CapturingRefundClient();
+        refundClient.refund = refund("re_client_failed", "failed", "expired_or_canceled_card");
+        StripeClientPaymentGateway gateway = new StripeClientPaymentGateway(
+                unusedPaymentIntentClient(),
+                refundClient,
+                appProperties()
+        );
+
+        StripeRefundResult result = gateway.createRefund(refundRequest());
+
+        assertThat(result.refundId()).isEqualTo("re_client_failed");
+        assertThat(result.status()).isEqualTo("failed");
+        assertThat(result.failureCode()).isEqualTo("stripe_expired_or_canceled_card");
+    }
+
+    @Test
+    void mapsRefundApiConnectionExceptionToProviderTimeout() {
+        CapturingRefundClient refundClient = new CapturingRefundClient();
+        refundClient.exception = new ApiConnectionException("read timed out");
+        StripeClientPaymentGateway gateway = new StripeClientPaymentGateway(
+                unusedPaymentIntentClient(),
+                refundClient,
+                appProperties()
+        );
+
+        assertThatThrownBy(() -> gateway.createRefund(refundRequest()))
+                .isInstanceOf(PaymentProviderTimeoutException.class)
+                .hasMessageContaining("Stripe refund provider timed out for payment");
+    }
+
+    @Test
+    void mapsRefundApiExceptionToStableFailureCode() {
+        CapturingRefundClient refundClient = new CapturingRefundClient();
+        refundClient.exception = new ApiException("rate limited", "req_test", "rate_limit", 429, null);
+        StripeClientPaymentGateway gateway = new StripeClientPaymentGateway(
+                unusedPaymentIntentClient(),
+                refundClient,
+                appProperties()
+        );
+
+        assertThatThrownBy(() -> gateway.createRefund(refundRequest()))
+                .isInstanceOf(StripePaymentGatewayException.class)
+                .hasMessage("Stripe refund failed: stripe_rate_limit")
                 .extracting(exception -> ((StripePaymentGatewayException) exception).failureCode())
                 .isEqualTo("stripe_rate_limit");
     }
@@ -123,6 +227,18 @@ class StripeClientPaymentGatewayTest {
         );
     }
 
+    private StripeRefundCreateRequest refundRequest() {
+        return new StripeRefundCreateRequest(
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                "pi_original_payment",
+                1000L,
+                "USD",
+                "refund:stripe:42:test:key",
+                Map.of("providerCode", "stripe")
+        );
+    }
+
     private PaymentIntent paymentIntent(String id, String status, String declineCode) {
         PaymentIntent paymentIntent = new PaymentIntent();
         paymentIntent.setId(id);
@@ -134,6 +250,31 @@ class StripeClientPaymentGatewayTest {
             paymentIntent.setLastPaymentError(stripeError);
         }
         return paymentIntent;
+    }
+
+    private Refund refund(String id, String status, String failureReason) {
+        Refund refund = new Refund();
+        refund.setId(id);
+        refund.setStatus(status);
+        refund.setFailureReason(failureReason);
+        return refund;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, String> refundMetadata(RefundCreateParams params) {
+        return (Map<String, String>) params.getMetadata();
+    }
+
+    private StripePaymentIntentClient unusedPaymentIntentClient() {
+        return (params, options) -> {
+            throw new UnsupportedOperationException("PaymentIntent client is not stubbed");
+        };
+    }
+
+    private StripeRefundClient unusedRefundClient() {
+        return (params, options) -> {
+            throw new UnsupportedOperationException("Refund client is not stubbed");
+        };
     }
 
     private AppProperties appProperties() {
@@ -167,6 +308,24 @@ class StripeClientPaymentGatewayTest {
                 throw exception;
             }
             return paymentIntent;
+        }
+    }
+
+    private static final class CapturingRefundClient implements StripeRefundClient {
+
+        private Refund refund;
+        private StripeException exception;
+        private RefundCreateParams params;
+        private RequestOptions options;
+
+        @Override
+        public Refund create(RefundCreateParams params, RequestOptions options) throws StripeException {
+            this.params = params;
+            this.options = options;
+            if (exception != null) {
+                throw exception;
+            }
+            return refund;
         }
     }
 }

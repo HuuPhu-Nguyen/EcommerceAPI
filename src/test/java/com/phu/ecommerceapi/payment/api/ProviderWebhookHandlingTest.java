@@ -561,15 +561,19 @@ class ProviderWebhookHandlingTest {
         ));
         when(stripeProviderReadPort.fetchRefund("re_stripe_success"))
                 .thenReturn(Optional.of(stripeRefund("re_stripe_success", "succeeded")));
-
-        sendStripeWebhook(stripeRefundUpdatedWebhookJson(
+        String requestBody = stripeRefundUpdatedWebhookJson(
                 "evt-stripe-refund-success",
                 "re_stripe_success",
                 "succeeded",
                 refund.getId()
-        ))
+        );
+
+        sendStripeWebhook(requestBody)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("PROCESSED"));
+        sendStripeWebhook(requestBody)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("DUPLICATE"));
 
         PaymentRecord updatedPayment = paymentRepository.findById(fixture.paymentId()).orElseThrow();
         RefundRecord updatedRefund = refundRepository.findById(refund.getId()).orElseThrow();
@@ -579,6 +583,7 @@ class ProviderWebhookHandlingTest {
         assertThat(updatedPayment.getStatus()).isEqualTo(PaymentStatus.REFUNDED);
         assertThat(order.getStatus()).isEqualTo(OrderStatus.REFUNDED);
         assertThat(refundTransactions()).hasSize(1);
+        assertThat(auditActions().stream().filter("PROVIDER_WEBHOOK_PROCESSED"::equals)).hasSize(1);
     }
 
     @Test

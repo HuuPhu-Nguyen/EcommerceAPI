@@ -101,6 +101,13 @@ public class JpaRefundAttemptPersistenceAdapter implements RefundAttemptPersiste
     }
 
     @Override
+    public RefundAttemptUpdate markPending(UUID refundId, PaymentRefundProviderResult providerResult) {
+        RefundRecord refund = findForUpdate(refundId);
+        boolean updated = refund.markPending(providerResult);
+        return new RefundAttemptUpdate(toView(refund), updated);
+    }
+
+    @Override
     public RefundAttemptUpdate markProviderTimeout(UUID refundId, String message) {
         RefundRecord refund = findForUpdate(refundId);
         if (refund.getStatus().isTerminal()) {

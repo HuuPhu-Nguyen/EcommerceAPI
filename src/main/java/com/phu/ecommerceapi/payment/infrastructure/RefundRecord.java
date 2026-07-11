@@ -137,6 +137,16 @@ public class RefundRecord {
         this.completedAt = OffsetDateTime.now();
     }
 
+    public boolean markPending(PaymentRefundProviderResult providerResult) {
+        if (status.isTerminal()) {
+            return false;
+        }
+        this.providerRefundId = requireText(providerResult.providerRefundId(), "provider refund id");
+        this.providerStatus = providerResult.status().name();
+        this.providerMessage = providerResult.message();
+        return true;
+    }
+
     public void markProviderTimeout(String message) {
         RefundStatus nextStatus = RefundStateMachine.providerTimedOut(status);
         if (nextStatus == status) {

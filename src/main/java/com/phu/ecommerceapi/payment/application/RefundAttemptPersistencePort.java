@@ -13,6 +13,8 @@ public interface RefundAttemptPersistencePort {
 
     RefundAttemptUpdate markFailed(UUID refundId, PaymentRefundProviderResult providerResult);
 
+    RefundAttemptUpdate markPending(UUID refundId, PaymentRefundProviderResult providerResult);
+
     RefundAttemptUpdate markProviderTimeout(UUID refundId, String message);
 
     Optional<RefundWebhookAttempt> findForProviderWebhook(

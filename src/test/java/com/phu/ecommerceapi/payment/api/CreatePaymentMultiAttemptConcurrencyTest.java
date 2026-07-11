@@ -15,6 +15,7 @@ import com.phu.ecommerceapi.order.infrastructure.CustomerOrderRecord;
 import com.phu.ecommerceapi.order.infrastructure.CustomerOrderRepository;
 import com.phu.ecommerceapi.payment.application.PaymentProviderTimeoutException;
 import com.phu.ecommerceapi.payment.domain.PaymentStatus;
+import com.phu.ecommerceapi.payment.domain.RefundStatus;
 import com.phu.ecommerceapi.payment.infrastructure.PaymentIdempotencyRecord;
 import com.phu.ecommerceapi.payment.infrastructure.PaymentIdempotencyRecordRepository;
 import com.phu.ecommerceapi.payment.infrastructure.PaymentRecord;
@@ -24,6 +25,8 @@ import com.phu.ecommerceapi.payment.infrastructure.RefundRecordRepository;
 import com.phu.ecommerceapi.payment.infrastructure.StripePaymentGateway;
 import com.phu.ecommerceapi.payment.infrastructure.StripePaymentIntentCreateRequest;
 import com.phu.ecommerceapi.payment.infrastructure.StripePaymentIntentResult;
+import com.phu.ecommerceapi.payment.infrastructure.StripeRefundCreateRequest;
+import com.phu.ecommerceapi.payment.infrastructure.StripeRefundResult;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -124,6 +127,7 @@ class CreatePaymentMultiAttemptConcurrencyTest {
     @AfterEach
     void cleanUpData() {
         stripeGateway.releasePayments();
+        stripeGateway.releaseRefunds();
         resetData();
     }
 
@@ -191,6 +195,180 @@ class CreatePaymentMultiAttemptConcurrencyTest {
         assertThat(providerRefundId).startsWith("fake_refund_");
         assertThat(refund.getProviderCode()).isEqualTo("fake");
         assertThat(stripeGateway.paymentCalls()).isZero();
+        assertThat(ledgerTransactionRepository.findAll()).hasSize(2);
+    }
+
+    @Test
+    void stripeRefundSuccessRoutesToStripeAndPostsReversingLedger() throws Exception {
+        String username = "refund-stripe-success@example.com";
+        PaymentFixture fixture = successfulStripePayment(username);
+        String requestBody = refundJson("fake", "customer requested");
+
+        MvcResult firstResult = createRefund(username, "refund-stripe-success-key", fixture.paymentId(), requestBody)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.provider").value("stripe"))
+                .andExpect(jsonPath("$.status").value("SUCCEEDED"))
+                .andExpect(jsonPath("$.providerStatus").value("SUCCEEDED"))
+                .andExpect(jsonPath("$.providerRefundId").value(org.hamcrest.Matchers.startsWith("re_test_")))
+                .andReturn();
+        MvcResult replayResult = createRefund(username, "refund-stripe-success-key", fixture.paymentId(), requestBody)
+                .andExpect(status().isOk())
+                .andReturn();
+
+        UUID refundId = UUID.fromString(JsonPath.read(firstResult.getResponse().getContentAsString(), "$.refundId"));
+        PaymentRecord payment = paymentRepository.findById(fixture.paymentId()).orElseThrow();
+        RefundRecord refund = refundRepository.findById(refundId).orElseThrow();
+        CustomerOrderRecord order = orderRepository.findById(fixture.orderId()).orElseThrow();
+        StripeRefundCreateRequest stripeRequest = stripeGateway.lastRefundRequest();
+
+        assertThat(replayResult.getResponse().getContentAsString())
+                .isEqualTo(firstResult.getResponse().getContentAsString());
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.REFUNDED);
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.REFUNDED);
+        assertThat(refund.getStatus()).isEqualTo(RefundStatus.SUCCEEDED);
+        assertThat(refund.getProviderCode()).isEqualTo("stripe");
+        assertThat(refund.getProviderIdempotencyKey())
+                .isEqualTo("refund:stripe:%d:%s:refund-stripe-success-key".formatted(
+                        refund.getCustomerId(),
+                        payment.getId()
+                ));
+        assertThat(stripeRequest.refundId()).isEqualTo(refundId);
+        assertThat(stripeRequest.paymentId()).isEqualTo(fixture.paymentId());
+        assertThat(stripeRequest.paymentIntentId()).isEqualTo(payment.getProviderPaymentId());
+        assertThat(stripeRequest.amountMinorUnits()).isEqualTo(2000L);
+        assertThat(stripeRequest.idempotencyKey()).isEqualTo(refund.getProviderIdempotencyKey());
+        assertThat(stripeRequest.metadata()).containsEntry("internalRefundId", refundId.toString());
+        assertThat(stripeRequest.metadata()).containsEntry("paymentId", fixture.paymentId().toString());
+        assertThat(stripeRequest.metadata()).containsEntry("providerCode", "stripe");
+        assertThat(stripeRequest.metadata()).containsEntry("environment", "test");
+        assertThat(stripeGateway.refundCalls()).isEqualTo(1);
+        assertThat(ledgerTransactionRepository.findAll()).hasSize(2);
+    }
+
+    @Test
+    void stripeRefundFailureDoesNotPostReversingLedger() throws Exception {
+        String username = "refund-stripe-failure@example.com";
+        PaymentFixture fixture = successfulStripePayment(username);
+        stripeGateway.refundStatus("failed");
+
+        createRefund(username, "refund-stripe-failure-key", fixture.paymentId(), refundJson("stripe", "customer requested"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.provider").value("stripe"))
+                .andExpect(jsonPath("$.status").value("FAILED"))
+                .andExpect(jsonPath("$.failureCode").value("stripe_expired_or_canceled_card"));
+
+        PaymentRecord payment = paymentRepository.findById(fixture.paymentId()).orElseThrow();
+        RefundRecord refund = refundRepository.findAll().getFirst();
+        CustomerOrderRecord order = orderRepository.findById(fixture.orderId()).orElseThrow();
+
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.SUCCEEDED);
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
+        assertThat(refund.getStatus()).isEqualTo(RefundStatus.FAILED);
+        assertThat(stripeGateway.refundCalls()).isEqualTo(1);
+        assertThat(ledgerTransactionRepository.findAll()).hasSize(1);
+    }
+
+    @Test
+    void stripeRefundPendingKeepsPaymentPaidUntilWebhookOrReconciliation() throws Exception {
+        String username = "refund-stripe-pending@example.com";
+        PaymentFixture fixture = successfulStripePayment(username);
+        stripeGateway.refundStatus("pending");
+        String requestBody = refundJson("stripe", "customer requested");
+
+        MvcResult firstResult = createRefund(username, "refund-stripe-pending-key", fixture.paymentId(), requestBody)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.provider").value("stripe"))
+                .andExpect(jsonPath("$.status").value("PENDING"))
+                .andExpect(jsonPath("$.providerStatus").value("PENDING"))
+                .andExpect(jsonPath("$.providerRefundId").value(org.hamcrest.Matchers.startsWith("re_test_")))
+                .andReturn();
+        MvcResult replayResult = createRefund(username, "refund-stripe-pending-key", fixture.paymentId(), requestBody)
+                .andExpect(status().isOk())
+                .andReturn();
+
+        PaymentRecord payment = paymentRepository.findById(fixture.paymentId()).orElseThrow();
+        RefundRecord refund = refundRepository.findAll().getFirst();
+        CustomerOrderRecord order = orderRepository.findById(fixture.orderId()).orElseThrow();
+
+        assertThat(replayResult.getResponse().getContentAsString())
+                .isEqualTo(firstResult.getResponse().getContentAsString());
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.SUCCEEDED);
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
+        assertThat(refund.getStatus()).isEqualTo(RefundStatus.PENDING);
+        assertThat(refund.getProviderRefundId()).startsWith("re_test_");
+        assertThat(stripeGateway.refundCalls()).isEqualTo(1);
+        assertThat(ledgerTransactionRepository.findAll()).hasSize(1);
+    }
+
+    @Test
+    void stripeRefundTimeoutBlocksSecondRefundUntilReconciliation() throws Exception {
+        String username = "refund-stripe-timeout@example.com";
+        PaymentFixture fixture = successfulStripePayment(username);
+        stripeGateway.timeoutRefunds();
+
+        createRefund(username, "refund-stripe-timeout-key-1", fixture.paymentId(), refundJson("stripe", "customer requested"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.provider").value("stripe"))
+                .andExpect(jsonPath("$.status").value("PROVIDER_TIMEOUT"))
+                .andExpect(jsonPath("$.failureCode").value("provider_timeout"));
+
+        createRefund(username, "refund-stripe-timeout-key-2", fixture.paymentId(), refundJson("stripe", "customer requested"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.detail").value("Payment already has a refund"));
+
+        PaymentRecord payment = paymentRepository.findById(fixture.paymentId()).orElseThrow();
+        RefundRecord refund = refundRepository.findAll().getFirst();
+        CustomerOrderRecord order = orderRepository.findById(fixture.orderId()).orElseThrow();
+
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.SUCCEEDED);
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
+        assertThat(refund.getStatus()).isEqualTo(RefundStatus.PROVIDER_TIMEOUT);
+        assertThat(stripeGateway.refundCalls()).isEqualTo(1);
+        assertThat(ledgerTransactionRepository.findAll()).hasSize(1);
+    }
+
+    @Test
+    void concurrentStripeRefundRequestsCallProviderOnce() throws Exception {
+        String username = "refund-stripe-concurrent@example.com";
+        PaymentFixture fixture = successfulStripePayment(username);
+        stripeGateway.blockRefunds();
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+
+        try {
+            Future<MvcResult> firstAttempt = executor.submit(() -> createRefund(
+                    username,
+                    "refund-stripe-concurrent-key-1",
+                    fixture.paymentId(),
+                    refundJson("stripe", "customer requested")
+            )
+                    .andExpect(status().isOk())
+                    .andReturn());
+
+            assertThat(stripeGateway.awaitRefundCall()).isTrue();
+
+            createRefund(
+                    username,
+                    "refund-stripe-concurrent-key-2",
+                    fixture.paymentId(),
+                    refundJson("stripe", "customer requested")
+            )
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.detail").value("Payment already has a refund"));
+
+            stripeGateway.releaseRefunds();
+            firstAttempt.get(5, TimeUnit.SECONDS);
+        } finally {
+            stripeGateway.releaseRefunds();
+            executor.shutdownNow();
+        }
+
+        PaymentRecord payment = paymentRepository.findById(fixture.paymentId()).orElseThrow();
+        CustomerOrderRecord order = orderRepository.findById(fixture.orderId()).orElseThrow();
+
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.REFUNDED);
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.REFUNDED);
+        assertThat(refundRepository.findAll()).hasSize(1);
+        assertThat(stripeGateway.refundCalls()).isEqualTo(1);
         assertThat(ledgerTransactionRepository.findAll()).hasSize(2);
     }
 
@@ -395,6 +573,26 @@ class CreatePaymentMultiAttemptConcurrencyTest {
                 .with(customerJwt(username, "payment:refund")));
     }
 
+    private PaymentFixture successfulStripePayment(String username) throws Exception {
+        UUID orderId = pendingOrder(username);
+        MvcResult paymentResult = createPayment(
+                username,
+                "payment-stripe-refund-key-" + UUID.randomUUID(),
+                orderId,
+                "stripe",
+                "pm_approved"
+        )
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.provider").value("stripe"))
+                .andExpect(jsonPath("$.status").value("SUCCEEDED"))
+                .andReturn();
+        UUID paymentId = UUID.fromString(JsonPath.read(
+                paymentResult.getResponse().getContentAsString(),
+                "$.paymentId"
+        ));
+        return new PaymentFixture(orderId, paymentId);
+    }
+
     private UUID pendingOrder(String username) throws Exception {
         user(username);
         ProductModel product = product("Multi Attempt Product", 10);
@@ -519,6 +717,9 @@ class CreatePaymentMultiAttemptConcurrencyTest {
                 """, idempotency.getId());
     }
 
+    private record PaymentFixture(UUID orderId, UUID paymentId) {
+    }
+
     @TestConfiguration
     static class StripeProviderTestConfig {
 
@@ -532,9 +733,16 @@ class CreatePaymentMultiAttemptConcurrencyTest {
     static final class BlockingStripePaymentGateway implements StripePaymentGateway {
 
         private final AtomicInteger paymentCalls = new AtomicInteger();
+        private final AtomicInteger refundCalls = new AtomicInteger();
         private CountDownLatch paymentCallEntered = new CountDownLatch(1);
         private CountDownLatch releasePayments = new CountDownLatch(0);
+        private CountDownLatch refundCallEntered = new CountDownLatch(1);
+        private CountDownLatch releaseRefunds = new CountDownLatch(0);
         private boolean blockPayments;
+        private boolean blockRefunds;
+        private boolean timeoutRefunds;
+        private String refundStatus = "succeeded";
+        private volatile StripeRefundCreateRequest lastRefundRequest;
 
         @Override
         public StripePaymentIntentResult createPaymentIntent(StripePaymentIntentCreateRequest request) {
@@ -554,11 +762,40 @@ class CreatePaymentMultiAttemptConcurrencyTest {
             };
         }
 
+        @Override
+        public StripeRefundResult createRefund(StripeRefundCreateRequest request) {
+            refundCalls.incrementAndGet();
+            lastRefundRequest = request;
+            refundCallEntered.countDown();
+            awaitRefundReleaseIfBlocked();
+            if (timeoutRefunds) {
+                throw new PaymentProviderTimeoutException(
+                        "Stripe refund provider timed out for payment " + request.paymentId()
+                );
+            }
+            return switch (refundStatus) {
+                case "failed" -> new StripeRefundResult(
+                        providerRefundId(request),
+                        "failed",
+                        "stripe_expired_or_canceled_card"
+                );
+                case "pending" -> new StripeRefundResult(providerRefundId(request), "pending", null);
+                default -> new StripeRefundResult(providerRefundId(request), "succeeded", null);
+            };
+        }
+
         void reset() {
             paymentCalls.set(0);
+            refundCalls.set(0);
             paymentCallEntered = new CountDownLatch(1);
             releasePayments = new CountDownLatch(0);
+            refundCallEntered = new CountDownLatch(1);
+            releaseRefunds = new CountDownLatch(0);
             blockPayments = false;
+            blockRefunds = false;
+            timeoutRefunds = false;
+            refundStatus = "succeeded";
+            lastRefundRequest = null;
         }
 
         void blockPayments() {
@@ -567,16 +804,46 @@ class CreatePaymentMultiAttemptConcurrencyTest {
             blockPayments = true;
         }
 
+        void blockRefunds() {
+            refundCallEntered = new CountDownLatch(1);
+            releaseRefunds = new CountDownLatch(1);
+            blockRefunds = true;
+        }
+
         boolean awaitPaymentCall() throws InterruptedException {
             return paymentCallEntered.await(5, TimeUnit.SECONDS);
+        }
+
+        boolean awaitRefundCall() throws InterruptedException {
+            return refundCallEntered.await(5, TimeUnit.SECONDS);
         }
 
         void releasePayments() {
             releasePayments.countDown();
         }
 
+        void releaseRefunds() {
+            releaseRefunds.countDown();
+        }
+
         int paymentCalls() {
             return paymentCalls.get();
+        }
+
+        int refundCalls() {
+            return refundCalls.get();
+        }
+
+        void refundStatus(String status) {
+            refundStatus = status;
+        }
+
+        void timeoutRefunds() {
+            timeoutRefunds = true;
+        }
+
+        StripeRefundCreateRequest lastRefundRequest() {
+            return lastRefundRequest;
         }
 
         private void awaitReleaseIfBlocked() {
@@ -593,8 +860,26 @@ class CreatePaymentMultiAttemptConcurrencyTest {
             }
         }
 
+        private void awaitRefundReleaseIfBlocked() {
+            if (!blockRefunds) {
+                return;
+            }
+            try {
+                if (!releaseRefunds.await(5, TimeUnit.SECONDS)) {
+                    throw new IllegalStateException("Timed out waiting to release test Stripe refund");
+                }
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("Interrupted while waiting to release test Stripe refund", exception);
+            }
+        }
+
         private String providerPaymentIntentId(StripePaymentIntentCreateRequest request) {
             return "pi_test_" + request.paymentId();
+        }
+
+        private String providerRefundId(StripeRefundCreateRequest request) {
+            return "re_test_" + request.refundId();
         }
     }
 }

@@ -8,6 +8,7 @@ import java.util.Objects;
 import java.util.UUID;
 
 public record PaymentRefundProviderRequest(
+        UUID refundId,
         UUID paymentId,
         String providerPaymentId,
         BigDecimal amount,
@@ -17,6 +18,7 @@ public record PaymentRefundProviderRequest(
 ) {
 
     public PaymentRefundProviderRequest {
+        Objects.requireNonNull(refundId, "refund id is required");
         Objects.requireNonNull(paymentId, "payment id is required");
         if (providerPaymentId == null || providerPaymentId.isBlank()) {
             throw new IllegalArgumentException("provider payment id is required");

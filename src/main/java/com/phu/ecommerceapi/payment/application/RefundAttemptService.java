@@ -72,6 +72,12 @@ public class RefundAttemptService {
                     refund.providerRefundId()
             ));
             recordAudit(actor, "REFUND_SUCCEEDED", refund);
+        } else if (providerResult.status() == PaymentProviderStatus.PENDING) {
+            update = refundAttempts.markPending(refundId, providerResult);
+            if (!update.transitioned()) {
+                return toResponse(update.attempt());
+            }
+            recordAudit(actor, "REFUND_PENDING", update.attempt());
         } else {
             update = refundAttempts.markFailed(refundId, providerResult);
             if (!update.transitioned()) {

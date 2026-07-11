@@ -80,7 +80,24 @@ public class StripePaymentProvider implements PaymentProvider {
 
     @Override
     public PaymentRefundProviderResult refundPayment(PaymentRefundProviderRequest request) {
-        throw new UnsupportedOperationException("Stripe refunds are implemented in TASK-057");
+        try {
+            StripeRefundResult result = gateway().createRefund(new StripeRefundCreateRequest(
+                    request.refundId(),
+                    request.paymentId(),
+                    request.providerPaymentId(),
+                    amountToMinorUnits(request.amount(), request.currency()),
+                    request.currency(),
+                    request.idempotencyKey(),
+                    stripeRefundMetadata(request)
+            ));
+            return mapRefundResult(result);
+        } catch (StripePaymentGatewayException exception) {
+            return PaymentRefundProviderResult.failed(
+                    fallbackProviderRefundId(request.refundId()),
+                    exception.failureCode(),
+                    exception.getMessage()
+            );
+        }
     }
 
     static long amountToMinorUnits(BigDecimal amount, String currency) {
@@ -125,6 +142,30 @@ public class StripePaymentProvider implements PaymentProvider {
         };
     }
 
+    static PaymentRefundProviderResult mapRefundResult(StripeRefundResult result) {
+        String stripeStatus = normalizeStripeStatus(result.status());
+        return switch (stripeStatus) {
+            case "succeeded" -> PaymentRefundProviderResult.succeeded(
+                    result.refundId(),
+                    "Stripe refund succeeded"
+            );
+            case "failed", "canceled" -> PaymentRefundProviderResult.failed(
+                    result.refundId(),
+                    firstText(result.failureCode(), "stripe_" + stripeStatus),
+                    "Stripe refund failed: " + stripeStatus
+            );
+            case "pending", "requires_action" -> PaymentRefundProviderResult.pending(
+                    result.refundId(),
+                    "Stripe refund is pending: " + stripeStatus
+            );
+            default -> PaymentRefundProviderResult.failed(
+                    result.refundId(),
+                    "stripe_unmapped_status",
+                    "Stripe refund status is unsupported: " + stripeStatus
+            );
+        };
+    }
+
     private StripePaymentGateway gateway() {
         StripePaymentGateway gateway = stripeGateway.getIfAvailable();
         if (gateway == null) {
@@ -150,8 +191,21 @@ public class StripePaymentProvider implements PaymentProvider {
         );
     }
 
+    private Map<String, String> stripeRefundMetadata(PaymentRefundProviderRequest request) {
+        return Map.of(
+                "internalRefundId", request.refundId().toString(),
+                "paymentId", request.paymentId().toString(),
+                "providerCode", providerCode(),
+                "environment", appProperties.environment()
+        );
+    }
+
     private String fallbackProviderPaymentId(UUID paymentId) {
         return "stripe_error_" + paymentId;
+    }
+
+    private String fallbackProviderRefundId(UUID refundId) {
+        return "stripe_refund_error_" + refundId;
     }
 
     private static String normalizeCurrency(String currency) {
