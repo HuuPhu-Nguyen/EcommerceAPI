@@ -9,6 +9,7 @@ import com.phu.ecommerceapi.payment.application.RefundAttemptView;
 import com.phu.ecommerceapi.payment.application.RefundWebhookAttempt;
 import com.phu.ecommerceapi.payment.application.RefundablePayment;
 import com.phu.ecommerceapi.payment.domain.PaymentStatus;
+import com.phu.ecommerceapi.payment.domain.RefundStatus;
 import com.phu.ecommerceapi.shared.api.ConflictException;
 import com.phu.ecommerceapi.shared.api.NotFoundException;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -81,23 +82,22 @@ public class JpaRefundAttemptPersistenceAdapter implements RefundAttemptPersiste
     @Override
     public RefundAttemptUpdate markSucceeded(UUID refundId, PaymentRefundProviderResult providerResult) {
         RefundRecord refund = findForUpdate(refundId);
-        if (refund.getStatus().isTerminal()) {
-            return new RefundAttemptUpdate(toView(refund), false);
-        }
+        RefundStatus previousStatus = refund.getStatus();
         refund.markSucceeded(providerResult);
-        refund.getPayment().markRefunded();
-        refund.getPayment().getOrder().refund();
-        return new RefundAttemptUpdate(toView(refund), true);
+        boolean transitioned = refund.getStatus() != previousStatus;
+        if (transitioned) {
+            refund.getPayment().markRefunded();
+            refund.getPayment().getOrder().refund();
+        }
+        return new RefundAttemptUpdate(toView(refund), transitioned);
     }
 
     @Override
     public RefundAttemptUpdate markFailed(UUID refundId, PaymentRefundProviderResult providerResult) {
         RefundRecord refund = findForUpdate(refundId);
-        if (refund.getStatus().isTerminal()) {
-            return new RefundAttemptUpdate(toView(refund), false);
-        }
+        RefundStatus previousStatus = refund.getStatus();
         refund.markFailed(providerResult);
-        return new RefundAttemptUpdate(toView(refund), true);
+        return new RefundAttemptUpdate(toView(refund), refund.getStatus() != previousStatus);
     }
 
     @Override
@@ -120,7 +120,10 @@ public class JpaRefundAttemptPersistenceAdapter implements RefundAttemptPersiste
         Optional<RefundRecord> refund;
         if (refundId != null) {
             refund = refundRepository.findById(refundId)
-                    .filter(record -> record.getProviderCode().equals(normalizedProviderCode));
+                    .filter(record -> record.getProviderCode().equals(normalizedProviderCode))
+                    .filter(record -> providerRefundId == null
+                            || record.getProviderRefundId() == null
+                            || record.getProviderRefundId().equals(providerRefundId));
         } else if (providerRefundId != null) {
             refund = refundRepository.findByProviderCodeAndProviderRefundId(
                     normalizedProviderCode,
@@ -129,7 +132,11 @@ public class JpaRefundAttemptPersistenceAdapter implements RefundAttemptPersiste
         } else {
             refund = Optional.empty();
         }
-        return refund.map(record -> new RefundWebhookAttempt(record.getId(), record.getStatus()));
+        return refund.map(record -> new RefundWebhookAttempt(
+                record.getId(),
+                record.getStatus(),
+                record.getProviderRefundId()
+        ));
     }
 
     private RefundRecord findForUpdate(UUID refundId) {

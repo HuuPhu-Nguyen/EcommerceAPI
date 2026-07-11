@@ -17,12 +17,20 @@ class RefundStateMachineTest {
     }
 
     @Test
-    void terminalRefundIgnoresDuplicateProviderOutcome() {
+    void providerTimeoutRefundCanCompleteFromCurrentProviderOutcome() {
+        assertThat(RefundStateMachine.providerSucceeded(RefundStatus.PROVIDER_TIMEOUT))
+                .isEqualTo(RefundStatus.SUCCEEDED);
+        assertThat(RefundStateMachine.providerFailed(RefundStatus.PROVIDER_TIMEOUT))
+                .isEqualTo(RefundStatus.FAILED);
+    }
+
+    @Test
+    void succeededOrFailedRefundIgnoresDuplicateProviderOutcome() {
         assertThat(RefundStateMachine.providerSucceeded(RefundStatus.FAILED))
                 .isEqualTo(RefundStatus.FAILED);
         assertThat(RefundStateMachine.providerFailed(RefundStatus.SUCCEEDED))
                 .isEqualTo(RefundStatus.SUCCEEDED);
-        assertThat(RefundStateMachine.providerTimedOut(RefundStatus.PROVIDER_TIMEOUT))
-                .isEqualTo(RefundStatus.PROVIDER_TIMEOUT);
+        assertThat(RefundStateMachine.providerTimedOut(RefundStatus.SUCCEEDED))
+                .isEqualTo(RefundStatus.SUCCEEDED);
     }
 }

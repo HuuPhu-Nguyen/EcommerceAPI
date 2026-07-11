@@ -22,6 +22,10 @@ public interface ProviderWebhookEventRepository extends JpaRepository<ProviderWe
                 payload,
                 processing_status,
                 received_at,
+                provider_event_created_at,
+                provider_event_type,
+                provider_object_id,
+                provider_object_type,
                 version
             )
             VALUES (
@@ -33,6 +37,10 @@ public interface ProviderWebhookEventRepository extends JpaRepository<ProviderWe
                 :payload,
                 'RECEIVED',
                 :receivedAt,
+                :providerEventCreatedAt,
+                :providerEventType,
+                :providerObjectId,
+                :providerObjectType,
                 0
             )
             ON CONFLICT (provider_name, provider_event_id) DO NOTHING
@@ -44,7 +52,11 @@ public interface ProviderWebhookEventRepository extends JpaRepository<ProviderWe
             @Param("eventType") String eventType,
             @Param("payloadHash") String payloadHash,
             @Param("payload") String payload,
-            @Param("receivedAt") OffsetDateTime receivedAt
+            @Param("receivedAt") OffsetDateTime receivedAt,
+            @Param("providerEventCreatedAt") OffsetDateTime providerEventCreatedAt,
+            @Param("providerEventType") String providerEventType,
+            @Param("providerObjectId") String providerObjectId,
+            @Param("providerObjectType") String providerObjectType
     );
 
     Optional<ProviderWebhookEventRecord> findByProviderNameAndProviderEventId(

@@ -6,6 +6,7 @@ import java.util.UUID;
 
 public record PaymentWebhookAttempt(
         UUID paymentId,
-        PaymentStatus status
+        PaymentStatus status,
+        String providerPaymentId
 ) {
 }

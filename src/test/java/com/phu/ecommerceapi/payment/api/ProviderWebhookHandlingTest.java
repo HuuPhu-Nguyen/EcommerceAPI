@@ -16,6 +16,11 @@ import com.phu.ecommerceapi.ledger.infrastructure.LedgerTransactionRepository;
 import com.phu.ecommerceapi.order.domain.OrderStatus;
 import com.phu.ecommerceapi.order.infrastructure.CustomerOrderRecord;
 import com.phu.ecommerceapi.order.infrastructure.CustomerOrderRepository;
+import com.phu.ecommerceapi.payment.application.PaymentAttemptService;
+import com.phu.ecommerceapi.payment.application.PaymentProviderResult;
+import com.phu.ecommerceapi.payment.application.StripePaymentIntentSnapshot;
+import com.phu.ecommerceapi.payment.application.StripeProviderReadPort;
+import com.phu.ecommerceapi.payment.application.StripeRefundSnapshot;
 import com.phu.ecommerceapi.payment.domain.PaymentStatus;
 import com.phu.ecommerceapi.payment.domain.ProviderWebhookProcessingStatus;
 import com.phu.ecommerceapi.payment.domain.RefundStatus;
@@ -36,26 +41,42 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
+import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.util.HexFormat;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@SpringBootTest
+@SpringBootTest(properties = "app.stripe.webhook-secret=whsec_test_webhook")
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 class ProviderWebhookHandlingTest {
 
     private static final String WEBHOOK_SECRET = "local-fake-webhook-secret";
+    private static final String STRIPE_WEBHOOK_SECRET = "whsec_test_webhook";
 
     @Autowired
     private MockMvc mockMvc;
@@ -79,6 +100,9 @@ class ProviderWebhookHandlingTest {
     private PaymentRecordRepository paymentRepository;
 
     @Autowired
+    private PaymentAttemptService paymentAttemptService;
+
+    @Autowired
     private RefundRecordRepository refundRepository;
 
     @Autowired
@@ -96,8 +120,12 @@ class ProviderWebhookHandlingTest {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    @MockitoBean
+    private StripeProviderReadPort stripeProviderReadPort;
+
     @BeforeEach
     void resetData() {
+        reset(stripeProviderReadPort);
         truncateLedger();
         webhookEventRepository.deleteAll();
         auditEventRepository.deleteAll();
@@ -310,6 +338,288 @@ class ProviderWebhookHandlingTest {
     }
 
     @Test
+    void validStripeSignatureProcessesPaymentSuccess() throws Exception {
+        String username = "stripe-webhook-payment@example.com";
+        PaymentFixture fixture = pendingPayment(username, "stripe");
+        when(stripeProviderReadPort.fetchPaymentIntent("pi_stripe_success"))
+                .thenReturn(Optional.of(stripePaymentIntent("pi_stripe_success", "succeeded")));
+        String requestBody = stripePaymentIntentWebhookJson(
+                "evt-stripe-payment-success",
+                "payment_intent.succeeded",
+                "pi_stripe_success",
+                "succeeded",
+                fixture.paymentId()
+        );
+
+        sendStripeWebhook(requestBody)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.providerEventId").value("evt-stripe-payment-success"))
+                .andExpect(jsonPath("$.status").value("PROCESSED"));
+
+        PaymentRecord payment = paymentRepository.findById(fixture.paymentId()).orElseThrow();
+        CustomerOrderRecord order = orderRepository.findById(fixture.orderId()).orElseThrow();
+        ProviderWebhookEventRecord event = webhookEventRepository.findAll().get(0);
+
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.SUCCEEDED);
+        assertThat(payment.getProviderPaymentId()).isEqualTo("pi_stripe_success");
+        assertThat(payment.getProviderStatus()).isEqualTo("succeeded");
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
+        assertThat(paymentCaptureTransactions()).hasSize(1);
+        assertThat(event.getProviderName()).isEqualTo("stripe");
+        assertThat(event.getProviderEventType()).isEqualTo("payment_intent.succeeded");
+        assertThat(event.getProviderObjectId()).isEqualTo("pi_stripe_success");
+        assertThat(event.getProviderObjectType()).isEqualTo("payment_intent");
+        assertThat(event.getProcessingStatus()).isEqualTo(ProviderWebhookProcessingStatus.PROCESSED);
+        assertThat(auditActions()).contains("PAYMENT_SUCCEEDED", "PROVIDER_WEBHOOK_PROCESSED");
+    }
+
+    @Test
+    void invalidStripeSignatureIsForbiddenAndDoesNotStoreEvent() throws Exception {
+        String requestBody = stripePaymentIntentWebhookJson(
+                "evt-stripe-invalid-signature",
+                "payment_intent.succeeded",
+                "pi_invalid_signature",
+                "succeeded",
+                UUID.randomUUID()
+        );
+
+        sendStripeWebhookWithSignature("t=%d,v1=invalid".formatted(Instant.now().getEpochSecond()), requestBody)
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.status").value("REJECTED"))
+                .andExpect(jsonPath("$.message").value("Invalid Stripe webhook signature"));
+
+        assertThat(webhookEventRepository.findAll()).isEmpty();
+        assertThat(auditActions()).contains("PROVIDER_WEBHOOK_AUTH_FAILED");
+    }
+
+    @Test
+    void missingStripeSignatureIsForbidden() throws Exception {
+        String requestBody = stripePaymentIntentWebhookJson(
+                "evt-stripe-missing-signature",
+                "payment_intent.succeeded",
+                "pi_missing_signature",
+                "succeeded",
+                UUID.randomUUID()
+        );
+
+        mockMvc.perform(post("/payments/provider-webhooks/stripe")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestBody))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.status").value("REJECTED"));
+
+        assertThat(webhookEventRepository.findAll()).isEmpty();
+        assertThat(auditActions()).contains("PROVIDER_WEBHOOK_AUTH_FAILED");
+    }
+
+    @Test
+    void duplicateStripeWebhookEventIsSafeNoop() throws Exception {
+        String username = "stripe-webhook-duplicate@example.com";
+        PaymentFixture fixture = pendingPayment(username, "stripe");
+        when(stripeProviderReadPort.fetchPaymentIntent("pi_stripe_duplicate"))
+                .thenReturn(Optional.of(stripePaymentIntent("pi_stripe_duplicate", "succeeded")));
+        String requestBody = stripePaymentIntentWebhookJson(
+                "evt-stripe-duplicate",
+                "payment_intent.succeeded",
+                "pi_stripe_duplicate",
+                "succeeded",
+                fixture.paymentId()
+        );
+
+        sendStripeWebhook(requestBody)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("PROCESSED"));
+        sendStripeWebhook(requestBody)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("DUPLICATE"));
+
+        assertThat(webhookEventRepository.findAll()).hasSize(1);
+        assertThat(paymentCaptureTransactions()).hasSize(1);
+        assertThat(auditActions().stream().filter("PROVIDER_WEBHOOK_PROCESSED"::equals)).hasSize(1);
+    }
+
+    @Test
+    void sameStripeEventIdWithDifferentPayloadReturnsConflict() throws Exception {
+        String username = "stripe-webhook-conflict@example.com";
+        PaymentFixture fixture = pendingPayment(username, "stripe");
+        when(stripeProviderReadPort.fetchPaymentIntent("pi_stripe_conflict"))
+                .thenReturn(Optional.of(stripePaymentIntent("pi_stripe_conflict", "succeeded")));
+
+        sendStripeWebhook(stripePaymentIntentWebhookJson(
+                "evt-stripe-conflict",
+                "payment_intent.succeeded",
+                "pi_stripe_conflict",
+                "succeeded",
+                fixture.paymentId()
+        )).andExpect(status().isOk());
+
+        sendStripeWebhook(stripePaymentIntentWebhookJson(
+                "evt-stripe-conflict",
+                "payment_intent.succeeded",
+                "pi_stripe_conflict_changed",
+                "succeeded",
+                fixture.paymentId()
+        ))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.status").value("REJECTED"));
+
+        assertThat(webhookEventRepository.findAll()).hasSize(1);
+        assertThat(auditActions()).contains("PROVIDER_WEBHOOK_PAYLOAD_CONFLICT");
+    }
+
+    @Test
+    void unsupportedStripeEventTypeIsIgnoredAndAudited() throws Exception {
+        String requestBody = """
+                {
+                  "id": "evt-stripe-unsupported",
+                  "created": %d,
+                  "type": "customer.created",
+                  "data": {
+                    "object": {
+                      "id": "cus_unsupported",
+                      "object": "customer"
+                    }
+                  }
+                }
+                """.formatted(Instant.now().getEpochSecond());
+
+        sendStripeWebhook(requestBody)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("IGNORED"));
+
+        ProviderWebhookEventRecord event = webhookEventRepository.findAll().get(0);
+        assertThat(event.getProcessingStatus()).isEqualTo(ProviderWebhookProcessingStatus.IGNORED);
+        assertThat(event.getEventType().name()).isEqualTo("UNSUPPORTED");
+        assertThat(auditActions()).contains("PROVIDER_WEBHOOK_IGNORED");
+    }
+
+    @Test
+    void stripeFailedEventAfterLocalSuccessIsIgnored() throws Exception {
+        PaymentFixture fixture = successfulStripePayment(
+                "stripe-webhook-failed-after-success@example.com",
+                "pi_already_succeeded"
+        );
+        when(stripeProviderReadPort.fetchPaymentIntent("pi_already_succeeded"))
+                .thenReturn(Optional.of(stripePaymentIntent("pi_already_succeeded", "requires_payment_method")));
+
+        sendStripeWebhook(stripePaymentIntentWebhookJson(
+                "evt-stripe-failed-after-success",
+                "payment_intent.payment_failed",
+                "pi_already_succeeded",
+                "requires_payment_method",
+                fixture.paymentId()
+        ))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("IGNORED"));
+
+        PaymentRecord payment = paymentRepository.findById(fixture.paymentId()).orElseThrow();
+        CustomerOrderRecord order = orderRepository.findById(fixture.orderId()).orElseThrow();
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.SUCCEEDED);
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
+        assertThat(paymentCaptureTransactions()).hasSize(1);
+        assertThat(auditActions()).doesNotContain("PAYMENT_FAILED");
+    }
+
+    @Test
+    void failedStripeEventUsesCurrentProviderSuccessToCompletePaymentOnce() throws Exception {
+        String username = "stripe-webhook-failed-current-success@example.com";
+        PaymentFixture fixture = pendingPayment(username, "stripe");
+        when(stripeProviderReadPort.fetchPaymentIntent("pi_current_success"))
+                .thenReturn(Optional.of(stripePaymentIntent("pi_current_success", "succeeded")));
+
+        sendStripeWebhook(stripePaymentIntentWebhookJson(
+                "evt-stripe-failed-current-success",
+                "payment_intent.payment_failed",
+                "pi_current_success",
+                "requires_payment_method",
+                fixture.paymentId()
+        ))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("PROCESSED"));
+
+        PaymentRecord payment = paymentRepository.findById(fixture.paymentId()).orElseThrow();
+        CustomerOrderRecord order = orderRepository.findById(fixture.orderId()).orElseThrow();
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.SUCCEEDED);
+        assertThat(payment.getProviderPaymentId()).isEqualTo("pi_current_success");
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
+        assertThat(paymentCaptureTransactions()).hasSize(1);
+        assertThat(auditActions()).contains("PAYMENT_SUCCEEDED", "PROVIDER_WEBHOOK_PROCESSED");
+    }
+
+    @Test
+    void stripeRefundSucceededWebhookCompletesPendingRefund() throws Exception {
+        PaymentFixture fixture = successfulStripePayment(
+                "stripe-webhook-refund@example.com",
+                "pi_refund_payment"
+        );
+        PaymentRecord payment = paymentRepository.findWithOrderById(fixture.paymentId()).orElseThrow();
+        RefundRecord refund = refundRepository.saveAndFlush(RefundRecord.pending(
+                payment,
+                "stripe-refund-webhook-key",
+                providerRefundIdempotencyKey(payment, "stripe-refund-webhook-key"),
+                "customer_request"
+        ));
+        when(stripeProviderReadPort.fetchRefund("re_stripe_success"))
+                .thenReturn(Optional.of(stripeRefund("re_stripe_success", "succeeded")));
+
+        sendStripeWebhook(stripeRefundUpdatedWebhookJson(
+                "evt-stripe-refund-success",
+                "re_stripe_success",
+                "succeeded",
+                refund.getId()
+        ))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("PROCESSED"));
+
+        PaymentRecord updatedPayment = paymentRepository.findById(fixture.paymentId()).orElseThrow();
+        RefundRecord updatedRefund = refundRepository.findById(refund.getId()).orElseThrow();
+        CustomerOrderRecord order = orderRepository.findById(fixture.orderId()).orElseThrow();
+        assertThat(updatedRefund.getStatus()).isEqualTo(RefundStatus.SUCCEEDED);
+        assertThat(updatedRefund.getProviderRefundId()).isEqualTo("re_stripe_success");
+        assertThat(updatedPayment.getStatus()).isEqualTo(PaymentStatus.REFUNDED);
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.REFUNDED);
+        assertThat(refundTransactions()).hasSize(1);
+    }
+
+    @Test
+    void concurrentStripeSameEventDeliveryProcessesOnce() throws Exception {
+        String username = "stripe-webhook-concurrent@example.com";
+        PaymentFixture fixture = pendingPayment(username, "stripe");
+        when(stripeProviderReadPort.fetchPaymentIntent("pi_stripe_concurrent"))
+                .thenReturn(Optional.of(stripePaymentIntent("pi_stripe_concurrent", "succeeded")));
+        String requestBody = stripePaymentIntentWebhookJson(
+                "evt-stripe-concurrent",
+                "payment_intent.succeeded",
+                "pi_stripe_concurrent",
+                "succeeded",
+                fixture.paymentId()
+        );
+
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Callable<Integer> delivery = () -> {
+                start.await(5, TimeUnit.SECONDS);
+                return sendStripeWebhook(requestBody)
+                        .andReturn()
+                        .getResponse()
+                        .getStatus();
+            };
+            Future<Integer> first = executor.submit(delivery);
+            Future<Integer> second = executor.submit(delivery);
+            start.countDown();
+
+            assertThat(List.of(first.get(), second.get())).containsOnly(200);
+        } finally {
+            executor.shutdownNow();
+        }
+
+        assertThat(webhookEventRepository.findAll()).hasSize(1);
+        assertThat(paymentCaptureTransactions()).hasSize(1);
+        assertThat(auditActions().stream().filter("PROVIDER_WEBHOOK_PROCESSED"::equals)).hasSize(1);
+    }
+
+    @Test
     void refundSucceededWebhookCompletesPendingRefundAndPostsReversal() throws Exception {
         String username = "webhook-refund@example.com";
         PaymentFixture fixture = successfulPayment(username);
@@ -356,6 +666,17 @@ class ProviderWebhookHandlingTest {
                 .content(requestBody));
     }
 
+    private ResultActions sendStripeWebhook(String requestBody) throws Exception {
+        return sendStripeWebhookWithSignature(stripeSignature(requestBody), requestBody);
+    }
+
+    private ResultActions sendStripeWebhookWithSignature(String signature, String requestBody) throws Exception {
+        return mockMvc.perform(post("/payments/provider-webhooks/stripe")
+                .header(StripeProviderWebhookController.STRIPE_SIGNATURE_HEADER, signature)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(requestBody));
+    }
+
     private PaymentFixture pendingPayment(String username) throws Exception {
         return pendingPayment(username, "fake");
     }
@@ -371,6 +692,16 @@ class ProviderWebhookHandlingTest {
                 providerPaymentIdempotencyKey(order, providerCode, idempotencyKey)
         ));
         return new PaymentFixture(orderId, payment.getId(), null);
+    }
+
+    private PaymentFixture successfulStripePayment(String username, String providerPaymentId) throws Exception {
+        PaymentFixture fixture = pendingPayment(username, "stripe");
+        paymentAttemptService.completeAttempt(
+                fixture.paymentId(),
+                PaymentProviderResult.succeeded(providerPaymentId, "succeeded", "seeded Stripe payment"),
+                null
+        );
+        return new PaymentFixture(fixture.orderId(), fixture.paymentId(), providerPaymentId);
     }
 
     private PaymentFixture successfulPayment(String username) throws Exception {
@@ -500,6 +831,75 @@ class ProviderWebhookHandlingTest {
                 """.formatted(eventId, type, paymentId, providerPaymentId, jsonStringOrNull(failureCode), message);
     }
 
+    private String stripePaymentIntentWebhookJson(
+            String eventId,
+            String type,
+            String providerPaymentId,
+            String status,
+            UUID paymentId
+    ) {
+        return """
+                {
+                  "id": "%s",
+                  "created": %d,
+                  "type": "%s",
+                  "data": {
+                    "object": {
+                      "id": "%s",
+                      "object": "payment_intent",
+                      "status": "%s",
+                      "last_payment_error": {
+                        "decline_code": "card_declined",
+                        "code": "card_declined"
+                      },
+                      "metadata": {
+                        "internalPaymentId": "%s"
+                      }
+                    }
+                  }
+                }
+                """.formatted(
+                eventId,
+                Instant.now().getEpochSecond(),
+                type,
+                providerPaymentId,
+                status,
+                paymentId
+        );
+    }
+
+    private String stripeRefundUpdatedWebhookJson(
+            String eventId,
+            String providerRefundId,
+            String status,
+            UUID refundId
+    ) {
+        return """
+                {
+                  "id": "%s",
+                  "created": %d,
+                  "type": "refund.updated",
+                  "data": {
+                    "object": {
+                      "id": "%s",
+                      "object": "refund",
+                      "payment_intent": "pi_refund_payment",
+                      "status": "%s",
+                      "metadata": {
+                        "internalRefundId": "%s"
+                      }
+                    }
+                  }
+                }
+                """.formatted(
+                eventId,
+                Instant.now().getEpochSecond(),
+                providerRefundId,
+                status,
+                refundId
+        );
+    }
+
     private String refundWebhookJson(
             String eventId,
             String type,
@@ -525,6 +925,40 @@ class ProviderWebhookHandlingTest {
             return "null";
         }
         return "\"" + value + "\"";
+    }
+
+    private StripePaymentIntentSnapshot stripePaymentIntent(String providerPaymentId, String status) {
+        return new StripePaymentIntentSnapshot(
+                providerPaymentId,
+                status,
+                "stripe_card_declined",
+                "Stripe PaymentIntent current status is " + status
+        );
+    }
+
+    private StripeRefundSnapshot stripeRefund(String providerRefundId, String status) {
+        return new StripeRefundSnapshot(
+                providerRefundId,
+                status,
+                "stripe_refund_failed",
+                "Stripe refund current status is " + status
+        );
+    }
+
+    private String stripeSignature(String requestBody) {
+        long timestamp = Instant.now().getEpochSecond();
+        String signedPayload = timestamp + "." + requestBody;
+        return "t=%d,v1=%s".formatted(timestamp, hmacHex(signedPayload));
+    }
+
+    private String hmacHex(String signedPayload) {
+        try {
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(STRIPE_WEBHOOK_SECRET.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+            return HexFormat.of().formatHex(mac.doFinal(signedPayload.getBytes(StandardCharsets.UTF_8)));
+        } catch (Exception exception) {
+            throw new IllegalStateException(exception);
+        }
     }
 
     private String providerPaymentIdempotencyKey(

@@ -102,6 +102,7 @@ public class FakeProviderWebhookUseCase implements ProviderWebhookHandler {
             case PAYMENT_FAILED -> processPaymentEvent(event, command, false);
             case REFUND_SUCCEEDED -> processRefundEvent(event, command, true);
             case REFUND_FAILED -> processRefundEvent(event, command, false);
+            case UNSUPPORTED -> ignored(event, "Provider webhook event type is unsupported");
         };
     }
 

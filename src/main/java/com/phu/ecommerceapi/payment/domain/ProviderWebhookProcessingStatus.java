@@ -4,5 +4,6 @@ public enum ProviderWebhookProcessingStatus {
     RECEIVED,
     PROCESSED,
     IGNORED,
-    REJECTED
+    REJECTED,
+    RECONCILIATION_REQUIRED
 }

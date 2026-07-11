@@ -6,6 +6,7 @@ import java.util.UUID;
 
 public record RefundWebhookAttempt(
         UUID refundId,
-        RefundStatus status
+        RefundStatus status,
+        String providerRefundId
 ) {
 }

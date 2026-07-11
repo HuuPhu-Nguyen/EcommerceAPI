@@ -36,6 +36,7 @@ public class SecurityConfig {
                                         "/swagger-ui.html"
                                 ).permitAll()
                                 .requestMatchers(HttpMethod.POST, "/payments/provider-webhooks/fake").permitAll()
+                                .requestMatchers(HttpMethod.POST, "/payments/provider-webhooks/stripe").permitAll()
                                 .anyRequest().authenticated()
                 )
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))

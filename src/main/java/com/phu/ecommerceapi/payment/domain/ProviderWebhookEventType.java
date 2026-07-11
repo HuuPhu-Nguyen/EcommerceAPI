@@ -6,7 +6,8 @@ public enum ProviderWebhookEventType {
     PAYMENT_SUCCEEDED("payment.succeeded"),
     PAYMENT_FAILED("payment.failed"),
     REFUND_SUCCEEDED("refund.succeeded"),
-    REFUND_FAILED("refund.failed");
+    REFUND_FAILED("refund.failed"),
+    UNSUPPORTED("unsupported");
 
     private final String wireName;
 

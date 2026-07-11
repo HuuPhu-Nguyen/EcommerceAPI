@@ -27,7 +27,11 @@ public class JpaProviderWebhookPersistenceAdapter implements ProviderWebhookPers
                 command.eventType().name(),
                 command.payloadHash(),
                 command.payload(),
-                command.receivedAt()
+                command.receivedAt(),
+                command.providerEventCreatedAt(),
+                command.providerEventType(),
+                command.providerObjectId(),
+                command.providerObjectType()
         );
 
         ProviderWebhookEventRecord event = eventRepository
@@ -58,6 +62,13 @@ public class JpaProviderWebhookPersistenceAdapter implements ProviderWebhookPers
     public ProviderWebhookEventView markRejected(UUID eventId, String message) {
         ProviderWebhookEventRecord event = event(eventId);
         event.markRejected(message);
+        return toView(event);
+    }
+
+    @Override
+    public ProviderWebhookEventView markReconciliationRequired(UUID eventId, String message) {
+        ProviderWebhookEventRecord event = event(eventId);
+        event.markReconciliationRequired(message);
         return toView(event);
     }
 

@@ -11,4 +11,6 @@ public interface ProviderWebhookPersistencePort {
     ProviderWebhookEventView markIgnored(UUID eventId, String message);
 
     ProviderWebhookEventView markRejected(UUID eventId, String message);
+
+    ProviderWebhookEventView markReconciliationRequired(UUID eventId, String message);
 }

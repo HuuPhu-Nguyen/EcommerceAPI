@@ -49,6 +49,16 @@ public class ProviderWebhookEventRecord {
     @Column(nullable = false)
     private OffsetDateTime receivedAt;
 
+    private OffsetDateTime providerEventCreatedAt;
+
+    @Column(length = 120)
+    private String providerEventType;
+
+    private String providerObjectId;
+
+    @Column(length = 80)
+    private String providerObjectType;
+
     private OffsetDateTime processedAt;
 
     @Version
@@ -62,8 +72,12 @@ public class ProviderWebhookEventRecord {
             String providerName,
             String providerEventId,
             ProviderWebhookEventType eventType,
-        String payloadHash,
-        String payload
+            String payloadHash,
+            String payload,
+            OffsetDateTime providerEventCreatedAt,
+            String providerEventType,
+            String providerObjectId,
+            String providerObjectType
     ) {
         this.id = UUID.randomUUID();
         this.providerName = requireText(providerName, "provider name").toLowerCase(Locale.ROOT);
@@ -73,6 +87,10 @@ public class ProviderWebhookEventRecord {
         this.payload = requireText(payload, "provider event payload");
         this.processingStatus = ProviderWebhookProcessingStatus.RECEIVED;
         this.receivedAt = OffsetDateTime.now();
+        this.providerEventCreatedAt = providerEventCreatedAt;
+        this.providerEventType = trimToNull(providerEventType);
+        this.providerObjectId = trimToNull(providerObjectId);
+        this.providerObjectType = trimToNull(providerObjectType);
     }
 
     public static ProviderWebhookEventRecord received(
@@ -82,7 +100,17 @@ public class ProviderWebhookEventRecord {
             String payloadHash,
             String payload
     ) {
-        return new ProviderWebhookEventRecord(providerName, providerEventId, eventType, payloadHash, payload);
+        return new ProviderWebhookEventRecord(
+                providerName,
+                providerEventId,
+                eventType,
+                payloadHash,
+                payload,
+                null,
+                null,
+                null,
+                null
+        );
     }
 
     public boolean hasPayloadHash(String candidateHash) {
@@ -99,6 +127,10 @@ public class ProviderWebhookEventRecord {
 
     public void markRejected(String message) {
         markCompleted(ProviderWebhookProcessingStatus.REJECTED, message);
+    }
+
+    public void markReconciliationRequired(String message) {
+        markCompleted(ProviderWebhookProcessingStatus.RECONCILIATION_REQUIRED, message);
     }
 
     public UUID getId() {
@@ -137,6 +169,22 @@ public class ProviderWebhookEventRecord {
         return receivedAt;
     }
 
+    public OffsetDateTime getProviderEventCreatedAt() {
+        return providerEventCreatedAt;
+    }
+
+    public String getProviderEventType() {
+        return providerEventType;
+    }
+
+    public String getProviderObjectId() {
+        return providerObjectId;
+    }
+
+    public String getProviderObjectType() {
+        return providerObjectType;
+    }
+
     public OffsetDateTime getProcessedAt() {
         return processedAt;
     }
@@ -154,6 +202,13 @@ public class ProviderWebhookEventRecord {
     private String requireText(String value, String fieldName) {
         if (value == null || value.isBlank()) {
             throw new IllegalArgumentException(fieldName + " is required");
+        }
+        return value.trim();
+    }
+
+    private String trimToNull(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
         }
         return value.trim();
     }

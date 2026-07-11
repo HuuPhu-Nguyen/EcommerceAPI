@@ -38,7 +38,7 @@ class PostgreSqlIntegrationTest {
 
     @Test
     void flywayMigrationsCreateBankingCoreSchema() {
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("17");
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("18");
 
         assertThat(tableNames()).contains(
                 "user_model",
@@ -73,8 +73,20 @@ class PostgreSqlIntegrationTest {
                         "last_recovery_attempt_at",
                         "recovery_status"
                 );
+        assertThat(columnNames("provider_webhook_event"))
+                .contains(
+                        "provider_event_created_at",
+                        "provider_event_type",
+                        "provider_object_id",
+                        "provider_object_type"
+                );
         assertThat(indexNames("payment_idempotency_record"))
                 .contains("idx_payment_idempotency_recovery");
+        assertThat(indexNames("provider_webhook_event"))
+                .contains(
+                        "idx_provider_webhook_event_provider_created_at",
+                        "idx_provider_webhook_event_provider_object"
+                );
     }
 
     @Test

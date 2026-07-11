@@ -18,9 +18,17 @@ class PaymentStateMachineTest {
     }
 
     @Test
-    void terminalPaymentIgnoresDuplicateProviderOutcome() {
+    void failedOrUnknownPaymentCanRecoverFromCurrentProviderSuccess() {
         assertThat(PaymentStateMachine.providerSucceeded(PaymentStatus.FAILED))
+                .isEqualTo(PaymentStatus.SUCCEEDED);
+        assertThat(PaymentStateMachine.providerSucceeded(PaymentStatus.PROVIDER_TIMEOUT))
+                .isEqualTo(PaymentStatus.SUCCEEDED);
+        assertThat(PaymentStateMachine.providerFailed(PaymentStatus.PROVIDER_TIMEOUT))
                 .isEqualTo(PaymentStatus.FAILED);
+    }
+
+    @Test
+    void paidOrRefundedPaymentIgnoresDuplicateProviderOutcome() {
         assertThat(PaymentStateMachine.providerFailed(PaymentStatus.SUCCEEDED))
                 .isEqualTo(PaymentStatus.SUCCEEDED);
         assertThat(PaymentStateMachine.providerTimedOut(PaymentStatus.REFUNDED))

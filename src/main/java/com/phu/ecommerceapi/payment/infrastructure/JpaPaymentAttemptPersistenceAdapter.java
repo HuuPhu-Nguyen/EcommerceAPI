@@ -88,22 +88,21 @@ public class JpaPaymentAttemptPersistenceAdapter implements PaymentAttemptPersis
     @Override
     public PaymentAttemptUpdate markSucceeded(UUID paymentId, PaymentProviderResult providerResult) {
         PaymentRecord payment = findForUpdate(paymentId);
-        if (payment.getStatus().isTerminal()) {
-            return new PaymentAttemptUpdate(toView(payment), false);
-        }
+        PaymentStatus previousStatus = payment.getStatus();
         payment.markSucceeded(providerResult);
-        payment.getOrder().markPaid();
-        return new PaymentAttemptUpdate(toView(payment), true);
+        boolean transitioned = payment.getStatus() != previousStatus;
+        if (transitioned) {
+            payment.getOrder().markPaid();
+        }
+        return new PaymentAttemptUpdate(toView(payment), transitioned);
     }
 
     @Override
     public PaymentAttemptUpdate markFailed(UUID paymentId, PaymentProviderResult providerResult) {
         PaymentRecord payment = findForUpdate(paymentId);
-        if (payment.getStatus().isTerminal()) {
-            return new PaymentAttemptUpdate(toView(payment), false);
-        }
+        PaymentStatus previousStatus = payment.getStatus();
         payment.markFailed(providerResult);
-        return new PaymentAttemptUpdate(toView(payment), true);
+        return new PaymentAttemptUpdate(toView(payment), payment.getStatus() != previousStatus);
     }
 
     @Override
@@ -139,7 +138,10 @@ public class JpaPaymentAttemptPersistenceAdapter implements PaymentAttemptPersis
         Optional<PaymentRecord> payment;
         if (paymentId != null) {
             payment = paymentRepository.findById(paymentId)
-                    .filter(record -> record.getProviderCode().equals(normalizedProviderCode));
+                    .filter(record -> record.getProviderCode().equals(normalizedProviderCode))
+                    .filter(record -> providerPaymentId == null
+                            || record.getProviderPaymentId() == null
+                            || record.getProviderPaymentId().equals(providerPaymentId));
         } else if (providerPaymentId != null) {
             payment = paymentRepository.findByProviderCodeAndProviderPaymentId(
                     normalizedProviderCode,
@@ -148,7 +150,11 @@ public class JpaPaymentAttemptPersistenceAdapter implements PaymentAttemptPersis
         } else {
             payment = Optional.empty();
         }
-        return payment.map(record -> new PaymentWebhookAttempt(record.getId(), record.getStatus()));
+        return payment.map(record -> new PaymentWebhookAttempt(
+                record.getId(),
+                record.getStatus(),
+                record.getProviderPaymentId()
+        ));
     }
 
     private PaymentRecord findForUpdate(UUID paymentId) {

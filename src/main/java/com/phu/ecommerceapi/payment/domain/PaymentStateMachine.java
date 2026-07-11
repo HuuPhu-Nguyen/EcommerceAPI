@@ -8,15 +8,29 @@ public final class PaymentStateMachine {
     }
 
     public static PaymentStatus providerSucceeded(PaymentStatus currentStatus) {
-        return completePending(currentStatus, PaymentStatus.SUCCEEDED);
+        PaymentStatus requiredStatus = Objects.requireNonNull(currentStatus, "payment status is required");
+        if (requiredStatus == PaymentStatus.PENDING
+                || requiredStatus == PaymentStatus.FAILED
+                || requiredStatus == PaymentStatus.PROVIDER_TIMEOUT) {
+            return PaymentStatus.SUCCEEDED;
+        }
+        return requiredStatus;
     }
 
     public static PaymentStatus providerFailed(PaymentStatus currentStatus) {
-        return completePending(currentStatus, PaymentStatus.FAILED);
+        PaymentStatus requiredStatus = Objects.requireNonNull(currentStatus, "payment status is required");
+        if (requiredStatus == PaymentStatus.PENDING || requiredStatus == PaymentStatus.PROVIDER_TIMEOUT) {
+            return PaymentStatus.FAILED;
+        }
+        return requiredStatus;
     }
 
     public static PaymentStatus providerTimedOut(PaymentStatus currentStatus) {
-        return completePending(currentStatus, PaymentStatus.PROVIDER_TIMEOUT);
+        PaymentStatus requiredStatus = Objects.requireNonNull(currentStatus, "payment status is required");
+        if (requiredStatus == PaymentStatus.PENDING) {
+            return PaymentStatus.PROVIDER_TIMEOUT;
+        }
+        return requiredStatus;
     }
 
     public static PaymentStatus refund(PaymentStatus currentStatus) {
@@ -30,12 +44,4 @@ public final class PaymentStateMachine {
         return PaymentStatus.REFUNDED;
     }
 
-    private static PaymentStatus completePending(PaymentStatus currentStatus, PaymentStatus requestedStatus) {
-        PaymentStatus requiredStatus = Objects.requireNonNull(currentStatus, "payment status is required");
-        Objects.requireNonNull(requestedStatus, "requested payment status is required");
-        if (requiredStatus.isTerminal()) {
-            return requiredStatus;
-        }
-        return requestedStatus;
-    }
 }

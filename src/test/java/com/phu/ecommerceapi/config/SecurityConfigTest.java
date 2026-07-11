@@ -1,6 +1,7 @@
 package com.phu.ecommerceapi.config;
 
 import com.phu.ecommerceapi.payment.api.FakeProviderWebhookController;
+import com.phu.ecommerceapi.payment.api.StripeProviderWebhookController;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -54,10 +55,19 @@ class SecurityConfigTest {
     }
 
     @Test
-    void unknownWebhookPostPathRequiresAuthentication() throws Exception {
+    void exactStripeWebhookPostPathIsAnonymous() throws Exception {
         mockMvc.perform(post("/payments/provider-webhooks/stripe")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(webhookBody("evt-security-stripe-protected")))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void unknownWebhookPostPathRequiresAuthentication() throws Exception {
+        mockMvc.perform(post("/payments/provider-webhooks/unknown")
+                        .header(StripeProviderWebhookController.STRIPE_SIGNATURE_HEADER, "invalid")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(webhookBody("evt-security-unknown-protected")))
                 .andExpect(status().isUnauthorized());
     }
 

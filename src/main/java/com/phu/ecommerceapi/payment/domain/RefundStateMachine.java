@@ -8,23 +8,26 @@ public final class RefundStateMachine {
     }
 
     public static RefundStatus providerSucceeded(RefundStatus currentStatus) {
-        return completePending(currentStatus, RefundStatus.SUCCEEDED);
+        RefundStatus requiredStatus = Objects.requireNonNull(currentStatus, "refund status is required");
+        if (requiredStatus == RefundStatus.PENDING || requiredStatus == RefundStatus.PROVIDER_TIMEOUT) {
+            return RefundStatus.SUCCEEDED;
+        }
+        return requiredStatus;
     }
 
     public static RefundStatus providerFailed(RefundStatus currentStatus) {
-        return completePending(currentStatus, RefundStatus.FAILED);
+        RefundStatus requiredStatus = Objects.requireNonNull(currentStatus, "refund status is required");
+        if (requiredStatus == RefundStatus.PENDING || requiredStatus == RefundStatus.PROVIDER_TIMEOUT) {
+            return RefundStatus.FAILED;
+        }
+        return requiredStatus;
     }
 
     public static RefundStatus providerTimedOut(RefundStatus currentStatus) {
-        return completePending(currentStatus, RefundStatus.PROVIDER_TIMEOUT);
-    }
-
-    private static RefundStatus completePending(RefundStatus currentStatus, RefundStatus requestedStatus) {
         RefundStatus requiredStatus = Objects.requireNonNull(currentStatus, "refund status is required");
-        Objects.requireNonNull(requestedStatus, "requested refund status is required");
-        if (requiredStatus.isTerminal()) {
-            return requiredStatus;
+        if (requiredStatus == RefundStatus.PENDING) {
+            return RefundStatus.PROVIDER_TIMEOUT;
         }
-        return requestedStatus;
+        return requiredStatus;
     }
 }
