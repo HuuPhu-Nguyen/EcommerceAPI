@@ -19,7 +19,9 @@ public interface RefundRecordRepository extends JpaRepository<RefundRecord, UUID
                 payment.id,
                 refund.amount,
                 refund.currency,
-                refund.status
+                refund.status,
+                refund.providerCode,
+                refund.providerRefundId
             )
             from RefundRecord refund
             join refund.payment payment
@@ -31,6 +33,15 @@ public interface RefundRecordRepository extends JpaRepository<RefundRecord, UUID
     Optional<RefundRecord> findByPaymentId(UUID paymentId);
 
     Optional<RefundRecord> findByProviderCodeAndProviderRefundId(String providerCode, String providerRefundId);
+
+    @Query("""
+            select refund
+            from RefundRecord refund
+            join fetch refund.payment payment
+            join fetch payment.order
+            where refund.id = :refundId
+            """)
+    Optional<RefundRecord> findWithPaymentById(@Param("refundId") UUID refundId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""

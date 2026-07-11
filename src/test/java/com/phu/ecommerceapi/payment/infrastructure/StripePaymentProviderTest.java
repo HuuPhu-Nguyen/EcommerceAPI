@@ -7,6 +7,8 @@ import com.phu.ecommerceapi.payment.application.PaymentProviderStatus;
 import com.phu.ecommerceapi.payment.application.PaymentProviderTimeoutException;
 import com.phu.ecommerceapi.payment.application.PaymentRefundProviderRequest;
 import com.phu.ecommerceapi.payment.application.PaymentRefundProviderResult;
+import com.phu.ecommerceapi.shared.observability.BusinessMetrics;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
 
@@ -260,7 +262,11 @@ class StripePaymentProviderTest {
     }
 
     private StripePaymentProvider provider(StripePaymentGateway gateway) {
-        return new StripePaymentProvider(objectProvider(gateway), appProperties());
+        return new StripePaymentProvider(
+                objectProvider(gateway),
+                appProperties(),
+                new BusinessMetrics(new SimpleMeterRegistry())
+        );
     }
 
     private StripePaymentGateway gatewayWithPayment(

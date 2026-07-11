@@ -9,6 +9,8 @@ public record PaymentReconciliationItem(
         UUID id,
         BigDecimal amount,
         String currency,
-        PaymentStatus status
+        PaymentStatus status,
+        String providerCode,
+        String providerPaymentId
 ) {
 }

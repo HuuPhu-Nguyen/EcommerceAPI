@@ -1,11 +1,13 @@
 package com.phu.ecommerceapi.payment.infrastructure;
 
+import com.phu.ecommerceapi.reconciliation.application.ProviderWebhookReconciliationItem;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -63,4 +65,17 @@ public interface ProviderWebhookEventRepository extends JpaRepository<ProviderWe
             String providerName,
             String providerEventId
     );
+
+    @Query("""
+            select new com.phu.ecommerceapi.reconciliation.application.ProviderWebhookReconciliationItem(
+                event.id,
+                event.providerName,
+                event.eventType,
+                event.processingStatus,
+                event.providerObjectId,
+                event.providerObjectType
+            )
+            from ProviderWebhookEventRecord event
+            """)
+    List<ProviderWebhookReconciliationItem> findAllForReconciliation();
 }

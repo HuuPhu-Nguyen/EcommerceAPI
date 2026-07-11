@@ -2,8 +2,15 @@ package com.phu.ecommerceapi.reconciliation.application;
 
 import com.phu.ecommerceapi.ledger.domain.LedgerEntryDirection;
 import com.phu.ecommerceapi.ledger.domain.LedgerTransactionType;
+import com.phu.ecommerceapi.payment.application.PaymentIdempotencyRecoveryService;
+import com.phu.ecommerceapi.payment.application.StripePaymentIntentSnapshot;
+import com.phu.ecommerceapi.payment.application.StripeProviderReadPort;
+import com.phu.ecommerceapi.payment.application.StripeRefundSnapshot;
+import com.phu.ecommerceapi.payment.domain.ProviderWebhookEventType;
+import com.phu.ecommerceapi.payment.domain.ProviderWebhookProcessingStatus;
 import com.phu.ecommerceapi.payment.domain.PaymentStatus;
 import com.phu.ecommerceapi.payment.domain.RefundStatus;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -32,19 +39,33 @@ public class ReconciliationService {
     private static final String LEDGER_TRANSACTION_RESOURCE = "LEDGER_TRANSACTION";
     private static final String PAYMENT_RESOURCE = "PAYMENT";
     private static final String REFUND_RESOURCE = "REFUND";
+    private static final String PROVIDER_WEBHOOK_EVENT_RESOURCE = "PROVIDER_WEBHOOK_EVENT";
     private static final String PROVIDER_CLEARING_ACCOUNT = "PAYMENT_PROVIDER_CLEARING";
     private static final String ORDER_REVENUE_ACCOUNT = "ORDER_REVENUE";
+    private static final String FAKE_PROVIDER = "fake";
+    private static final String STRIPE_PROVIDER = "stripe";
 
     private final ReconciliationReadPort reconciliationReadPort;
+    private final ObjectProvider<StripeProviderReadPort> stripeProviderReadPort;
+    private final PaymentIdempotencyRecoveryService paymentIdempotencyRecoveryService;
 
-    public ReconciliationService(ReconciliationReadPort reconciliationReadPort) {
+    public ReconciliationService(
+            ReconciliationReadPort reconciliationReadPort,
+            ObjectProvider<StripeProviderReadPort> stripeProviderReadPort,
+            PaymentIdempotencyRecoveryService paymentIdempotencyRecoveryService
+    ) {
         this.reconciliationReadPort = reconciliationReadPort;
+        this.stripeProviderReadPort = stripeProviderReadPort;
+        this.paymentIdempotencyRecoveryService = paymentIdempotencyRecoveryService;
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public ReconciliationReport runReport() {
+        paymentIdempotencyRecoveryService.recoverExpired();
+
         List<PaymentReconciliationItem> payments = reconciliationReadPort.findPayments();
         List<RefundReconciliationItem> refunds = reconciliationReadPort.findRefunds();
+        List<ProviderWebhookReconciliationItem> webhookEvents = reconciliationReadPort.findProviderWebhookEvents();
         List<LedgerTransactionReconciliationItem> transactions = reconciliationReadPort.findLedgerTransactions();
         List<LedgerEntryReconciliationItem> entries = reconciliationReadPort.findLedgerEntries();
 
@@ -60,6 +81,9 @@ public class ReconciliationService {
                 ));
 
         List<ReconciliationIssue> issues = new ArrayList<>();
+        checkPaymentProviderState(payments, issues);
+        checkRefundProviderState(refunds, issues);
+        checkProviderWebhookEvents(webhookEvents, payments, refunds, issues);
         checkLedgerBalances(transactions, entriesByTransaction, issues);
         checkPayments(payments, transactionsByReference, entriesByTransaction, issues);
         checkRefunds(refunds, paymentsById.keySet(), transactionsByReference, entriesByTransaction, issues);
@@ -73,6 +97,182 @@ public class ReconciliationService {
                 transactions.size(),
                 issues
         );
+    }
+
+    private void checkPaymentProviderState(
+            List<PaymentReconciliationItem> payments,
+            List<ReconciliationIssue> issues
+    ) {
+        for (PaymentReconciliationItem payment : payments) {
+            String providerCode = providerCode(payment.providerCode());
+            if (!isSupportedProvider(providerCode)) {
+                issues.add(issue(
+                        ReconciliationIssueCode.UNSUPPORTED_PAYMENT_PROVIDER,
+                        PAYMENT_RESOURCE,
+                        payment.id().toString(),
+                        "Payment provider code is missing or unsupported: provider=" + providerLabel(providerCode)
+                ));
+                continue;
+            }
+
+            if (requiresCaptureLedger(payment.status()) && isBlank(payment.providerPaymentId())) {
+                issues.add(issue(
+                        ReconciliationIssueCode.MISSING_PROVIDER_REFERENCE,
+                        PAYMENT_RESOURCE,
+                        payment.id().toString(),
+                        "Successful payment is missing provider payment reference: provider=" + providerCode
+                ));
+                continue;
+            }
+
+            if (STRIPE_PROVIDER.equals(providerCode) && !isBlank(payment.providerPaymentId())) {
+                compareStripePaymentState(payment, providerCode, issues);
+            }
+        }
+    }
+
+    private void compareStripePaymentState(
+            PaymentReconciliationItem payment,
+            String providerCode,
+            List<ReconciliationIssue> issues
+    ) {
+        Optional<StripePaymentIntentSnapshot> current = fetchStripePaymentIntent(payment.providerPaymentId());
+        if (current.isEmpty()) {
+            if (requiresCaptureLedger(payment.status())) {
+                issues.add(issue(
+                        ReconciliationIssueCode.PROVIDER_PAYMENT_STATE_MISMATCH,
+                        PAYMENT_RESOURCE,
+                        payment.id().toString(),
+                        "Successful payment is missing at provider: provider=" + providerCode
+                                + " providerPaymentId=" + payment.providerPaymentId()
+                ));
+            }
+            return;
+        }
+
+        StripePaymentIntentSnapshot currentState = current.get();
+        if (currentState.isSucceeded() && !requiresCaptureLedger(payment.status())) {
+            issues.add(issue(
+                    ReconciliationIssueCode.PROVIDER_PAYMENT_STATE_MISMATCH,
+                    PAYMENT_RESOURCE,
+                    payment.id().toString(),
+                    "Provider payment succeeded but local payment is not succeeded: provider=" + providerCode
+                            + " providerPaymentId=" + payment.providerPaymentId()
+            ));
+        }
+        if (requiresCaptureLedger(payment.status()) && !currentState.isSucceeded()) {
+            issues.add(issue(
+                    ReconciliationIssueCode.PROVIDER_PAYMENT_STATE_MISMATCH,
+                    PAYMENT_RESOURCE,
+                    payment.id().toString(),
+                    "Local payment succeeded but provider payment is not succeeded: provider=" + providerCode
+                            + " providerPaymentId=" + payment.providerPaymentId()
+                            + " providerStatus=" + currentState.status()
+            ));
+        }
+    }
+
+    private void checkRefundProviderState(
+            List<RefundReconciliationItem> refunds,
+            List<ReconciliationIssue> issues
+    ) {
+        for (RefundReconciliationItem refund : refunds) {
+            String providerCode = providerCode(refund.providerCode());
+            if (!isSupportedProvider(providerCode)) {
+                issues.add(issue(
+                        ReconciliationIssueCode.UNSUPPORTED_PAYMENT_PROVIDER,
+                        REFUND_RESOURCE,
+                        refund.id().toString(),
+                        "Refund provider code is missing or unsupported: provider=" + providerLabel(providerCode)
+                ));
+                continue;
+            }
+
+            if (refund.status() == RefundStatus.SUCCEEDED && isBlank(refund.providerRefundId())) {
+                issues.add(issue(
+                        ReconciliationIssueCode.MISSING_PROVIDER_REFERENCE,
+                        REFUND_RESOURCE,
+                        refund.id().toString(),
+                        "Succeeded refund is missing provider refund reference: provider=" + providerCode
+                ));
+                continue;
+            }
+
+            if (STRIPE_PROVIDER.equals(providerCode) && !isBlank(refund.providerRefundId())) {
+                compareStripeRefundState(refund, providerCode, issues);
+            }
+        }
+    }
+
+    private void compareStripeRefundState(
+            RefundReconciliationItem refund,
+            String providerCode,
+            List<ReconciliationIssue> issues
+    ) {
+        Optional<StripeRefundSnapshot> current = fetchStripeRefund(refund.providerRefundId());
+        if (current.isEmpty()) {
+            if (refund.status() == RefundStatus.SUCCEEDED) {
+                issues.add(issue(
+                        ReconciliationIssueCode.PROVIDER_REFUND_STATE_MISMATCH,
+                        REFUND_RESOURCE,
+                        refund.id().toString(),
+                        "Succeeded refund is missing at provider: provider=" + providerCode
+                                + " providerRefundId=" + refund.providerRefundId()
+                ));
+            }
+            return;
+        }
+
+        StripeRefundSnapshot currentState = current.get();
+        if (currentState.isSucceeded() && refund.status() != RefundStatus.SUCCEEDED) {
+            issues.add(issue(
+                    ReconciliationIssueCode.PROVIDER_REFUND_STATE_MISMATCH,
+                    REFUND_RESOURCE,
+                    refund.id().toString(),
+                    "Provider refund succeeded but local refund is not succeeded: provider=" + providerCode
+                            + " providerRefundId=" + refund.providerRefundId()
+            ));
+        }
+        if (refund.status() == RefundStatus.SUCCEEDED && !currentState.isSucceeded()) {
+            issues.add(issue(
+                    ReconciliationIssueCode.PROVIDER_REFUND_STATE_MISMATCH,
+                    REFUND_RESOURCE,
+                    refund.id().toString(),
+                    "Local refund succeeded but provider refund is not succeeded: provider=" + providerCode
+                            + " providerRefundId=" + refund.providerRefundId()
+                            + " providerStatus=" + currentState.status()
+            ));
+        }
+    }
+
+    private void checkProviderWebhookEvents(
+            List<ProviderWebhookReconciliationItem> webhookEvents,
+            List<PaymentReconciliationItem> payments,
+            List<RefundReconciliationItem> refunds,
+            List<ReconciliationIssue> issues
+    ) {
+        Set<ProviderReference> paymentReferences = payments.stream()
+                .filter(payment -> !isBlank(payment.providerPaymentId()))
+                .map(payment -> new ProviderReference(providerCode(payment.providerCode()), payment.providerPaymentId()))
+                .collect(Collectors.toSet());
+        Set<ProviderReference> refundReferences = refunds.stream()
+                .filter(refund -> !isBlank(refund.providerRefundId()))
+                .map(refund -> new ProviderReference(providerCode(refund.providerCode()), refund.providerRefundId()))
+                .collect(Collectors.toSet());
+
+        for (ProviderWebhookReconciliationItem event : webhookEvents) {
+            if (!isReconciliationRelevant(event) || isBlank(event.providerObjectId())) {
+                continue;
+            }
+
+            ProviderReference reference = new ProviderReference(providerCode(event.providerCode()), event.providerObjectId());
+            if (isPaymentEvent(event.eventType()) && !paymentReferences.contains(reference)) {
+                issues.add(orphanedProviderWebhookIssue(event, "payment"));
+            }
+            if (isRefundEvent(event.eventType()) && !refundReferences.contains(reference)) {
+                issues.add(orphanedProviderWebhookIssue(event, "refund"));
+            }
+        }
     }
 
     private void checkLedgerBalances(
@@ -321,6 +521,68 @@ public class ReconciliationService {
         );
     }
 
+    private ReconciliationIssue orphanedProviderWebhookIssue(
+            ProviderWebhookReconciliationItem event,
+            String resourceKind
+    ) {
+        return issue(
+                ReconciliationIssueCode.ORPHANED_PROVIDER_WEBHOOK_EVENT,
+                PROVIDER_WEBHOOK_EVENT_RESOURCE,
+                event.id().toString(),
+                "Provider webhook references a missing internal " + resourceKind
+                        + ": provider=" + providerLabel(event.providerCode())
+                        + " providerObjectId=" + event.providerObjectId()
+        );
+    }
+
+    private Optional<StripePaymentIntentSnapshot> fetchStripePaymentIntent(String providerPaymentId) {
+        StripeProviderReadPort readPort = stripeProviderReadPort.getIfAvailable();
+        if (readPort == null) {
+            return Optional.empty();
+        }
+        return readPort.fetchPaymentIntent(providerPaymentId);
+    }
+
+    private Optional<StripeRefundSnapshot> fetchStripeRefund(String providerRefundId) {
+        StripeProviderReadPort readPort = stripeProviderReadPort.getIfAvailable();
+        if (readPort == null) {
+            return Optional.empty();
+        }
+        return readPort.fetchRefund(providerRefundId);
+    }
+
+    private boolean isSupportedProvider(String providerCode) {
+        return FAKE_PROVIDER.equals(providerCode) || STRIPE_PROVIDER.equals(providerCode);
+    }
+
+    private boolean isReconciliationRelevant(ProviderWebhookReconciliationItem event) {
+        return event.processingStatus() == ProviderWebhookProcessingStatus.PROCESSED
+                || event.processingStatus() == ProviderWebhookProcessingStatus.RECONCILIATION_REQUIRED;
+    }
+
+    private boolean isPaymentEvent(ProviderWebhookEventType eventType) {
+        return eventType == ProviderWebhookEventType.PAYMENT_SUCCEEDED
+                || eventType == ProviderWebhookEventType.PAYMENT_FAILED;
+    }
+
+    private boolean isRefundEvent(ProviderWebhookEventType eventType) {
+        return eventType == ProviderWebhookEventType.REFUND_SUCCEEDED
+                || eventType == ProviderWebhookEventType.REFUND_FAILED;
+    }
+
+    private static String providerCode(String providerCode) {
+        return providerCode == null ? "" : providerCode.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private static String providerLabel(String providerCode) {
+        String normalizedProviderCode = providerCode(providerCode);
+        return normalizedProviderCode.isBlank() ? "missing" : normalizedProviderCode;
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
+    }
+
     private ReconciliationIssue issue(
             ReconciliationIssueCode code,
             String resourceType,
@@ -356,6 +618,14 @@ public class ReconciliationService {
     }
 
     private record ExpectedEntry(String accountCode, LedgerEntryDirection direction) {
+    }
+
+    private record ProviderReference(String providerCode, String providerObjectId) {
+
+        private ProviderReference {
+            providerCode = ReconciliationService.providerCode(providerCode);
+            providerObjectId = providerObjectId == null ? "" : providerObjectId.trim();
+        }
     }
 
     private record LedgerReference(

@@ -10,9 +10,13 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.transaction.support.TransactionTemplate;
 
+import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -32,6 +36,15 @@ class PaymentIdempotencyServiceTest {
 
     @Autowired
     private PaymentIdempotencyRecordRepository repository;
+
+    @Autowired
+    private PaymentIdempotencyRecoveryPort recoveryPort;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private TransactionTemplate transactionTemplate;
 
     @Autowired
     private UserRepo userRepo;
@@ -181,6 +194,57 @@ class PaymentIdempotencyServiceTest {
         assertThat(repository.findAll()).hasSize(1);
     }
 
+    @Test
+    void concurrentRecoveryWorkersDoNotClaimSameExpiredIdempotencyRecordTwice() throws Exception {
+        UserModel customer = customer("recovery-concurrent-customer@example.com");
+        PaymentIdempotencyCommand command = command(customer.getId(), "idem-key-recovery", "{\"amount\":10}");
+        PaymentIdempotencyDecision decision = service.start(command);
+        service.linkPaymentAttempt(
+                decision.recordId(),
+                UUID.randomUUID(),
+                "stripe",
+                "payment:stripe:concurrent-recovery"
+        );
+        jdbcTemplate.update(
+                """
+                        update payment_idempotency_record
+                        set in_progress_expires_at = now() - interval '1 minute'
+                        where id = ?
+                        """,
+                decision.recordId()
+        );
+
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        CountDownLatch firstWorkerClaimed = new CountDownLatch(1);
+        CountDownLatch releaseFirstWorker = new CountDownLatch(1);
+
+        Callable<List<Long>> firstWorker = () -> transactionTemplate.execute(status -> {
+            List<Long> claimed = claimExpiredIds();
+            firstWorkerClaimed.countDown();
+            await(releaseFirstWorker);
+            return claimed;
+        });
+        Callable<List<Long>> secondWorker = () -> {
+            await(firstWorkerClaimed);
+            return transactionTemplate.execute(status -> claimExpiredIds());
+        };
+
+        try {
+            Future<List<Long>> first = executor.submit(firstWorker);
+            Future<List<Long>> second = executor.submit(secondWorker);
+
+            List<Long> secondClaim = second.get(5, TimeUnit.SECONDS);
+            releaseFirstWorker.countDown();
+            List<Long> firstClaim = first.get(5, TimeUnit.SECONDS);
+
+            assertThat(firstClaim).containsExactly(decision.recordId());
+            assertThat(secondClaim).isEmpty();
+        } finally {
+            releaseFirstWorker.countDown();
+            executor.shutdownNow();
+        }
+    }
+
     private PaymentIdempotencyCommand command(long customerId, String idempotencyKey, String body) {
         return new PaymentIdempotencyCommand(
                 customerId,
@@ -189,6 +253,23 @@ class PaymentIdempotencyServiceTest {
                 idempotencyKey,
                 body
         );
+    }
+
+    private List<Long> claimExpiredIds() {
+        return recoveryPort.claimExpired(OffsetDateTime.now(), 1).stream()
+                .map(PaymentIdempotencyRecoveryEntry::recordId)
+                .toList();
+    }
+
+    private void await(CountDownLatch latch) {
+        try {
+            if (!latch.await(5, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("Timed out waiting for recovery concurrency test latch");
+            }
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while waiting for recovery concurrency test latch", exception);
+        }
     }
 
     private UserModel customer(String username) {

@@ -20,7 +20,9 @@ public interface PaymentRecordRepository extends JpaRepository<PaymentRecord, UU
                 payment.id,
                 payment.amount,
                 payment.currency,
-                payment.status
+                payment.status,
+                payment.providerCode,
+                payment.providerPaymentId
             )
             from PaymentRecord payment
             """)

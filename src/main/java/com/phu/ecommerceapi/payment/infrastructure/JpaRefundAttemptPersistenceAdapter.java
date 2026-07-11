@@ -118,6 +118,12 @@ public class JpaRefundAttemptPersistenceAdapter implements RefundAttemptPersiste
     }
 
     @Override
+    public Optional<RefundAttemptView> findAttempt(UUID refundId) {
+        return refundRepository.findWithPaymentById(refundId)
+                .map(this::toView);
+    }
+
+    @Override
     public Optional<RefundWebhookAttempt> findForProviderWebhook(
             String providerCode,
             UUID refundId,

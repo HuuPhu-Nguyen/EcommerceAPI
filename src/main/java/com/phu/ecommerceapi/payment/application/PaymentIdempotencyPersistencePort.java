@@ -9,7 +9,8 @@ public interface PaymentIdempotencyPersistencePort {
     PaymentIdempotencyReservation reserve(
             PaymentIdempotencyCommand command,
             String requestHash,
-            OffsetDateTime createdAt
+            OffsetDateTime createdAt,
+            OffsetDateTime inProgressExpiresAt
     );
 
     Optional<PaymentIdempotencyEntry> find(PaymentIdempotencyCommand command, String requestHash);

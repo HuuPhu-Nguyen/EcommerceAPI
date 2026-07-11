@@ -3,10 +3,12 @@ package com.phu.ecommerceapi.reconciliation.infrastructure;
 import com.phu.ecommerceapi.ledger.infrastructure.LedgerEntryRepository;
 import com.phu.ecommerceapi.ledger.infrastructure.LedgerTransactionRepository;
 import com.phu.ecommerceapi.payment.infrastructure.PaymentRecordRepository;
+import com.phu.ecommerceapi.payment.infrastructure.ProviderWebhookEventRepository;
 import com.phu.ecommerceapi.payment.infrastructure.RefundRecordRepository;
 import com.phu.ecommerceapi.reconciliation.application.LedgerEntryReconciliationItem;
 import com.phu.ecommerceapi.reconciliation.application.LedgerTransactionReconciliationItem;
 import com.phu.ecommerceapi.reconciliation.application.PaymentReconciliationItem;
+import com.phu.ecommerceapi.reconciliation.application.ProviderWebhookReconciliationItem;
 import com.phu.ecommerceapi.reconciliation.application.ReconciliationReadPort;
 import com.phu.ecommerceapi.reconciliation.application.RefundReconciliationItem;
 import org.springframework.stereotype.Component;
@@ -18,17 +20,20 @@ public class JpaReconciliationReadAdapter implements ReconciliationReadPort {
 
     private final PaymentRecordRepository paymentRecordRepository;
     private final RefundRecordRepository refundRecordRepository;
+    private final ProviderWebhookEventRepository providerWebhookEventRepository;
     private final LedgerTransactionRepository ledgerTransactionRepository;
     private final LedgerEntryRepository ledgerEntryRepository;
 
     public JpaReconciliationReadAdapter(
             PaymentRecordRepository paymentRecordRepository,
             RefundRecordRepository refundRecordRepository,
+            ProviderWebhookEventRepository providerWebhookEventRepository,
             LedgerTransactionRepository ledgerTransactionRepository,
             LedgerEntryRepository ledgerEntryRepository
     ) {
         this.paymentRecordRepository = paymentRecordRepository;
         this.refundRecordRepository = refundRecordRepository;
+        this.providerWebhookEventRepository = providerWebhookEventRepository;
         this.ledgerTransactionRepository = ledgerTransactionRepository;
         this.ledgerEntryRepository = ledgerEntryRepository;
     }
@@ -41,6 +46,11 @@ public class JpaReconciliationReadAdapter implements ReconciliationReadPort {
     @Override
     public List<RefundReconciliationItem> findRefunds() {
         return refundRecordRepository.findAllForReconciliation();
+    }
+
+    @Override
+    public List<ProviderWebhookReconciliationItem> findProviderWebhookEvents() {
+        return providerWebhookEventRepository.findAllForReconciliation();
     }
 
     @Override

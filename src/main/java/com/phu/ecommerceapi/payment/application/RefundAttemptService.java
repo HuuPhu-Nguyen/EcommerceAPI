@@ -9,6 +9,7 @@ import com.phu.ecommerceapi.shared.observability.BusinessMetrics;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -86,7 +87,7 @@ public class RefundAttemptService {
             recordAudit(actor, "REFUND_FAILED", update.attempt());
         }
 
-        businessMetrics.refundOutcome(update.attempt().status().name());
+        businessMetrics.refundOutcome(update.attempt().providerCode(), update.attempt().status().name());
         return toResponse(update.attempt());
     }
 
@@ -96,7 +97,7 @@ public class RefundAttemptService {
         if (update.transitioned()) {
             recordAudit(actor, "REFUND_PROVIDER_TIMEOUT", update.attempt());
         }
-        businessMetrics.refundOutcome(update.attempt().status().name());
+        businessMetrics.refundOutcome(update.attempt().providerCode(), update.attempt().status().name());
         return toResponse(update.attempt());
     }
 
@@ -118,7 +119,13 @@ public class RefundAttemptService {
                         message
                 )
         ));
-        businessMetrics.refundOutcome("PROVIDER_UNAVAILABLE");
+        businessMetrics.refundOutcome(providerCode, "PROVIDER_UNAVAILABLE");
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<RefundAttemptResponse> findAttemptResponse(UUID refundId) {
+        return refundAttempts.findAttempt(refundId)
+                .map(this::toResponse);
     }
 
     private boolean isSuccessful(PaymentRefundProviderResult providerResult) {

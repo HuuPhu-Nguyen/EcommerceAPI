@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Optional;
 
 public interface PaymentIdempotencyRecordRepository extends JpaRepository<PaymentIdempotencyRecord, Long> {
@@ -26,6 +27,8 @@ public interface PaymentIdempotencyRecordRepository extends JpaRepository<Paymen
                 idempotency_key,
                 request_hash,
                 status,
+                in_progress_expires_at,
+                recovery_status,
                 created_at,
                 version
             )
@@ -36,6 +39,8 @@ public interface PaymentIdempotencyRecordRepository extends JpaRepository<Paymen
                 :idempotencyKey,
                 :requestHash,
                 'IN_PROGRESS',
+                :inProgressExpiresAt,
+                'NOT_REQUIRED',
                 :createdAt,
                 0
             )
@@ -47,6 +52,24 @@ public interface PaymentIdempotencyRecordRepository extends JpaRepository<Paymen
             @Param("operation") String operation,
             @Param("idempotencyKey") String idempotencyKey,
             @Param("requestHash") String requestHash,
+            @Param("inProgressExpiresAt") OffsetDateTime inProgressExpiresAt,
             @Param("createdAt") OffsetDateTime createdAt
+    );
+
+    @Query(value = """
+            select *
+            from payment_idempotency_record
+            where status = 'IN_PROGRESS'
+              and in_progress_expires_at is not null
+              and in_progress_expires_at <= :now
+              and resource_type is not null
+              and (recovery_status is null or recovery_status = 'NOT_REQUIRED')
+            order by id
+            for update skip locked
+            limit :limit
+            """, nativeQuery = true)
+    List<PaymentIdempotencyRecord> findExpiredForRecovery(
+            @Param("now") OffsetDateTime now,
+            @Param("limit") int limit
     );
 }

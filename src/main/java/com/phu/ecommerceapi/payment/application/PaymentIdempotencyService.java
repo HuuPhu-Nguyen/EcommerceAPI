@@ -2,6 +2,7 @@ package com.phu.ecommerceapi.payment.application;
 
 import com.phu.ecommerceapi.shared.api.ConflictException;
 import com.phu.ecommerceapi.shared.observability.BusinessMetrics;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,19 +19,28 @@ public class PaymentIdempotencyService {
 
     private final PaymentIdempotencyPersistencePort persistencePort;
     private final BusinessMetrics businessMetrics;
+    private final long inProgressLeaseSeconds;
 
     public PaymentIdempotencyService(
             PaymentIdempotencyPersistencePort persistencePort,
-            BusinessMetrics businessMetrics
+            BusinessMetrics businessMetrics,
+            @Value("${app.payment.idempotency.in-progress-lease-seconds:300}") long inProgressLeaseSeconds
     ) {
         this.persistencePort = persistencePort;
         this.businessMetrics = businessMetrics;
+        this.inProgressLeaseSeconds = Math.max(1, inProgressLeaseSeconds);
     }
 
     @Transactional
     public PaymentIdempotencyDecision start(PaymentIdempotencyCommand command) {
         String requestHash = hash(command.requestBody());
-        PaymentIdempotencyReservation reservation = persistencePort.reserve(command, requestHash, OffsetDateTime.now());
+        OffsetDateTime now = OffsetDateTime.now();
+        PaymentIdempotencyReservation reservation = persistencePort.reserve(
+                command,
+                requestHash,
+                now,
+                now.plusSeconds(inProgressLeaseSeconds)
+        );
         PaymentIdempotencyEntry entry = reservation.entry();
 
         if (reservation.started()) {

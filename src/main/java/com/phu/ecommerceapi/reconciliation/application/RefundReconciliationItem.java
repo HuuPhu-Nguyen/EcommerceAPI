@@ -10,6 +10,8 @@ public record RefundReconciliationItem(
         UUID paymentId,
         BigDecimal amount,
         String currency,
-        RefundStatus status
+        RefundStatus status,
+        String providerCode,
+        String providerRefundId
 ) {
 }

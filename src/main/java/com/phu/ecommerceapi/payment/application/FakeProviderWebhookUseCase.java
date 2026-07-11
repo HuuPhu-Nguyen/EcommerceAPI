@@ -6,6 +6,7 @@ import com.phu.ecommerceapi.config.AppProperties;
 import com.phu.ecommerceapi.payment.domain.PaymentStatus;
 import com.phu.ecommerceapi.payment.domain.ProviderWebhookProcessingStatus;
 import com.phu.ecommerceapi.payment.domain.RefundStatus;
+import com.phu.ecommerceapi.shared.observability.BusinessMetrics;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,6 +31,7 @@ public class FakeProviderWebhookUseCase implements ProviderWebhookHandler {
     private final PaymentAttemptService paymentAttemptService;
     private final RefundAttemptService refundAttemptService;
     private final AuditEventRecorder auditEventRecorder;
+    private final BusinessMetrics businessMetrics;
 
     public FakeProviderWebhookUseCase(
             AppProperties appProperties,
@@ -38,7 +40,8 @@ public class FakeProviderWebhookUseCase implements ProviderWebhookHandler {
             RefundAttemptPersistencePort refundAttemptPersistence,
             PaymentAttemptService paymentAttemptService,
             RefundAttemptService refundAttemptService,
-            AuditEventRecorder auditEventRecorder
+            AuditEventRecorder auditEventRecorder,
+            BusinessMetrics businessMetrics
     ) {
         this.appProperties = appProperties;
         this.webhookPersistence = webhookPersistence;
@@ -47,6 +50,7 @@ public class FakeProviderWebhookUseCase implements ProviderWebhookHandler {
         this.paymentAttemptService = paymentAttemptService;
         this.refundAttemptService = refundAttemptService;
         this.auditEventRecorder = auditEventRecorder;
+        this.businessMetrics = businessMetrics;
     }
 
     @Override
@@ -61,6 +65,7 @@ public class FakeProviderWebhookUseCase implements ProviderWebhookHandler {
         ProviderWebhookRegistration registration = registerEvent(command, payloadHash);
         if (!registration.payloadMatched()) {
             recordAudit(command, "PROVIDER_WEBHOOK_PAYLOAD_CONFLICT", "REJECTED", "payload hash mismatch");
+            businessMetrics.providerWebhook(PROVIDER_CODE, ProviderWebhookProcessingStatus.REJECTED.name());
             return new ProviderWebhookResult(
                     HttpStatus.CONFLICT.value(),
                     new ProviderWebhookHandlingResponse(
@@ -197,6 +202,7 @@ public class FakeProviderWebhookUseCase implements ProviderWebhookHandler {
     }
 
     private ProviderWebhookResult duplicateResponse(ProviderWebhookEventView event) {
+        businessMetrics.providerWebhook(PROVIDER_CODE, "DUPLICATE");
         ProviderWebhookHandlingResponse response = new ProviderWebhookHandlingResponse(
                 event.providerEventId(),
                 "DUPLICATE",
@@ -218,6 +224,7 @@ public class FakeProviderWebhookUseCase implements ProviderWebhookHandler {
     }
 
     private ProviderWebhookResult response(HttpStatus httpStatus, ProviderWebhookEventView event) {
+        businessMetrics.providerWebhook(PROVIDER_CODE, event.processingStatus().name());
         ProviderWebhookHandlingResponse response = new ProviderWebhookHandlingResponse(
                 event.providerEventId(),
                 event.processingStatus().name(),
@@ -233,6 +240,7 @@ public class FakeProviderWebhookUseCase implements ProviderWebhookHandler {
 
     private ProviderWebhookResult invalidSecretResponse(ProviderWebhookCommand command) {
         recordAudit(command, "PROVIDER_WEBHOOK_AUTH_FAILED", "REJECTED", "invalid fake provider webhook secret");
+        businessMetrics.providerWebhook(PROVIDER_CODE, ProviderWebhookProcessingStatus.REJECTED.name());
         return new ProviderWebhookResult(
                 HttpStatus.FORBIDDEN.value(),
                 new ProviderWebhookHandlingResponse(

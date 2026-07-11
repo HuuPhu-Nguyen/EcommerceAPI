@@ -5,6 +5,7 @@ import com.phu.ecommerceapi.audit.application.AuditEventRecorder;
 import com.phu.ecommerceapi.payment.domain.PaymentStatus;
 import com.phu.ecommerceapi.payment.domain.ProviderWebhookProcessingStatus;
 import com.phu.ecommerceapi.payment.domain.RefundStatus;
+import com.phu.ecommerceapi.shared.observability.BusinessMetrics;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -32,6 +33,7 @@ public class StripeProviderWebhookUseCase {
     private final PaymentAttemptService paymentAttemptService;
     private final RefundAttemptService refundAttemptService;
     private final AuditEventRecorder auditEventRecorder;
+    private final BusinessMetrics businessMetrics;
 
     public StripeProviderWebhookUseCase(
             StripeWebhookEventParser stripeWebhookEventParser,
@@ -41,7 +43,8 @@ public class StripeProviderWebhookUseCase {
             RefundAttemptPersistencePort refundAttemptPersistence,
             PaymentAttemptService paymentAttemptService,
             RefundAttemptService refundAttemptService,
-            AuditEventRecorder auditEventRecorder
+            AuditEventRecorder auditEventRecorder,
+            BusinessMetrics businessMetrics
     ) {
         this.stripeWebhookEventParser = stripeWebhookEventParser;
         this.stripeProviderReadPort = stripeProviderReadPort;
@@ -51,6 +54,7 @@ public class StripeProviderWebhookUseCase {
         this.paymentAttemptService = paymentAttemptService;
         this.refundAttemptService = refundAttemptService;
         this.auditEventRecorder = auditEventRecorder;
+        this.businessMetrics = businessMetrics;
     }
 
     @Transactional
@@ -76,6 +80,7 @@ public class StripeProviderWebhookUseCase {
                     "REJECTED",
                     "payload hash mismatch"
             );
+            businessMetrics.providerWebhook(PROVIDER_CODE, ProviderWebhookProcessingStatus.REJECTED.name());
             return new ProviderWebhookResult(
                     HttpStatus.CONFLICT.value(),
                     new ProviderWebhookHandlingResponse(
@@ -374,6 +379,7 @@ public class StripeProviderWebhookUseCase {
     }
 
     private ProviderWebhookResult duplicateResponse(ProviderWebhookEventView event) {
+        businessMetrics.providerWebhook(PROVIDER_CODE, "DUPLICATE");
         ProviderWebhookHandlingResponse response = new ProviderWebhookHandlingResponse(
                 event.providerEventId(),
                 "DUPLICATE",
@@ -411,6 +417,7 @@ public class StripeProviderWebhookUseCase {
                 ProviderWebhookProcessingStatus.REJECTED.name(),
                 message
         );
+        businessMetrics.providerWebhook(PROVIDER_CODE, ProviderWebhookProcessingStatus.REJECTED.name());
         return new ProviderWebhookResult(
                 HttpStatus.FORBIDDEN.value(),
                 new ProviderWebhookHandlingResponse(
@@ -422,6 +429,7 @@ public class StripeProviderWebhookUseCase {
     }
 
     private ProviderWebhookResult response(HttpStatus httpStatus, ProviderWebhookEventView event) {
+        businessMetrics.providerWebhook(PROVIDER_CODE, event.processingStatus().name());
         ProviderWebhookHandlingResponse response = new ProviderWebhookHandlingResponse(
                 event.providerEventId(),
                 event.processingStatus().name(),

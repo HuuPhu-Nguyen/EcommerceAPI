@@ -8,6 +8,8 @@ public interface ReconciliationReadPort {
 
     List<RefundReconciliationItem> findRefunds();
 
+    List<ProviderWebhookReconciliationItem> findProviderWebhookEvents();
+
     List<LedgerTransactionReconciliationItem> findLedgerTransactions();
 
     List<LedgerEntryReconciliationItem> findLedgerEntries();

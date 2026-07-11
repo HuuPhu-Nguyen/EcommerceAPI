@@ -5,8 +5,10 @@ import com.phu.ecommerceapi.payment.application.PaymentProvider;
 import com.phu.ecommerceapi.payment.application.PaymentProviderCapabilities;
 import com.phu.ecommerceapi.payment.application.PaymentProviderRequest;
 import com.phu.ecommerceapi.payment.application.PaymentProviderResult;
+import com.phu.ecommerceapi.payment.application.PaymentProviderTimeoutException;
 import com.phu.ecommerceapi.payment.application.PaymentRefundProviderRequest;
 import com.phu.ecommerceapi.payment.application.PaymentRefundProviderResult;
+import com.phu.ecommerceapi.shared.observability.BusinessMetrics;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
 
@@ -28,13 +30,16 @@ public class StripePaymentProvider implements PaymentProvider {
 
     private final ObjectProvider<StripePaymentGateway> stripeGateway;
     private final AppProperties appProperties;
+    private final BusinessMetrics businessMetrics;
 
     public StripePaymentProvider(
             ObjectProvider<StripePaymentGateway> stripeGateway,
-            AppProperties appProperties
+            AppProperties appProperties,
+            BusinessMetrics businessMetrics
     ) {
         this.stripeGateway = stripeGateway;
         this.appProperties = appProperties;
+        this.businessMetrics = businessMetrics;
     }
 
     @Override
@@ -69,7 +74,11 @@ public class StripePaymentProvider implements PaymentProvider {
                     stripeMetadata(request)
             ));
             return mapPaymentIntentResult(result);
+        } catch (PaymentProviderTimeoutException exception) {
+            businessMetrics.stripeProviderOperation("payment", "timeout");
+            throw exception;
         } catch (StripePaymentGatewayException exception) {
+            businessMetrics.stripeProviderOperation("payment", "error");
             return PaymentProviderResult.failed(
                     fallbackProviderPaymentId(request.paymentId()),
                     exception.failureCode(),
@@ -91,7 +100,11 @@ public class StripePaymentProvider implements PaymentProvider {
                     stripeRefundMetadata(request)
             ));
             return mapRefundResult(result);
+        } catch (PaymentProviderTimeoutException exception) {
+            businessMetrics.stripeProviderOperation("refund", "timeout");
+            throw exception;
         } catch (StripePaymentGatewayException exception) {
+            businessMetrics.stripeProviderOperation("refund", "error");
             return PaymentRefundProviderResult.failed(
                     fallbackProviderRefundId(request.refundId()),
                     exception.failureCode(),

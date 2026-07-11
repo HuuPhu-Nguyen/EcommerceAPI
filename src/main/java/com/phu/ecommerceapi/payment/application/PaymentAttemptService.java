@@ -101,7 +101,7 @@ public class PaymentAttemptService {
             recordAudit(actor, "PAYMENT_FAILED", update.attempt());
         }
 
-        businessMetrics.paymentOutcome(update.attempt().status().name());
+        businessMetrics.paymentOutcome(update.attempt().providerCode(), update.attempt().status().name());
         return toResponse(update.attempt());
     }
 
@@ -111,7 +111,7 @@ public class PaymentAttemptService {
         if (update.transitioned()) {
             recordAudit(actor, "PAYMENT_PROVIDER_TIMEOUT", update.attempt());
         }
-        businessMetrics.paymentOutcome(update.attempt().status().name());
+        businessMetrics.paymentOutcome(update.attempt().providerCode(), update.attempt().status().name());
         return toResponse(update.attempt());
     }
 

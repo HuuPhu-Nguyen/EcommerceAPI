@@ -209,6 +209,29 @@ public class PaymentIdempotencyRecord {
         this.completedAt = OffsetDateTime.now();
     }
 
+    public void markRecoveryAttempt(OffsetDateTime attemptedAt) {
+        this.lastRecoveryAttemptAt = Objects.requireNonNull(attemptedAt, "recovery attempt timestamp is required");
+        if (this.recoveryStatus == null) {
+            this.recoveryStatus = "NOT_REQUIRED";
+        }
+    }
+
+    public void completeRecovered(int responseStatus, String responseBody, OffsetDateTime recoveredAt) {
+        complete(responseStatus, responseBody);
+        this.recoveryStatus = "RECOVERED";
+        this.lastRecoveryAttemptAt = Objects.requireNonNull(recoveredAt, "recovery timestamp is required");
+    }
+
+    public void markPendingReconciliation(OffsetDateTime attemptedAt) {
+        this.recoveryStatus = "PENDING_RECONCILIATION";
+        this.lastRecoveryAttemptAt = Objects.requireNonNull(attemptedAt, "recovery attempt timestamp is required");
+    }
+
+    public void markManualReview(OffsetDateTime attemptedAt) {
+        this.recoveryStatus = "MANUAL_REVIEW";
+        this.lastRecoveryAttemptAt = Objects.requireNonNull(attemptedAt, "recovery attempt timestamp is required");
+    }
+
     private String requireText(String value, String fieldName) {
         if (value == null || value.isBlank()) {
             throw new IllegalArgumentException(fieldName + " is required");
