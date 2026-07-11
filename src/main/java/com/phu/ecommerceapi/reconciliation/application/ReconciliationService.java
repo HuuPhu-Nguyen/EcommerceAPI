@@ -12,7 +12,6 @@ import com.phu.ecommerceapi.payment.domain.PaymentStatus;
 import com.phu.ecommerceapi.payment.domain.RefundStatus;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -59,7 +58,6 @@ public class ReconciliationService {
         this.paymentIdempotencyRecoveryService = paymentIdempotencyRecoveryService;
     }
 
-    @Transactional
     public ReconciliationReport runReport() {
         paymentIdempotencyRecoveryService.recoverExpired();
 

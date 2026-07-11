@@ -13,6 +13,7 @@ import com.phu.ecommerceapi.payment.domain.RefundStatus;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.transaction.annotation.Transactional;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -46,6 +47,12 @@ class ReconciliationServiceTest {
 
     @InjectMocks
     private ReconciliationService reconciliationService;
+
+    @Test
+    void runReportDoesNotOpenBroadTransactionAroundProviderReads() throws NoSuchMethodException {
+        assertThat(ReconciliationService.class.getMethod("runReport").isAnnotationPresent(Transactional.class))
+                .isFalse();
+    }
 
     @Test
     void healthyReportWhenPaymentsRefundsAndLedgerEntriesMatch() {
