@@ -19,6 +19,12 @@ import org.springframework.test.context.ActiveProfiles;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -80,6 +86,26 @@ class LedgerPostingServiceTest {
     }
 
     @Test
+    void concurrentPaymentPostingReturnsSameTransactionWithoutDuplicateEntries() throws Exception {
+        assertConcurrentPost(
+                LedgerTransactionType.PAYMENT_CAPTURE,
+                "PAYMENT",
+                "Concurrent payment capture test",
+                paymentEntries(new BigDecimal("18.00"))
+        );
+    }
+
+    @Test
+    void concurrentRefundPostingReturnsSameTransactionWithoutDuplicateEntries() throws Exception {
+        assertConcurrentPost(
+                LedgerTransactionType.REFUND,
+                "REFUND",
+                "Concurrent refund test",
+                refundEntries(new BigDecimal("18.00"))
+        );
+    }
+
+    @Test
     void unbalancedLedgerTransactionIsRejected() {
         String referenceId = UUID.randomUUID().toString();
 
@@ -137,19 +163,83 @@ class LedgerPostingServiceTest {
                 "PAYMENT",
                 referenceId,
                 "Balanced payment test",
-                List.of(
-                        new LedgerEntryDraft(
-                                JpaPaymentLedgerPostingAdapter.PROVIDER_CLEARING_ACCOUNT,
-                                LedgerEntryDirection.DEBIT,
-                                paymentAmount,
-                                "USD"
-                        ),
-                        new LedgerEntryDraft(
-                                JpaPaymentLedgerPostingAdapter.ORDER_REVENUE_ACCOUNT,
-                                LedgerEntryDirection.CREDIT,
-                                paymentAmount,
-                                "USD"
-                        )
+                paymentEntries(paymentAmount)
+        );
+    }
+
+    private void assertConcurrentPost(
+            LedgerTransactionType transactionType,
+            String referenceType,
+            String description,
+            List<LedgerEntryDraft> entries
+    ) throws Exception {
+        String referenceId = UUID.randomUUID().toString();
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+
+        Callable<UUID> postAttempt = () -> {
+            ready.countDown();
+            await(start);
+            return ledgerPostingService.postTransaction(
+                    transactionType,
+                    referenceType,
+                    referenceId,
+                    description,
+                    entries
+            );
+        };
+
+        try {
+            Future<UUID> first = executor.submit(postAttempt);
+            Future<UUID> second = executor.submit(postAttempt);
+
+            assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+
+            List<UUID> transactionIds = List.of(
+                    first.get(5, TimeUnit.SECONDS),
+                    second.get(5, TimeUnit.SECONDS)
+            );
+            assertThat(transactionIds).containsOnly(transactionIds.getFirst());
+            assertThat(transactionRepository.findAll()).hasSize(1);
+            assertThat(entryRepository.findAll()).hasSize(2);
+            assertThat(entryRepository.findByTransactionId(transactionIds.getFirst())).hasSize(2);
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    private List<LedgerEntryDraft> paymentEntries(BigDecimal amount) {
+        return List.of(
+                new LedgerEntryDraft(
+                        JpaPaymentLedgerPostingAdapter.PROVIDER_CLEARING_ACCOUNT,
+                        LedgerEntryDirection.DEBIT,
+                        amount,
+                        "USD"
+                ),
+                new LedgerEntryDraft(
+                        JpaPaymentLedgerPostingAdapter.ORDER_REVENUE_ACCOUNT,
+                        LedgerEntryDirection.CREDIT,
+                        amount,
+                        "USD"
+                )
+        );
+    }
+
+    private List<LedgerEntryDraft> refundEntries(BigDecimal amount) {
+        return List.of(
+                new LedgerEntryDraft(
+                        JpaPaymentLedgerPostingAdapter.ORDER_REVENUE_ACCOUNT,
+                        LedgerEntryDirection.DEBIT,
+                        amount,
+                        "USD"
+                ),
+                new LedgerEntryDraft(
+                        JpaPaymentLedgerPostingAdapter.PROVIDER_CLEARING_ACCOUNT,
+                        LedgerEntryDirection.CREDIT,
+                        amount,
+                        "USD"
                 )
         );
     }
@@ -163,5 +253,11 @@ class LedgerPostingServiceTest {
 
     private void truncateLedger() {
         jdbcTemplate.execute("TRUNCATE TABLE ledger_entry, ledger_transaction RESTART IDENTITY");
+    }
+
+    private void await(CountDownLatch latch) throws InterruptedException {
+        if (!latch.await(5, TimeUnit.SECONDS)) {
+            throw new IllegalStateException("Concurrent ledger posting test did not start");
+        }
     }
 }
