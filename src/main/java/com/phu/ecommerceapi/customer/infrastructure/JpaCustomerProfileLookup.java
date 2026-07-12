@@ -3,8 +3,11 @@ package com.phu.ecommerceapi.customer.infrastructure;
 import com.phu.ecommerceapi.User.UserModel;
 import com.phu.ecommerceapi.User.UserRepo;
 import com.phu.ecommerceapi.customer.application.CustomerProfile;
+import com.phu.ecommerceapi.customer.application.CustomerProfilePage;
 import com.phu.ecommerceapi.customer.application.CustomerProfileLookup;
 import com.phu.ecommerceapi.identity.application.CurrentUser;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -27,11 +30,19 @@ public class JpaCustomerProfileLookup implements CustomerProfileLookup {
     }
 
     @Override
-    public List<CustomerProfile> findAllProfiles() {
-        return userRepo.findAll()
+    public CustomerProfilePage findProfiles(int page, int size) {
+        Page<UserModel> users = userRepo.findAllByOrderByIdAsc(PageRequest.of(page, size));
+        List<CustomerProfile> profiles = users.getContent()
                 .stream()
                 .map(this::toCustomerProfile)
                 .toList();
+        return new CustomerProfilePage(
+                profiles,
+                users.getNumber(),
+                users.getSize(),
+                users.getTotalElements(),
+                users.getTotalPages()
+        );
     }
 
     private CustomerProfile toCustomerProfile(UserModel user) {

@@ -93,6 +93,7 @@ Realm roles remain accepted intentionally so the local Keycloak realm can expres
 
 Ownership checks use the durable OAuth2 subject, not username or email claims.
 Customer profiles are created or returned by signing in through Keycloak and calling `POST /customer/profile/me`; the API does not accept anonymous password registration.
+Admin and auditor profile review uses `GET /admin/customer-profiles?page=0&size=50`; `size` is capped at 100 and the response includes `items`, `page`, `size`, `totalElements`, and `totalPages`.
 
 ## Runtime Security Controls
 

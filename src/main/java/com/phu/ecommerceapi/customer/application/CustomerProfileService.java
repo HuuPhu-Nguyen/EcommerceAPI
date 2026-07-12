@@ -4,8 +4,6 @@ import com.phu.ecommerceapi.identity.application.CurrentUser;
 import com.phu.ecommerceapi.shared.api.NotFoundException;
 import org.springframework.stereotype.Service;
 
-import java.util.List;
-
 @Service
 public class CustomerProfileService {
 
@@ -29,7 +27,7 @@ public class CustomerProfileService {
         return customerProfileProvisioningPort.provisionCurrentProfile(currentUser);
     }
 
-    public List<CustomerProfile> getAllProfiles() {
-        return customerProfileLookup.findAllProfiles();
+    public CustomerProfilePage getProfiles(int page, int size) {
+        return customerProfileLookup.findProfiles(page, size);
     }
 }

@@ -74,19 +74,59 @@ class CustomerProfileBoundaryTest {
     void adminProfileListingReturnsSafeDtos() throws Exception {
         saveCustomer();
 
-        mockMvc.perform(get("/admin/customer-profiles").with(jwt()
-                        .authorities(
-                                new SimpleGrantedAuthority("ROLE_ADMIN"),
-                                new SimpleGrantedAuthority("SCOPE_user:read")
-                        )))
+        mockMvc.perform(get("/admin/customer-profiles").with(adminJwt()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].username").value(USERNAME))
-                .andExpect(jsonPath("$[0].identitySubject").value("identity-subject-1"))
-                .andExpect(jsonPath("$[0].email").value(USERNAME))
-                .andExpect(jsonPath("$[0].password").doesNotExist())
-                .andExpect(jsonPath("$[0].phone").doesNotExist())
-                .andExpect(jsonPath("$[0].address").doesNotExist())
-                .andExpect(jsonPath("$[0].carts").doesNotExist());
+                .andExpect(jsonPath("$.items[0].username").value(USERNAME))
+                .andExpect(jsonPath("$.items[0].identitySubject").value("identity-subject-1"))
+                .andExpect(jsonPath("$.items[0].email").value(USERNAME))
+                .andExpect(jsonPath("$.items[0].password").doesNotExist())
+                .andExpect(jsonPath("$.items[0].phone").doesNotExist())
+                .andExpect(jsonPath("$.items[0].address").doesNotExist())
+                .andExpect(jsonPath("$.items[0].carts").doesNotExist())
+                .andExpect(jsonPath("$.page").value(0))
+                .andExpect(jsonPath("$.size").value(50))
+                .andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.totalPages").value(1));
+    }
+
+    @Test
+    void adminProfileListingDefaultsToAtMostFiftyProfiles() throws Exception {
+        saveCustomers(55);
+
+        mockMvc.perform(get("/admin/customer-profiles").with(adminJwt()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(50))
+                .andExpect(jsonPath("$.page").value(0))
+                .andExpect(jsonPath("$.size").value(50))
+                .andExpect(jsonPath("$.totalElements").value(55))
+                .andExpect(jsonPath("$.totalPages").value(2));
+    }
+
+    @Test
+    void adminProfileListingUsesRequestedSizeAndMetadata() throws Exception {
+        saveCustomers(3);
+
+        mockMvc.perform(get("/admin/customer-profiles")
+                        .param("size", "2")
+                        .with(adminJwt()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(2))
+                .andExpect(jsonPath("$.items[0].username").value("profile-customer-001@example.com"))
+                .andExpect(jsonPath("$.items[1].username").value("profile-customer-002@example.com"))
+                .andExpect(jsonPath("$.page").value(0))
+                .andExpect(jsonPath("$.size").value(2))
+                .andExpect(jsonPath("$.totalElements").value(3))
+                .andExpect(jsonPath("$.totalPages").value(2));
+    }
+
+    @Test
+    void adminProfileListingRejectsOversizedPage() throws Exception {
+        mockMvc.perform(get("/admin/customer-profiles")
+                        .param("size", "101")
+                        .with(adminJwt()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.detail").value("size must be between 1 and 100"));
     }
 
     @Test
@@ -177,6 +217,29 @@ class CustomerProfileBoundaryTest {
                 .address("Sensitive Address")
                 .build();
         userRepo.save(user);
+    }
+
+    private void saveCustomers(int count) {
+        for (int index = 1; index <= count; index++) {
+            userRepo.save(UserModel.builder()
+                    .username("profile-customer-%03d@example.com".formatted(index))
+                    .identitySubject("identity-subject-%03d".formatted(index))
+                    .password("encoded-password")
+                    .firstName("Profile")
+                    .lastName("Customer")
+                    .email("profile-customer-%03d@example.com".formatted(index))
+                    .phone("555-0100")
+                    .address("Sensitive Address")
+                    .build());
+        }
+    }
+
+    private RequestPostProcessor adminJwt() {
+        return jwt()
+                .authorities(
+                        new SimpleGrantedAuthority("ROLE_ADMIN"),
+                        new SimpleGrantedAuthority("SCOPE_user:read")
+                );
     }
 
     private RequestPostProcessor customerJwt(String subject, String username) {
