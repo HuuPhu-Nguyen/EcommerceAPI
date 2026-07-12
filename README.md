@@ -108,6 +108,8 @@ The API includes an application-level in-memory abuse limiter for sensitive loca
 
 Repeated requests from the same remote address receive a `429 Too Many Requests` Problem Details response with a `Retry-After` header. Provider webhook endpoints also reject oversized bodies before controller logic using `WEBHOOK_MAX_BODY_BYTES`.
 
+Every HTTP request receives an internally generated `X-Request-Id`; caller-provided `X-Request-Id` values are validated and stored only as `externalCorrelationId` for correlation. `X-Forwarded-For` is ignored unless the immediate remote address matches a CIDR in `TRUSTED_PROXY_CIDRS`; production deployments behind a reverse proxy must configure that list or rely on a platform layer that overwrites forwarding headers.
+
 For production multi-instance deployments, use Redis-backed rate limiting, an API gateway, or WAF-level throttling with trusted proxy configuration. Keep durable payment/refund idempotency records in PostgreSQL; do not move money-movement idempotency to Redis.
 
 ## Payment, Idempotency, And Ledger
@@ -139,7 +141,7 @@ Fake provider examples:
 
 ## Audit And Reconciliation
 
-Sensitive workflows write audit events with actor, action, resource, request id, IP address, user agent, timestamp, previous hash, and event hash. The audit verification endpoint recalculates the hash chain in bounded pages and reports the first broken event if tampering is detected. Verification can still take time on very large chains, but it does not load every audit event into one in-memory list.
+Sensitive workflows write audit events with actor, action, resource, internal request id, validated external correlation id, IP address, user agent, timestamp, previous hash, and event hash. The audit verification endpoint recalculates the hash chain in bounded pages and reports the first broken event if tampering is detected. Verification can still take time on very large chains, but it does not load every audit event into one in-memory list.
 
 The reconciliation report checks:
 

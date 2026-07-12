@@ -133,6 +133,7 @@ public class AuditEventController {
                 event.resourceId(),
                 event.details(),
                 event.requestId(),
+                event.externalCorrelationId(),
                 event.ipAddress(),
                 event.userAgent(),
                 event.createdAt(),

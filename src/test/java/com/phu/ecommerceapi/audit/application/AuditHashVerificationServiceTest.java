@@ -91,6 +91,7 @@ class AuditHashVerificationServiceTest {
                 "payment-" + id,
                 "amount=20.00 USD",
                 "request-" + id,
+                null,
                 "127.0.0.1",
                 "test-agent",
                 Instant.parse("2026-07-06T08:00:00Z").plusSeconds(id),

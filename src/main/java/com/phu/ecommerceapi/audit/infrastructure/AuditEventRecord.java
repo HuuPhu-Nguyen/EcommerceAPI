@@ -36,6 +36,9 @@ public class AuditEventRecord {
     @Column(nullable = false, length = 100)
     private String requestId;
 
+    @Column(length = 64)
+    private String externalCorrelationId;
+
     @Column(nullable = false, length = 100)
     private String ipAddress;
 
@@ -61,6 +64,7 @@ public class AuditEventRecord {
             String resourceId,
             String details,
             String requestId,
+            String externalCorrelationId,
             String ipAddress,
             String userAgent,
             Instant createdAt
@@ -71,6 +75,7 @@ public class AuditEventRecord {
         this.resourceId = resourceId;
         this.details = details;
         this.requestId = requestId;
+        this.externalCorrelationId = externalCorrelationId;
         this.ipAddress = ipAddress;
         this.userAgent = userAgent;
         this.createdAt = createdAt;
@@ -84,6 +89,7 @@ public class AuditEventRecord {
                 command.resourceId(),
                 command.details(),
                 metadata.requestId(),
+                metadata.externalCorrelationId(),
                 metadata.ipAddress(),
                 metadata.userAgent(),
                 createdAt
@@ -91,6 +97,7 @@ public class AuditEventRecord {
     }
 
     public AuditHashPayload toHashPayload(String previousHash) {
+        // Keep the hash payload stable for already sealed rows; external correlation is caller context.
         return new AuditHashPayload(
                 previousHash,
                 actorSubject,
@@ -136,6 +143,10 @@ public class AuditEventRecord {
 
     public String getRequestId() {
         return requestId;
+    }
+
+    public String getExternalCorrelationId() {
+        return externalCorrelationId;
     }
 
     public String getIpAddress() {

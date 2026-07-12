@@ -6,6 +6,8 @@ import com.phu.ecommerceapi.audit.application.AuditEventRecorder;
 import com.phu.ecommerceapi.audit.infrastructure.AuditEventRecord;
 import com.phu.ecommerceapi.audit.infrastructure.AuditEventRepository;
 import com.phu.ecommerceapi.inventory.infrastructure.InventoryRepository;
+import com.phu.ecommerceapi.shared.api.RequestMetadata;
+import com.phu.ecommerceapi.shared.api.RequestMetadataHolder;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -60,14 +62,45 @@ class AuditEventReadApiTest {
                         .header("User-Agent", "AuditTest/1.0")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(productJson("Audited Product", "19.99", 5, true))
-                        .with(adminJwt("product:write")))
+                        .with(adminJwt("product:write"))
+                        .with(remoteAddress("198.51.100.20")))
                 .andExpect(status().isOk());
 
         AuditEventRecord event = auditEventRepository.findAll().get(0);
         assertThat(event.getAction()).isEqualTo("PRODUCT_CREATED");
-        assertThat(event.getRequestId()).isEqualTo("audit-request-1");
-        assertThat(event.getIpAddress()).isEqualTo("203.0.113.10");
+        assertThat(event.getRequestId()).isNotEqualTo("audit-request-1");
+        assertThat(event.getExternalCorrelationId()).isEqualTo("audit-request-1");
+        assertThat(event.getIpAddress()).isEqualTo("198.51.100.20");
         assertThat(event.getUserAgent()).isEqualTo("AuditTest/1.0");
+    }
+
+    @Test
+    void auditReadApiReturnsPersistedExternalCorrelationId() throws Exception {
+        RequestMetadataHolder.set(new RequestMetadata(
+                "internal-request-1",
+                "external-correlation-1",
+                "198.51.100.20",
+                "AuditTest/1.0"
+        ));
+        try {
+            auditEventRecorder.record(new AuditEventCommand(
+                    "customer@example.com",
+                    "PII_ACCESSED",
+                    "USER",
+                    "42",
+                    "safe=value"
+            ));
+        } finally {
+            RequestMetadataHolder.clear();
+        }
+
+        mockMvc.perform(get("/audit/events")
+                        .param("limit", "10")
+                        .with(auditorJwt()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].requestId").value("internal-request-1"))
+                .andExpect(jsonPath("$[0].externalCorrelationId").value("external-correlation-1"))
+                .andExpect(jsonPath("$[0].ipAddress").value("198.51.100.20"));
     }
 
     @Test
@@ -141,6 +174,13 @@ class AuditEventReadApiTest {
                         new SimpleGrantedAuthority("ROLE_CUSTOMER"),
                         new SimpleGrantedAuthority("SCOPE_audit:read")
                 );
+    }
+
+    private RequestPostProcessor remoteAddress(String remoteAddress) {
+        return request -> {
+            request.setRemoteAddr(remoteAddress);
+            return request;
+        };
     }
 
     private String productJson(String name, String price, int stock, boolean active) {

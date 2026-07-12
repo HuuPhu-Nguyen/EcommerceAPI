@@ -10,6 +10,7 @@ public record AuditEventView(
         String resourceId,
         String details,
         String requestId,
+        String externalCorrelationId,
         String ipAddress,
         String userAgent,
         Instant createdAt,

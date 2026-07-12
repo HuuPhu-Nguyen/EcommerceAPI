@@ -40,6 +40,7 @@ public class AuditEventQueryService {
                 event.resourceId(),
                 maskDetails(event.details()),
                 event.requestId(),
+                event.externalCorrelationId(),
                 event.ipAddress(),
                 event.userAgent(),
                 event.createdAt(),

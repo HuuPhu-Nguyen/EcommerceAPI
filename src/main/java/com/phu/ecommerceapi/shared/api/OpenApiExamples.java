@@ -175,6 +175,7 @@ public final class OpenApiExamples {
                 "resourceId": "638dc8e7-e7c5-47bf-a62f-a5728f9c19be",
                 "details": "Payment approved by fake provider",
                 "requestId": "req-7e2c1f",
+                "externalCorrelationId": "client-checkout-123",
                 "ipAddress": "203.0.113.10",
                 "userAgent": "curl/8.0",
                 "createdAt": "2026-07-07T15:30:02Z",
