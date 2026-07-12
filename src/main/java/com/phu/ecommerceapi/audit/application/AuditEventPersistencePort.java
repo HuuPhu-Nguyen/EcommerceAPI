@@ -7,7 +7,7 @@ public interface AuditEventPersistencePort {
 
     List<AuditEventView> findRecentEvents(int limit);
 
-    List<AuditEventView> findAllEventsByIdAsc();
+    List<AuditEventView> findEventsAfterId(long afterIdExclusive, int limit);
 
     String latestHashForUpdate();
 

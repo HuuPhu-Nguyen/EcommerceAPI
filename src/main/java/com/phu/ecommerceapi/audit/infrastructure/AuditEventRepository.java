@@ -9,5 +9,5 @@ public interface AuditEventRepository extends JpaRepository<AuditEventRecord, Lo
 
     List<AuditEventRecord> findAllByOrderByCreatedAtDesc(Pageable pageable);
 
-    List<AuditEventRecord> findAllByOrderByIdAsc();
+    List<AuditEventRecord> findByIdGreaterThanOrderByIdAsc(long afterIdExclusive, Pageable pageable);
 }

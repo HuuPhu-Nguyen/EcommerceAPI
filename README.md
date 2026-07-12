@@ -138,7 +138,7 @@ Fake provider examples:
 
 ## Audit And Reconciliation
 
-Sensitive workflows write audit events with actor, action, resource, request id, IP address, user agent, timestamp, previous hash, and event hash. The audit verification endpoint recalculates the hash chain and reports the first broken event if tampering is detected.
+Sensitive workflows write audit events with actor, action, resource, request id, IP address, user agent, timestamp, previous hash, and event hash. The audit verification endpoint recalculates the hash chain in bounded pages and reports the first broken event if tampering is detected. Verification can still take time on very large chains, but it does not load every audit event into one in-memory list.
 
 The reconciliation report checks:
 
@@ -518,7 +518,7 @@ Important environment variables:
 - Stripe provider: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_API_VERSION`, `STRIPE_CONNECT_TIMEOUT_MS`, `STRIPE_READ_TIMEOUT_MS` when `stripe` is enabled
 - Payment idempotency recovery: `PAYMENT_IDEMPOTENCY_IN_PROGRESS_LEASE_SECONDS`
 - Abuse protection: `RATE_LIMIT_ENABLED`, `RATE_LIMIT_WINDOW_SECONDS`, `RATE_LIMIT_SENSITIVE_REQUESTS_PER_WINDOW`, `RATE_LIMIT_WEBHOOK_REQUESTS_PER_WINDOW`, `RATE_LIMIT_PROFILE_REQUESTS_PER_WINDOW`, `WEBHOOK_MAX_BODY_BYTES`
-- Operations: `APP_ENVIRONMENT`, `SHUTDOWN_TIMEOUT`, `LOG_STRUCTURED_FORMAT`, `OUTBOX_PROCESSING_ENABLED`, `RECONCILIATION_SCHEDULING_ENABLED`, `RECONCILIATION_BATCH_SIZE`, `RECONCILIATION_MAX_ISSUES_PER_RUN`
+- Operations: `APP_ENVIRONMENT`, `SHUTDOWN_TIMEOUT`, `LOG_STRUCTURED_FORMAT`, `OUTBOX_PROCESSING_ENABLED`, `AUDIT_HASH_VERIFICATION_BATCH_SIZE`, `RECONCILIATION_SCHEDULING_ENABLED`, `RECONCILIATION_BATCH_SIZE`, `RECONCILIATION_MAX_ISSUES_PER_RUN`
 
 No real card data, JWTs, private keys, or production secrets should be committed.
 

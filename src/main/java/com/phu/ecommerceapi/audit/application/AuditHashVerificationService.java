@@ -11,49 +11,60 @@ public class AuditHashVerificationService {
 
     private final AuditEventPersistencePort auditEventPersistencePort;
     private final AuditHashService auditHashService;
+    private final AuditHashVerificationProperties properties;
 
     public AuditHashVerificationService(
             AuditEventPersistencePort auditEventPersistencePort,
-            AuditHashService auditHashService
+            AuditHashService auditHashService,
+            AuditHashVerificationProperties properties
     ) {
         this.auditEventPersistencePort = auditEventPersistencePort;
         this.auditHashService = auditHashService;
+        this.properties = properties;
     }
 
     @Transactional(readOnly = true)
     public AuditHashVerificationResult verify() {
-        List<AuditEventView> events = auditEventPersistencePort.findAllEventsByIdAsc();
         String expectedPreviousHash = null;
         long checkedEvents = 0;
+        long afterIdExclusive = 0;
 
-        for (AuditEventView event : events) {
-            checkedEvents++;
-            if (event.eventHash() == null || event.eventHash().isBlank()) {
-                return AuditHashVerificationResult.broken(
-                        checkedEvents,
-                        event.id(),
-                        "Audit event is missing hash"
-                );
+        while (true) {
+            List<AuditEventView> events = auditEventPersistencePort.findEventsAfterId(
+                    afterIdExclusive,
+                    properties.batchSize()
+            );
+            if (events.isEmpty()) {
+                return AuditHashVerificationResult.verified(checkedEvents, expectedPreviousHash);
             }
-            if (!Objects.equals(event.previousHash(), expectedPreviousHash)) {
-                return AuditHashVerificationResult.broken(
-                        checkedEvents,
-                        event.id(),
-                        "Audit event previous hash does not match chain"
-                );
-            }
+            for (AuditEventView event : events) {
+                checkedEvents++;
+                if (event.eventHash() == null || event.eventHash().isBlank()) {
+                    return AuditHashVerificationResult.broken(
+                            checkedEvents,
+                            event.id(),
+                            "Audit event is missing hash"
+                    );
+                }
+                if (!Objects.equals(event.previousHash(), expectedPreviousHash)) {
+                    return AuditHashVerificationResult.broken(
+                            checkedEvents,
+                            event.id(),
+                            "Audit event previous hash does not match chain"
+                    );
+                }
 
-            String expectedHash = auditHashService.hash(event.toHashPayload(expectedPreviousHash));
-            if (!event.eventHash().equals(expectedHash)) {
-                return AuditHashVerificationResult.broken(
-                        checkedEvents,
-                        event.id(),
-                        "Audit event hash mismatch"
-                );
+                String expectedHash = auditHashService.hash(event.toHashPayload(expectedPreviousHash));
+                if (!event.eventHash().equals(expectedHash)) {
+                    return AuditHashVerificationResult.broken(
+                            checkedEvents,
+                            event.id(),
+                            "Audit event hash mismatch"
+                    );
+                }
+                expectedPreviousHash = event.eventHash();
             }
-            expectedPreviousHash = event.eventHash();
+            afterIdExclusive = events.getLast().id();
         }
-
-        return AuditHashVerificationResult.verified(checkedEvents, expectedPreviousHash);
     }
 }

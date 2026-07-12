@@ -14,6 +14,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
@@ -71,7 +72,7 @@ class AuditHashVerificationTest {
         auditEventRecorder.record(command("PAYMENT_SUCCEEDED", "PAYMENT", "payment-1", "amount=20.00 USD"));
         auditEventRecorder.record(command("REFUND_SUCCEEDED", "REFUND", "refund-1", "amount=20.00 USD"));
 
-        List<AuditEventRecord> events = auditEventRepository.findAllByOrderByIdAsc();
+        List<AuditEventRecord> events = eventsByIdAsc();
         AuditHashVerificationResult result = verificationService.verify();
 
         assertThat(events).hasSize(2);
@@ -86,7 +87,7 @@ class AuditHashVerificationTest {
     @Test
     void modifiedAuditRecordBreaksVerification() {
         auditEventRecorder.record(command("PAYMENT_SUCCEEDED", "PAYMENT", "payment-2", "amount=20.00 USD"));
-        Long eventId = auditEventRepository.findAllByOrderByIdAsc().get(0).getId();
+        Long eventId = eventsByIdAsc().get(0).getId();
 
         jdbcTemplate.update(
                 "UPDATE audit_event SET details = ? WHERE id = ?",
@@ -131,7 +132,7 @@ class AuditHashVerificationTest {
 
         backfillService.initializeLegacyChain();
 
-        List<AuditEventRecord> events = auditEventRepository.findAllByOrderByIdAsc();
+        List<AuditEventRecord> events = eventsByIdAsc();
         AuditHashVerificationResult result = verificationService.verify();
         String latestHash = jdbcTemplate.queryForObject(
                 "SELECT latest_hash FROM audit_hash_chain_state WHERE id = 1",
@@ -162,6 +163,22 @@ class AuditHashVerificationTest {
                 .andExpect(status().isForbidden());
     }
 
+    @Test
+    void repositoryFindsAuditEventsByIdKeysetPage() {
+        auditEventRecorder.record(command("PAYMENT_SUCCEEDED", "PAYMENT", "payment-4", "amount=20.00 USD"));
+        auditEventRecorder.record(command("REFUND_SUCCEEDED", "REFUND", "refund-4", "amount=20.00 USD"));
+        List<AuditEventRecord> events = eventsByIdAsc();
+
+        List<AuditEventRecord> page = auditEventRepository.findByIdGreaterThanOrderByIdAsc(
+                events.get(0).getId(),
+                PageRequest.of(0, 1)
+        );
+
+        assertThat(page)
+                .extracting(AuditEventRecord::getId)
+                .containsExactly(events.get(1).getId());
+    }
+
     private AuditEventCommand command(String action, String resourceType, String resourceId, String details) {
         return new AuditEventCommand(
                 "audit-actor",
@@ -170,6 +187,10 @@ class AuditHashVerificationTest {
                 resourceId,
                 details
         );
+    }
+
+    private List<AuditEventRecord> eventsByIdAsc() {
+        return auditEventRepository.findByIdGreaterThanOrderByIdAsc(0, PageRequest.of(0, 100));
     }
 
     private RequestPostProcessor auditorJwt() {

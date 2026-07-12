@@ -12,13 +12,16 @@ public class AuditHashChainBackfillService {
 
     private final AuditEventPersistencePort auditEventPersistencePort;
     private final AuditHashService auditHashService;
+    private final AuditHashVerificationProperties properties;
 
     public AuditHashChainBackfillService(
             AuditEventPersistencePort auditEventPersistencePort,
-            AuditHashService auditHashService
+            AuditHashService auditHashService,
+            AuditHashVerificationProperties properties
     ) {
         this.auditEventPersistencePort = auditEventPersistencePort;
         this.auditHashService = auditHashService;
+        this.properties = properties;
     }
 
     @Transactional
@@ -27,21 +30,31 @@ public class AuditHashChainBackfillService {
             return;
         }
 
-        List<AuditEventView> events = auditEventPersistencePort.findAllEventsByIdAsc();
-        if (events.isEmpty()) {
-            return;
-        }
-
         String previousHash = null;
-        for (AuditEventView event : events) {
-            if (event.previousHash() != null || event.eventHash() != null) {
-                throw new IllegalStateException("Audit hash chain state is inconsistent with existing audit hashes");
+        long afterIdExclusive = 0;
+        boolean appliedAnyHash = false;
+        while (true) {
+            List<AuditEventView> events = auditEventPersistencePort.findEventsAfterId(
+                    afterIdExclusive,
+                    properties.batchSize()
+            );
+            if (events.isEmpty()) {
+                break;
             }
-            String eventHash = auditHashService.hash(event.toHashPayload(previousHash));
-            auditEventPersistencePort.applyHash(event.id(), previousHash, eventHash);
-            previousHash = eventHash;
+            for (AuditEventView event : events) {
+                if (event.previousHash() != null || event.eventHash() != null) {
+                    throw new IllegalStateException("Audit hash chain state is inconsistent with existing audit hashes");
+                }
+                String eventHash = auditHashService.hash(event.toHashPayload(previousHash));
+                auditEventPersistencePort.applyHash(event.id(), previousHash, eventHash);
+                previousHash = eventHash;
+                appliedAnyHash = true;
+            }
+            afterIdExclusive = events.getLast().id();
         }
 
-        auditEventPersistencePort.markLatestHash(previousHash, Instant.now().truncatedTo(ChronoUnit.MILLIS));
+        if (appliedAnyHash) {
+            auditEventPersistencePort.markLatestHash(previousHash, Instant.now().truncatedTo(ChronoUnit.MILLIS));
+        }
     }
 }

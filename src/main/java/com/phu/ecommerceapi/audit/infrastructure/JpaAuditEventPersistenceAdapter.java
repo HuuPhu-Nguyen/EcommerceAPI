@@ -33,8 +33,11 @@ public class JpaAuditEventPersistenceAdapter implements AuditEventPersistencePor
     }
 
     @Override
-    public List<AuditEventView> findAllEventsByIdAsc() {
-        return auditEventRepository.findAllByOrderByIdAsc()
+    public List<AuditEventView> findEventsAfterId(long afterIdExclusive, int limit) {
+        return auditEventRepository.findByIdGreaterThanOrderByIdAsc(
+                        afterIdExclusive,
+                        PageRequest.of(0, Math.max(1, limit))
+                )
                 .stream()
                 .map(this::toView)
                 .toList();
