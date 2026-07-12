@@ -31,28 +31,42 @@ import java.util.Set;
 
 @Configuration
 @EnableMethodSecurity
-@EnableConfigurationProperties(OAuth2ResourceServerSecurityProperties.class)
+@EnableConfigurationProperties({
+        OAuth2ResourceServerSecurityProperties.class,
+        OpenApiExposureProperties.class
+})
 public class SecurityConfig {
 
-    private final OAuth2ResourceServerSecurityProperties securityProperties;
+    private static final String[] OPEN_API_DOC_PATHS = {
+            "/v3/api-docs/**",
+            "/swagger-ui/**",
+            "/swagger-ui.html"
+    };
 
-    public SecurityConfig(OAuth2ResourceServerSecurityProperties securityProperties) {
+    private final OAuth2ResourceServerSecurityProperties securityProperties;
+    private final OpenApiExposureProperties openApiExposureProperties;
+
+    public SecurityConfig(
+            OAuth2ResourceServerSecurityProperties securityProperties,
+            OpenApiExposureProperties openApiExposureProperties
+    ) {
         this.securityProperties = securityProperties;
+        this.openApiExposureProperties = openApiExposureProperties;
     }
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         return http.csrf(csrf -> csrf.disable())
-                .authorizeHttpRequests(
-                        auth -> auth.requestMatchers(
-                                        "/v3/api-docs/**",
-                                        "/swagger-ui/**",
-                                        "/swagger-ui.html"
-                                ).permitAll()
-                                .requestMatchers(HttpMethod.POST, "/payments/provider-webhooks/fake").permitAll()
-                                .requestMatchers(HttpMethod.POST, "/payments/provider-webhooks/stripe").permitAll()
-                                .anyRequest().authenticated()
-                )
+                .authorizeHttpRequests(auth -> {
+                    if (openApiExposureProperties.publicDocsEnabled()) {
+                        auth.requestMatchers(OPEN_API_DOC_PATHS).permitAll();
+                    } else {
+                        auth.requestMatchers(OPEN_API_DOC_PATHS).hasAnyRole("ADMIN", "AUDITOR");
+                    }
+                    auth.requestMatchers(HttpMethod.POST, "/payments/provider-webhooks/fake").permitAll()
+                            .requestMatchers(HttpMethod.POST, "/payments/provider-webhooks/stripe").permitAll()
+                            .anyRequest().authenticated();
+                })
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .oauth2ResourceServer(oauth2 -> oauth2.jwt(
                         jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())
