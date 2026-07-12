@@ -10,6 +10,8 @@ class PaymentStateMachineTest {
     @Test
     void pendingPaymentCanCompleteFromProviderOutcome() {
         assertThat(PaymentStateMachine.providerSucceeded(PaymentStatus.PENDING))
+                .isEqualTo(PaymentStatus.PROVIDER_SUCCEEDED_LEDGER_PENDING);
+        assertThat(PaymentStateMachine.finalizeProviderSucceeded(PaymentStatus.PROVIDER_SUCCEEDED_LEDGER_PENDING))
                 .isEqualTo(PaymentStatus.SUCCEEDED);
         assertThat(PaymentStateMachine.providerFailed(PaymentStatus.PENDING))
                 .isEqualTo(PaymentStatus.FAILED);
@@ -18,11 +20,11 @@ class PaymentStateMachineTest {
     }
 
     @Test
-    void failedOrUnknownPaymentCanRecoverFromCurrentProviderSuccess() {
+    void failedOrUnknownPaymentDoesNotAutoRecoverFromCurrentProviderSuccess() {
         assertThat(PaymentStateMachine.providerSucceeded(PaymentStatus.FAILED))
-                .isEqualTo(PaymentStatus.SUCCEEDED);
+                .isEqualTo(PaymentStatus.FAILED);
         assertThat(PaymentStateMachine.providerSucceeded(PaymentStatus.PROVIDER_TIMEOUT))
-                .isEqualTo(PaymentStatus.SUCCEEDED);
+                .isEqualTo(PaymentStatus.PROVIDER_TIMEOUT);
         assertThat(PaymentStateMachine.providerFailed(PaymentStatus.PROVIDER_TIMEOUT))
                 .isEqualTo(PaymentStatus.FAILED);
     }
@@ -33,6 +35,8 @@ class PaymentStateMachineTest {
                 .isEqualTo(PaymentStatus.SUCCEEDED);
         assertThat(PaymentStateMachine.providerTimedOut(PaymentStatus.REFUNDED))
                 .isEqualTo(PaymentStatus.REFUNDED);
+        assertThat(PaymentStateMachine.finalizeProviderSucceeded(PaymentStatus.SUCCEEDED))
+                .isEqualTo(PaymentStatus.SUCCEEDED);
     }
 
     @Test

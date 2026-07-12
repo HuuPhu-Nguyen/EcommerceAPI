@@ -72,6 +72,24 @@ class PaymentProviderPersistenceConstraintTest {
                 "payment:stripe:timeout-key-2"
         ))
                 .isInstanceOf(DataIntegrityViolationException.class);
+
+        TestOrder ledgerPendingOrder = insertOrder();
+        insertPayment(
+                ledgerPendingOrder,
+                "PROVIDER_SUCCEEDED_LEDGER_PENDING",
+                "fake",
+                "fake_ledger_pending_1",
+                "payment:fake:ledger-pending-key-1"
+        );
+
+        assertThatThrownBy(() -> insertPayment(
+                ledgerPendingOrder,
+                "PENDING",
+                "stripe",
+                null,
+                "payment:stripe:ledger-pending-key-2"
+        ))
+                .isInstanceOf(DataIntegrityViolationException.class);
     }
 
     @Test
@@ -190,7 +208,10 @@ class PaymentProviderPersistenceConstraintTest {
             String providerIdempotencyKey
     ) {
         OffsetDateTime now = OffsetDateTime.now();
-        OffsetDateTime completedAt = "PENDING".equals(status) ? null : now;
+        OffsetDateTime completedAt = switch (status) {
+            case "PENDING", "PROVIDER_SUCCEEDED_LEDGER_PENDING" -> null;
+            default -> now;
+        };
         String failureCode = switch (status) {
             case "FAILED" -> "provider_failed";
             case "PROVIDER_TIMEOUT" -> "provider_timeout";
@@ -239,6 +260,7 @@ class PaymentProviderPersistenceConstraintTest {
 
     private String providerStatus(String status) {
         return switch (status) {
+            case "PROVIDER_SUCCEEDED_LEDGER_PENDING" -> "SUCCEEDED";
             case "SUCCEEDED" -> "SUCCEEDED";
             case "FAILED" -> "FAILED";
             case "PROVIDER_TIMEOUT" -> "TIMEOUT";

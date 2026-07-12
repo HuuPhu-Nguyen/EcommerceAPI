@@ -80,10 +80,18 @@ public class JpaRefundAttemptPersistenceAdapter implements RefundAttemptPersiste
     }
 
     @Override
-    public RefundAttemptUpdate markSucceeded(UUID refundId, PaymentRefundProviderResult providerResult) {
+    public RefundAttemptUpdate recordProviderRefundSucceeded(UUID refundId, PaymentRefundProviderResult providerResult) {
         RefundRecord refund = findForUpdate(refundId);
         RefundStatus previousStatus = refund.getStatus();
-        refund.markSucceeded(providerResult);
+        refund.recordProviderSucceeded(providerResult);
+        return new RefundAttemptUpdate(toView(refund), refund.getStatus() != previousStatus);
+    }
+
+    @Override
+    public RefundAttemptUpdate finalizeProviderSucceededRefund(UUID refundId) {
+        RefundRecord refund = findForUpdate(refundId);
+        RefundStatus previousStatus = refund.getStatus();
+        refund.finalizeProviderSucceeded();
         boolean transitioned = refund.getStatus() != previousStatus;
         if (transitioned) {
             refund.getPayment().markRefunded();

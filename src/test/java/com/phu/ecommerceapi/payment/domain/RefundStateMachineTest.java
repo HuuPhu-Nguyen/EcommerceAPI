@@ -9,6 +9,8 @@ class RefundStateMachineTest {
     @Test
     void pendingRefundCanCompleteFromProviderOutcome() {
         assertThat(RefundStateMachine.providerSucceeded(RefundStatus.PENDING))
+                .isEqualTo(RefundStatus.PROVIDER_SUCCEEDED_LEDGER_PENDING);
+        assertThat(RefundStateMachine.finalizeProviderSucceeded(RefundStatus.PROVIDER_SUCCEEDED_LEDGER_PENDING))
                 .isEqualTo(RefundStatus.SUCCEEDED);
         assertThat(RefundStateMachine.providerFailed(RefundStatus.PENDING))
                 .isEqualTo(RefundStatus.FAILED);
@@ -17,9 +19,9 @@ class RefundStateMachineTest {
     }
 
     @Test
-    void providerTimeoutRefundCanCompleteFromCurrentProviderOutcome() {
+    void providerTimeoutRefundDoesNotAutoRecoverFromCurrentProviderOutcome() {
         assertThat(RefundStateMachine.providerSucceeded(RefundStatus.PROVIDER_TIMEOUT))
-                .isEqualTo(RefundStatus.SUCCEEDED);
+                .isEqualTo(RefundStatus.PROVIDER_TIMEOUT);
         assertThat(RefundStateMachine.providerFailed(RefundStatus.PROVIDER_TIMEOUT))
                 .isEqualTo(RefundStatus.FAILED);
     }
@@ -31,6 +33,8 @@ class RefundStateMachineTest {
         assertThat(RefundStateMachine.providerFailed(RefundStatus.SUCCEEDED))
                 .isEqualTo(RefundStatus.SUCCEEDED);
         assertThat(RefundStateMachine.providerTimedOut(RefundStatus.SUCCEEDED))
+                .isEqualTo(RefundStatus.SUCCEEDED);
+        assertThat(RefundStateMachine.finalizeProviderSucceeded(RefundStatus.SUCCEEDED))
                 .isEqualTo(RefundStatus.SUCCEEDED);
     }
 }

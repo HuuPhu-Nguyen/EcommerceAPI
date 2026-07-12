@@ -112,7 +112,7 @@ public class RefundRecord {
         return new RefundRecord(payment, idempotencyKey, providerIdempotencyKey, reason);
     }
 
-    public void markSucceeded(PaymentRefundProviderResult providerResult) {
+    public void recordProviderSucceeded(PaymentRefundProviderResult providerResult) {
         RefundStatus nextStatus = RefundStateMachine.providerSucceeded(status);
         if (nextStatus == status) {
             return;
@@ -120,7 +120,19 @@ public class RefundRecord {
         this.status = nextStatus;
         this.providerRefundId = requireText(providerResult.providerRefundId(), "provider refund id");
         this.providerStatus = providerResult.status().name();
+        this.failureCode = null;
         this.providerMessage = providerResult.message();
+    }
+
+    public void finalizeProviderSucceeded() {
+        RefundStatus nextStatus = RefundStateMachine.finalizeProviderSucceeded(status);
+        if (nextStatus == status) {
+            return;
+        }
+        if (providerRefundId == null || providerRefundId.isBlank()) {
+            throw new IllegalStateException("Provider refund id is required before finalizing refund");
+        }
+        this.status = nextStatus;
         this.completedAt = OffsetDateTime.now();
     }
 

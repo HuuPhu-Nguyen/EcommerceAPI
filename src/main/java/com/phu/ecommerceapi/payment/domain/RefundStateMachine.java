@@ -9,7 +9,15 @@ public final class RefundStateMachine {
 
     public static RefundStatus providerSucceeded(RefundStatus currentStatus) {
         RefundStatus requiredStatus = Objects.requireNonNull(currentStatus, "refund status is required");
-        if (requiredStatus == RefundStatus.PENDING || requiredStatus == RefundStatus.PROVIDER_TIMEOUT) {
+        if (requiredStatus == RefundStatus.PENDING) {
+            return RefundStatus.PROVIDER_SUCCEEDED_LEDGER_PENDING;
+        }
+        return requiredStatus;
+    }
+
+    public static RefundStatus finalizeProviderSucceeded(RefundStatus currentStatus) {
+        RefundStatus requiredStatus = Objects.requireNonNull(currentStatus, "refund status is required");
+        if (requiredStatus == RefundStatus.PROVIDER_SUCCEEDED_LEDGER_PENDING) {
             return RefundStatus.SUCCEEDED;
         }
         return requiredStatus;

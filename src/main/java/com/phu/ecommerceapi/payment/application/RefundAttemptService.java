@@ -18,17 +18,20 @@ public class RefundAttemptService {
     private static final String REFUND_RESOURCE_TYPE = "REFUND";
 
     private final RefundAttemptPersistencePort refundAttempts;
+    private final ProviderOutcomePersistenceService providerOutcomePersistenceService;
     private final PaymentLedgerPostingPort ledgerPostingPort;
     private final AuditEventRecorder auditEventRecorder;
     private final BusinessMetrics businessMetrics;
 
     public RefundAttemptService(
             RefundAttemptPersistencePort refundAttempts,
+            ProviderOutcomePersistenceService providerOutcomePersistenceService,
             PaymentLedgerPostingPort ledgerPostingPort,
             AuditEventRecorder auditEventRecorder,
             BusinessMetrics businessMetrics
     ) {
         this.refundAttempts = refundAttempts;
+        this.providerOutcomePersistenceService = providerOutcomePersistenceService;
         this.ledgerPostingPort = ledgerPostingPort;
         this.auditEventRecorder = auditEventRecorder;
         this.businessMetrics = businessMetrics;
@@ -57,22 +60,8 @@ public class RefundAttemptService {
     ) {
         RefundAttemptUpdate update;
         if (isSuccessful(providerResult)) {
-            update = refundAttempts.markSucceeded(refundId, providerResult);
-            if (!update.transitioned()) {
-                return toResponse(update.attempt());
-            }
-            RefundAttemptView refund = update.attempt();
-            ledgerPostingPort.postRefundSucceeded(new RefundLedgerPostingCommand(
-                    refund.refundId(),
-                    refund.paymentId(),
-                    refund.orderId(),
-                    refund.customerId(),
-                    refund.amount(),
-                    refund.currency(),
-                    refund.providerCode(),
-                    refund.providerRefundId()
-            ));
-            recordAudit(actor, "REFUND_SUCCEEDED", refund);
+            providerOutcomePersistenceService.recordProviderRefundSucceeded(refundId, providerResult);
+            return finalizeProviderSucceededRefund(refundId, actor);
         } else if (providerResult.status() == PaymentProviderStatus.PENDING) {
             update = refundAttempts.markPending(refundId, providerResult);
             if (!update.transitioned()) {
@@ -89,6 +78,28 @@ public class RefundAttemptService {
 
         businessMetrics.refundOutcome(update.attempt().providerCode(), update.attempt().status().name());
         return toResponse(update.attempt());
+    }
+
+    @Transactional
+    public RefundAttemptResponse finalizeProviderSucceededRefund(UUID refundId, CurrentUser actor) {
+        RefundAttemptUpdate update = refundAttempts.finalizeProviderSucceededRefund(refundId);
+        if (!update.transitioned()) {
+            return toResponse(update.attempt());
+        }
+        RefundAttemptView refund = update.attempt();
+        ledgerPostingPort.postRefundSucceeded(new RefundLedgerPostingCommand(
+                refund.refundId(),
+                refund.paymentId(),
+                refund.orderId(),
+                refund.customerId(),
+                refund.amount(),
+                refund.currency(),
+                refund.providerCode(),
+                refund.providerRefundId()
+        ));
+        recordAudit(actor, "REFUND_SUCCEEDED", refund);
+        businessMetrics.refundOutcome(refund.providerCode(), refund.status().name());
+        return toResponse(refund);
     }
 
     @Transactional

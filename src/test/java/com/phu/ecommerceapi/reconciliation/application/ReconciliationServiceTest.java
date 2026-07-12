@@ -222,6 +222,43 @@ class ReconciliationServiceTest {
     }
 
     @Test
+    void durableProviderSuccessStillPendingLocalCompletionIsReportedAfterRecoveryRun() {
+        UUID paymentId = UUID.randomUUID();
+        UUID refundPaymentId = UUID.randomUUID();
+        UUID refundId = UUID.randomUUID();
+
+        givenRows(
+                List.of(payment(
+                        paymentId,
+                        "25.00",
+                        PaymentStatus.PROVIDER_SUCCEEDED_LEDGER_PENDING,
+                        "fake",
+                        "fake_payment_pending"
+                )),
+                List.of(refund(
+                        refundId,
+                        refundPaymentId,
+                        "25.00",
+                        RefundStatus.PROVIDER_SUCCEEDED_LEDGER_PENDING,
+                        "fake",
+                        "fake_refund_pending"
+                )),
+                List.of(),
+                List.of()
+        );
+
+        ReconciliationReport report = reconciliationService.runReport();
+
+        assertThat(report.healthy()).isFalse();
+        assertThat(report.issues())
+                .extracting(ReconciliationIssue::code)
+                .containsExactly(
+                        ReconciliationIssueCode.PROVIDER_SUCCESS_LOCAL_COMPLETION_PENDING,
+                        ReconciliationIssueCode.PROVIDER_SUCCESS_LOCAL_COMPLETION_PENDING
+                );
+    }
+
+    @Test
     void processedProviderWebhookEventWithoutMatchingInternalPaymentIsReported() {
         UUID eventId = UUID.randomUUID();
 

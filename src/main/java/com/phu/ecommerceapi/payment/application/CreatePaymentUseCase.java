@@ -24,6 +24,7 @@ public class CreatePaymentUseCase {
     private static final String OPERATION = "CREATE_PAYMENT";
     private static final String PAYMENT_RESOURCE_TYPE = "PAYMENT";
     private static final String PENDING_STATUS = "PENDING";
+    private static final String PROVIDER_SUCCEEDED_LEDGER_PENDING_STATUS = "PROVIDER_SUCCEEDED_LEDGER_PENDING";
     private static final String PROVIDER_TIMEOUT_STATUS = "PROVIDER_TIMEOUT";
     private static final String PROVIDER_TOKEN_DECLINED = "pm_card_declined";
     private static final String PROVIDER_TOKEN_TIMEOUT = "pm_provider_timeout";
@@ -64,7 +65,7 @@ public class CreatePaymentUseCase {
 
         Optional<PaymentIdempotencyDecision> existingDecision = idempotencyService.findExisting(idempotencyCommand);
         if (existingDecision.isPresent()) {
-            return replayOrRecover(existingDecision.get());
+            return replayOrRecover(existingDecision.get(), command.currentUser());
         }
 
         PaymentProvider paymentProvider = paymentProviderRegistry.resolveForPayment(command.provider());
@@ -78,10 +79,10 @@ public class CreatePaymentUseCase {
 
         PaymentIdempotencyDecision idempotencyDecision = idempotencyService.start(idempotencyCommand);
         if (idempotencyDecision.type() == PaymentIdempotencyDecisionType.REPLAY) {
-            return replayOrRecover(idempotencyDecision);
+            return replayOrRecover(idempotencyDecision, command.currentUser());
         }
         if (idempotencyDecision.type() == PaymentIdempotencyDecisionType.IN_PROGRESS) {
-            return replayOrRecover(idempotencyDecision);
+            return replayOrRecover(idempotencyDecision, command.currentUser());
         }
 
         String providerIdempotencyKey = providerIdempotencyKey(
@@ -130,25 +131,28 @@ public class CreatePaymentUseCase {
         return new CreatePaymentResult(httpStatus, responseBody);
     }
 
-    private CreatePaymentResult replayOrRecover(PaymentIdempotencyDecision decision) {
+    private CreatePaymentResult replayOrRecover(PaymentIdempotencyDecision decision, CurrentUser actor) {
         if (decision.type() == PaymentIdempotencyDecisionType.REPLAY) {
             return new CreatePaymentResult(decision.responseStatus(), decision.responseBody());
         }
         if (decision.type() == PaymentIdempotencyDecisionType.IN_PROGRESS) {
             if (PAYMENT_RESOURCE_TYPE.equals(decision.resourceType()) && decision.resourceId() != null) {
-                return recoverLinkedPaymentAttempt(decision);
+                return recoverLinkedPaymentAttempt(decision, actor);
             }
             throw new ConflictException("Payment request is already in progress");
         }
         throw new IllegalStateException("Unexpected idempotency decision: " + decision.type());
     }
 
-    private CreatePaymentResult recoverLinkedPaymentAttempt(PaymentIdempotencyDecision decision) {
+    private CreatePaymentResult recoverLinkedPaymentAttempt(PaymentIdempotencyDecision decision, CurrentUser actor) {
         PaymentAttemptResponse response = paymentAttemptService.findAttemptResponse(decision.resourceId())
                 .orElseThrow(() -> new ConflictException("Payment request is already in progress"));
 
         if (PROVIDER_TIMEOUT_STATUS.equals(response.status())) {
             throw new ConflictException("Payment provider outcome is unknown; retry after reconciliation");
+        }
+        if (PROVIDER_SUCCEEDED_LEDGER_PENDING_STATUS.equals(response.status())) {
+            response = paymentAttemptService.finalizeProviderSucceededPayment(decision.resourceId(), actor);
         }
         if (PENDING_STATUS.equals(response.status()) && response.providerPaymentId() == null) {
             throw new ConflictException("Payment request is already in progress");

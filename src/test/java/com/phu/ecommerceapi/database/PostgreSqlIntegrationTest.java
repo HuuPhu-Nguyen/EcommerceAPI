@@ -38,7 +38,7 @@ class PostgreSqlIntegrationTest {
 
     @Test
     void flywayMigrationsCreateBankingCoreSchema() {
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("20");
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("21");
 
         assertThat(tableNames()).contains(
                 "user_model",

@@ -123,6 +123,8 @@ Semantics:
 - Provider behavior is deterministic through fake tokens and refund reasons.
 - Successful payments post balanced ledger entries.
 - Successful refunds post reversing ledger entries.
+- Successful provider outcomes are persisted before ledger and audit side effects as `PROVIDER_SUCCEEDED_LEDGER_PENDING`.
+- If ledger posting or audit recording fails after provider success, recovery retries local completion without calling the provider again.
 - Ledger records are append-only; corrections use reversal transactions.
 
 Fake provider examples:
@@ -143,6 +145,7 @@ The reconciliation report checks:
 - Ledger transactions balance.
 - Successful payments have capture ledger transactions.
 - Successful refunds have reversing ledger transactions.
+- Provider-success rows still stuck in `PROVIDER_SUCCEEDED_LEDGER_PENDING` after the recovery pass are flagged for operator review.
 - Orphaned payments, refunds, or ledger transactions are flagged.
 
 ## Local Setup
@@ -466,6 +469,7 @@ Race-safety checklist covered by Phase 8 tests and the final review:
 - Concurrent payment attempts with different providers for one order result in one provider call.
 - Stripe timeout does not allow a second attempt until reconciliation resolves the outcome.
 - Stripe async pending results do not post ledger entries until success.
+- Durable provider success is recovered locally after ledger/audit interruption without another provider side-effect call.
 - Stripe webhook duplicate, concurrent, and out-of-order delivery does not duplicate ledger entries or corrupt order state.
 - Stripe refund duplicate, concurrent, timeout, and webhook replay cases do not duplicate provider refunds or reversing ledger entries.
 - Stuck Stripe `IN_PROGRESS` idempotency records are recovered to a stable response or flagged for manual review without a new provider side-effect call.

@@ -143,6 +143,54 @@ class CreatePaymentUseCaseTest {
     }
 
     @Test
+    void providerSuccessIsDurableWhenPaymentLedgerPostingFails() throws Exception {
+        String username = "payment-ledger-fails@example.com";
+        UUID orderId = pendingOrder(username);
+
+        disableLedgerAccountCode("ORDER_REVENUE");
+        try {
+            createPayment(username, "payment-ledger-fails-key", paymentJson(orderId, "pm_approved"))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.detail").value("Ledger account not found: ORDER_REVENUE"));
+
+            CustomerOrderRecord order = orderRepository.findById(orderId).orElseThrow();
+            PaymentRecord payment = paymentRepository.findByOrderId(orderId).orElseThrow();
+            assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING_PAYMENT);
+            assertThat(payment.getStatus()).isEqualTo(PaymentStatus.PROVIDER_SUCCEEDED_LEDGER_PENDING);
+            assertThat(payment.getProviderPaymentId()).startsWith("fake_");
+            assertThat(payment.getCompletedAt()).isNull();
+            assertThat(ledgerTransactionRepository.findAll()).isEmpty();
+            assertThat(auditActions()).doesNotContain("PAYMENT_SUCCEEDED");
+        } finally {
+            restoreLedgerAccounts();
+        }
+    }
+
+    @Test
+    void providerSuccessIsDurableWhenPaymentAuditRecordingFails() throws Exception {
+        String username = "payment-audit-fails@example.com";
+        UUID orderId = pendingOrder(username);
+        String latestAuditHash = currentAuditHash();
+
+        deleteAuditHashChainState();
+        try {
+            createPayment(username, "payment-audit-fails-key", paymentJson(orderId, "pm_approved"))
+                    .andExpect(status().isInternalServerError());
+
+            CustomerOrderRecord order = orderRepository.findById(orderId).orElseThrow();
+            PaymentRecord payment = paymentRepository.findByOrderId(orderId).orElseThrow();
+            assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING_PAYMENT);
+            assertThat(payment.getStatus()).isEqualTo(PaymentStatus.PROVIDER_SUCCEEDED_LEDGER_PENDING);
+            assertThat(payment.getProviderPaymentId()).startsWith("fake_");
+            assertThat(payment.getCompletedAt()).isNull();
+            assertThat(ledgerTransactionRepository.findAll()).isEmpty();
+            assertThat(auditActions()).doesNotContain("PAYMENT_SUCCEEDED");
+        } finally {
+            restoreAuditHashChainState(latestAuditHash);
+        }
+    }
+
+    @Test
     void repeatedIdempotentPaymentRequestReturnsSameStableResponse() throws Exception {
         String username = "payment-replay@example.com";
         UUID orderId = pendingOrder(username);
@@ -520,6 +568,56 @@ class CreatePaymentUseCaseTest {
 
     private void truncateLedger() {
         jdbcTemplate.execute("TRUNCATE TABLE ledger_entry, ledger_transaction RESTART IDENTITY");
+    }
+
+    private void disableLedgerAccountCode(String accountCode) {
+        jdbcTemplate.update(
+                "UPDATE ledger_account SET code = ? WHERE code = ?",
+                accountCode + "_DISABLED",
+                accountCode
+        );
+    }
+
+    private void restoreLedgerAccounts() {
+        jdbcTemplate.update(
+                """
+                        UPDATE ledger_account
+                        SET code = 'PAYMENT_PROVIDER_CLEARING'
+                        WHERE id = '00000000-0000-0000-0000-000000000101'
+                        """
+        );
+        jdbcTemplate.update(
+                """
+                        UPDATE ledger_account
+                        SET code = 'ORDER_REVENUE'
+                        WHERE id = '00000000-0000-0000-0000-000000000102'
+                        """
+        );
+    }
+
+    private String currentAuditHash() {
+        List<String> hashes = jdbcTemplate.queryForList(
+                "SELECT latest_hash FROM audit_hash_chain_state WHERE id = 1",
+                String.class
+        );
+        return hashes.isEmpty() ? null : hashes.getFirst();
+    }
+
+    private void deleteAuditHashChainState() {
+        jdbcTemplate.update("DELETE FROM audit_hash_chain_state WHERE id = 1");
+    }
+
+    private void restoreAuditHashChainState(String latestAuditHash) {
+        jdbcTemplate.update(
+                """
+                        INSERT INTO audit_hash_chain_state (id, latest_hash, updated_at)
+                        VALUES (1, ?, CURRENT_TIMESTAMP)
+                        ON CONFLICT (id) DO UPDATE
+                        SET latest_hash = EXCLUDED.latest_hash,
+                            updated_at = EXCLUDED.updated_at
+                        """,
+                latestAuditHash
+        );
     }
 
     private List<String> auditActions() {

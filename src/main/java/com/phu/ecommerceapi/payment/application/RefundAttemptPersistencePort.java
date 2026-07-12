@@ -9,7 +9,9 @@ public interface RefundAttemptPersistencePort {
 
     RefundAttemptSnapshot startAttempt(long customerId, UUID paymentId, String idempotencyKey, String reason);
 
-    RefundAttemptUpdate markSucceeded(UUID refundId, PaymentRefundProviderResult providerResult);
+    RefundAttemptUpdate recordProviderRefundSucceeded(UUID refundId, PaymentRefundProviderResult providerResult);
+
+    RefundAttemptUpdate finalizeProviderSucceededRefund(UUID refundId);
 
     RefundAttemptUpdate markFailed(UUID refundId, PaymentRefundProviderResult providerResult);
 

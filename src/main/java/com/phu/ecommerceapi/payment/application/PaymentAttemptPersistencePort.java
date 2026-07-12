@@ -15,7 +15,9 @@ public interface PaymentAttemptPersistencePort {
             String providerIdempotencyKey
     );
 
-    PaymentAttemptUpdate markSucceeded(UUID paymentId, PaymentProviderResult providerResult);
+    PaymentAttemptUpdate recordProviderSucceeded(UUID paymentId, PaymentProviderResult providerResult);
+
+    PaymentAttemptUpdate finalizeProviderSucceededPayment(UUID paymentId);
 
     PaymentAttemptUpdate markFailed(UUID paymentId, PaymentProviderResult providerResult);
 

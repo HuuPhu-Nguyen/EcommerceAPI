@@ -113,6 +113,16 @@ public class ReconciliationService {
                 continue;
             }
 
+            if (payment.status() == PaymentStatus.PROVIDER_SUCCEEDED_LEDGER_PENDING) {
+                issues.add(issue(
+                        ReconciliationIssueCode.PROVIDER_SUCCESS_LOCAL_COMPLETION_PENDING,
+                        PAYMENT_RESOURCE,
+                        payment.id().toString(),
+                        "Provider payment succeeded but local ledger/audit completion is still pending after recovery"
+                ));
+                continue;
+            }
+
             if (requiresCaptureLedger(payment.status()) && isBlank(payment.providerPaymentId())) {
                 issues.add(issue(
                         ReconciliationIssueCode.MISSING_PROVIDER_REFERENCE,
@@ -182,6 +192,16 @@ public class ReconciliationService {
                         REFUND_RESOURCE,
                         refund.id().toString(),
                         "Refund provider code is missing or unsupported: provider=" + providerLabel(providerCode)
+                ));
+                continue;
+            }
+
+            if (refund.status() == RefundStatus.PROVIDER_SUCCEEDED_LEDGER_PENDING) {
+                issues.add(issue(
+                        ReconciliationIssueCode.PROVIDER_SUCCESS_LOCAL_COMPLETION_PENDING,
+                        REFUND_RESOURCE,
+                        refund.id().toString(),
+                        "Provider refund succeeded but local ledger/audit completion is still pending after recovery"
                 ));
                 continue;
             }

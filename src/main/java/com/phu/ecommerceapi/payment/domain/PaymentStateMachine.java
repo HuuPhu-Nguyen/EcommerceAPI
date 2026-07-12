@@ -9,9 +9,15 @@ public final class PaymentStateMachine {
 
     public static PaymentStatus providerSucceeded(PaymentStatus currentStatus) {
         PaymentStatus requiredStatus = Objects.requireNonNull(currentStatus, "payment status is required");
-        if (requiredStatus == PaymentStatus.PENDING
-                || requiredStatus == PaymentStatus.FAILED
-                || requiredStatus == PaymentStatus.PROVIDER_TIMEOUT) {
+        if (requiredStatus == PaymentStatus.PENDING) {
+            return PaymentStatus.PROVIDER_SUCCEEDED_LEDGER_PENDING;
+        }
+        return requiredStatus;
+    }
+
+    public static PaymentStatus finalizeProviderSucceeded(PaymentStatus currentStatus) {
+        PaymentStatus requiredStatus = Objects.requireNonNull(currentStatus, "payment status is required");
+        if (requiredStatus == PaymentStatus.PROVIDER_SUCCEEDED_LEDGER_PENDING) {
             return PaymentStatus.SUCCEEDED;
         }
         return requiredStatus;

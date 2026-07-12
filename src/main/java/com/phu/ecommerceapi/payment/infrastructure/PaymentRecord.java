@@ -105,7 +105,7 @@ public class PaymentRecord {
         return new PaymentRecord(order, idempotencyKey, providerCode, providerIdempotencyKey);
     }
 
-    public void markSucceeded(PaymentProviderResult providerResult) {
+    public void recordProviderSucceeded(PaymentProviderResult providerResult) {
         PaymentStatus nextStatus = PaymentStateMachine.providerSucceeded(status);
         if (nextStatus == status) {
             return;
@@ -113,7 +113,19 @@ public class PaymentRecord {
         this.status = nextStatus;
         this.providerPaymentId = requireText(providerResult.providerPaymentId(), "provider payment id");
         this.providerStatus = requireText(providerResult.providerStatus(), "provider status");
+        this.failureCode = null;
         this.providerMessage = providerResult.message();
+    }
+
+    public void finalizeProviderSucceeded() {
+        PaymentStatus nextStatus = PaymentStateMachine.finalizeProviderSucceeded(status);
+        if (nextStatus == status) {
+            return;
+        }
+        if (providerPaymentId == null || providerPaymentId.isBlank()) {
+            throw new IllegalStateException("Provider payment id is required before finalizing payment");
+        }
+        this.status = nextStatus;
         this.completedAt = OffsetDateTime.now();
     }
 

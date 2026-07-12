@@ -159,6 +159,58 @@ class RefundFlowTest {
     }
 
     @Test
+    void providerSuccessIsDurableWhenRefundLedgerPostingFails() throws Exception {
+        String username = "refund-ledger-fails@example.com";
+        PaymentFixture fixture = successfulPayment(username);
+
+        disableLedgerAccountCode("ORDER_REVENUE");
+        try {
+            createRefund(username, fixture.paymentId(), "refund-ledger-fails-key", refundJson("customer requested"))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.detail").value("Ledger account not found: ORDER_REVENUE"));
+
+            PaymentRecord payment = paymentRepository.findById(fixture.paymentId()).orElseThrow();
+            RefundRecord refund = refundRepository.findByPaymentId(fixture.paymentId()).orElseThrow();
+            CustomerOrderRecord order = orderRepository.findById(fixture.orderId()).orElseThrow();
+            assertThat(payment.getStatus()).isEqualTo(PaymentStatus.SUCCEEDED);
+            assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
+            assertThat(refund.getStatus()).isEqualTo(RefundStatus.PROVIDER_SUCCEEDED_LEDGER_PENDING);
+            assertThat(refund.getProviderRefundId()).startsWith("fake_refund_");
+            assertThat(refund.getCompletedAt()).isNull();
+            assertThat(refundLedgerTransactions()).isEmpty();
+            assertThat(auditActions()).doesNotContain("REFUND_SUCCEEDED");
+        } finally {
+            restoreLedgerAccounts();
+        }
+    }
+
+    @Test
+    void providerSuccessIsDurableWhenRefundAuditRecordingFails() throws Exception {
+        String username = "refund-audit-fails@example.com";
+        PaymentFixture fixture = successfulPayment(username);
+        String latestAuditHash = currentAuditHash();
+
+        deleteAuditHashChainState();
+        try {
+            createRefund(username, fixture.paymentId(), "refund-audit-fails-key", refundJson("customer requested"))
+                    .andExpect(status().isInternalServerError());
+
+            PaymentRecord payment = paymentRepository.findById(fixture.paymentId()).orElseThrow();
+            RefundRecord refund = refundRepository.findByPaymentId(fixture.paymentId()).orElseThrow();
+            CustomerOrderRecord order = orderRepository.findById(fixture.orderId()).orElseThrow();
+            assertThat(payment.getStatus()).isEqualTo(PaymentStatus.SUCCEEDED);
+            assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
+            assertThat(refund.getStatus()).isEqualTo(RefundStatus.PROVIDER_SUCCEEDED_LEDGER_PENDING);
+            assertThat(refund.getProviderRefundId()).startsWith("fake_refund_");
+            assertThat(refund.getCompletedAt()).isNull();
+            assertThat(refundLedgerTransactions()).isEmpty();
+            assertThat(auditActions()).doesNotContain("REFUND_SUCCEEDED");
+        } finally {
+            restoreAuditHashChainState(latestAuditHash);
+        }
+    }
+
+    @Test
     void repeatedRefundRequestReturnsSameStableResponse() throws Exception {
         String username = "refund-replay@example.com";
         PaymentFixture fixture = successfulPayment(username);
@@ -506,6 +558,56 @@ class RefundFlowTest {
 
     private void truncateLedger() {
         jdbcTemplate.execute("TRUNCATE TABLE ledger_entry, ledger_transaction RESTART IDENTITY");
+    }
+
+    private void disableLedgerAccountCode(String accountCode) {
+        jdbcTemplate.update(
+                "UPDATE ledger_account SET code = ? WHERE code = ?",
+                accountCode + "_DISABLED",
+                accountCode
+        );
+    }
+
+    private void restoreLedgerAccounts() {
+        jdbcTemplate.update(
+                """
+                        UPDATE ledger_account
+                        SET code = 'PAYMENT_PROVIDER_CLEARING'
+                        WHERE id = '00000000-0000-0000-0000-000000000101'
+                        """
+        );
+        jdbcTemplate.update(
+                """
+                        UPDATE ledger_account
+                        SET code = 'ORDER_REVENUE'
+                        WHERE id = '00000000-0000-0000-0000-000000000102'
+                        """
+        );
+    }
+
+    private String currentAuditHash() {
+        List<String> hashes = jdbcTemplate.queryForList(
+                "SELECT latest_hash FROM audit_hash_chain_state WHERE id = 1",
+                String.class
+        );
+        return hashes.isEmpty() ? null : hashes.getFirst();
+    }
+
+    private void deleteAuditHashChainState() {
+        jdbcTemplate.update("DELETE FROM audit_hash_chain_state WHERE id = 1");
+    }
+
+    private void restoreAuditHashChainState(String latestAuditHash) {
+        jdbcTemplate.update(
+                """
+                        INSERT INTO audit_hash_chain_state (id, latest_hash, updated_at)
+                        VALUES (1, ?, CURRENT_TIMESTAMP)
+                        ON CONFLICT (id) DO UPDATE
+                        SET latest_hash = EXCLUDED.latest_hash,
+                            updated_at = EXCLUDED.updated_at
+                        """,
+                latestAuditHash
+        );
     }
 
     private List<String> auditActions() {

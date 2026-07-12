@@ -18,17 +18,20 @@ public class PaymentAttemptService {
     private static final String PAYMENT_RESOURCE_TYPE = "PAYMENT";
 
     private final PaymentAttemptPersistencePort paymentAttempts;
+    private final ProviderOutcomePersistenceService providerOutcomePersistenceService;
     private final PaymentLedgerPostingPort ledgerPostingPort;
     private final AuditEventRecorder auditEventRecorder;
     private final BusinessMetrics businessMetrics;
 
     public PaymentAttemptService(
             PaymentAttemptPersistencePort paymentAttempts,
+            ProviderOutcomePersistenceService providerOutcomePersistenceService,
             PaymentLedgerPostingPort ledgerPostingPort,
             AuditEventRecorder auditEventRecorder,
             BusinessMetrics businessMetrics
     ) {
         this.paymentAttempts = paymentAttempts;
+        this.providerOutcomePersistenceService = providerOutcomePersistenceService;
         this.ledgerPostingPort = ledgerPostingPort;
         this.auditEventRecorder = auditEventRecorder;
         this.businessMetrics = businessMetrics;
@@ -73,20 +76,8 @@ public class PaymentAttemptService {
     ) {
         PaymentAttemptUpdate update;
         if (isSuccessful(providerResult)) {
-            update = paymentAttempts.markSucceeded(paymentId, providerResult);
-            if (!update.transitioned()) {
-                return toResponse(update.attempt());
-            }
-            PaymentAttemptView payment = update.attempt();
-            ledgerPostingPort.postPaymentSucceeded(new PaymentLedgerPostingCommand(
-                    payment.paymentId(),
-                    payment.orderId(),
-                    payment.customerId(),
-                    payment.amount(),
-                    payment.currency(),
-                    payment.providerPaymentId()
-            ));
-            recordAudit(actor, "PAYMENT_SUCCEEDED", payment);
+            providerOutcomePersistenceService.recordProviderSucceeded(paymentId, providerResult);
+            return finalizeProviderSucceededPayment(paymentId, actor);
         } else if (providerResult.status() == PaymentProviderStatus.PENDING) {
             update = paymentAttempts.markPending(paymentId, providerResult);
             if (!update.transitioned()) {
@@ -103,6 +94,26 @@ public class PaymentAttemptService {
 
         businessMetrics.paymentOutcome(update.attempt().providerCode(), update.attempt().status().name());
         return toResponse(update.attempt());
+    }
+
+    @Transactional
+    public PaymentAttemptResponse finalizeProviderSucceededPayment(UUID paymentId, CurrentUser actor) {
+        PaymentAttemptUpdate update = paymentAttempts.finalizeProviderSucceededPayment(paymentId);
+        if (!update.transitioned()) {
+            return toResponse(update.attempt());
+        }
+        PaymentAttemptView payment = update.attempt();
+        ledgerPostingPort.postPaymentSucceeded(new PaymentLedgerPostingCommand(
+                payment.paymentId(),
+                payment.orderId(),
+                payment.customerId(),
+                payment.amount(),
+                payment.currency(),
+                payment.providerPaymentId()
+        ));
+        recordAudit(actor, "PAYMENT_SUCCEEDED", payment);
+        businessMetrics.paymentOutcome(payment.providerCode(), payment.status().name());
+        return toResponse(payment);
     }
 
     @Transactional

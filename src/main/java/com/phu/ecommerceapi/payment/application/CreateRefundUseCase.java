@@ -23,6 +23,7 @@ public class CreateRefundUseCase {
     private static final String OPERATION = "REFUND_PAYMENT";
     private static final String REFUND_RESOURCE_TYPE = "REFUND";
     private static final String PENDING_STATUS = "PENDING";
+    private static final String PROVIDER_SUCCEEDED_LEDGER_PENDING_STATUS = "PROVIDER_SUCCEEDED_LEDGER_PENDING";
     private static final String PROVIDER_TIMEOUT_STATUS = "PROVIDER_TIMEOUT";
     private static final String PROVIDER_OUTCOME_FAILED_REASON = "fake_provider_declined";
     private static final String PROVIDER_OUTCOME_TIMEOUT_REASON = "fake_provider_timeout";
@@ -60,17 +61,17 @@ public class CreateRefundUseCase {
 
         Optional<PaymentIdempotencyDecision> existingDecision = idempotencyService.findExisting(idempotencyCommand);
         if (existingDecision.isPresent()) {
-            return replayOrRecover(existingDecision.get());
+            return replayOrRecover(existingDecision.get(), command.currentUser());
         }
 
         RefundablePayment refundablePayment = refundAttemptService.validateRefundable(customerId, command.paymentId());
         PaymentProvider refundProvider = resolveRefundProvider(refundablePayment, command.currentUser());
         PaymentIdempotencyDecision idempotencyDecision = idempotencyService.start(idempotencyCommand);
         if (idempotencyDecision.type() == PaymentIdempotencyDecisionType.REPLAY) {
-            return replayOrRecover(idempotencyDecision);
+            return replayOrRecover(idempotencyDecision, command.currentUser());
         }
         if (idempotencyDecision.type() == PaymentIdempotencyDecisionType.IN_PROGRESS) {
-            return replayOrRecover(idempotencyDecision);
+            return replayOrRecover(idempotencyDecision, command.currentUser());
         }
 
         RefundAttemptSnapshot attempt = refundAttemptService.startAttempt(
@@ -129,25 +130,28 @@ public class CreateRefundUseCase {
         }
     }
 
-    private CreateRefundResult replayOrRecover(PaymentIdempotencyDecision decision) {
+    private CreateRefundResult replayOrRecover(PaymentIdempotencyDecision decision, CurrentUser actor) {
         if (decision.type() == PaymentIdempotencyDecisionType.REPLAY) {
             return new CreateRefundResult(decision.responseStatus(), decision.responseBody());
         }
         if (decision.type() == PaymentIdempotencyDecisionType.IN_PROGRESS) {
             if (REFUND_RESOURCE_TYPE.equals(decision.resourceType()) && decision.resourceId() != null) {
-                return recoverLinkedRefundAttempt(decision);
+                return recoverLinkedRefundAttempt(decision, actor);
             }
             throw new ConflictException("Refund request is already in progress");
         }
         throw new IllegalStateException("Unexpected idempotency decision: " + decision.type());
     }
 
-    private CreateRefundResult recoverLinkedRefundAttempt(PaymentIdempotencyDecision decision) {
+    private CreateRefundResult recoverLinkedRefundAttempt(PaymentIdempotencyDecision decision, CurrentUser actor) {
         RefundAttemptResponse response = refundAttemptService.findAttemptResponse(decision.resourceId())
                 .orElseThrow(() -> new ConflictException("Refund request is already in progress"));
 
         if (PROVIDER_TIMEOUT_STATUS.equals(response.status())) {
             throw new ConflictException("Refund provider outcome is unknown; retry after reconciliation");
+        }
+        if (PROVIDER_SUCCEEDED_LEDGER_PENDING_STATUS.equals(response.status())) {
+            response = refundAttemptService.finalizeProviderSucceededRefund(decision.resourceId(), actor);
         }
         if (PENDING_STATUS.equals(response.status()) && response.providerRefundId() == null) {
             throw new ConflictException("Refund request is already in progress");

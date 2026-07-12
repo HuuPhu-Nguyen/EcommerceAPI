@@ -27,6 +27,7 @@ import java.util.UUID;
 public class JpaPaymentAttemptPersistenceAdapter implements PaymentAttemptPersistencePort {
 
     private static final Set<PaymentStatus> SUCCESSFUL_ORDER_BLOCKING_STATUSES = Set.of(
+            PaymentStatus.PROVIDER_SUCCEEDED_LEDGER_PENDING,
             PaymentStatus.SUCCEEDED,
             PaymentStatus.REFUNDED
     );
@@ -86,10 +87,18 @@ public class JpaPaymentAttemptPersistenceAdapter implements PaymentAttemptPersis
     }
 
     @Override
-    public PaymentAttemptUpdate markSucceeded(UUID paymentId, PaymentProviderResult providerResult) {
+    public PaymentAttemptUpdate recordProviderSucceeded(UUID paymentId, PaymentProviderResult providerResult) {
         PaymentRecord payment = findForUpdate(paymentId);
         PaymentStatus previousStatus = payment.getStatus();
-        payment.markSucceeded(providerResult);
+        payment.recordProviderSucceeded(providerResult);
+        return new PaymentAttemptUpdate(toView(payment), payment.getStatus() != previousStatus);
+    }
+
+    @Override
+    public PaymentAttemptUpdate finalizeProviderSucceededPayment(UUID paymentId) {
+        PaymentRecord payment = findForUpdate(paymentId);
+        PaymentStatus previousStatus = payment.getStatus();
+        payment.finalizeProviderSucceeded();
         boolean transitioned = payment.getStatus() != previousStatus;
         if (transitioned) {
             payment.getOrder().markPaid();

@@ -21,6 +21,7 @@ public class PaymentIdempotencyRecoveryService {
     private static final String SUCCEEDED_STATUS = "SUCCEEDED";
     private static final String FAILED_STATUS = "FAILED";
     private static final String PENDING_STATUS = "PENDING";
+    private static final String PROVIDER_SUCCEEDED_LEDGER_PENDING_STATUS = "PROVIDER_SUCCEEDED_LEDGER_PENDING";
     private static final String PROVIDER_TIMEOUT_STATUS = "PROVIDER_TIMEOUT";
     private static final String REFUNDED_STATUS = "REFUNDED";
 
@@ -83,6 +84,9 @@ public class PaymentIdempotencyRecoveryService {
             markPendingReconciliation(entry, now, "PROVIDER_TIMEOUT");
             return;
         }
+        if (PROVIDER_SUCCEEDED_LEDGER_PENDING_STATUS.equals(response.status())) {
+            response = paymentAttemptService.finalizeProviderSucceededPayment(entry.resourceId(), null);
+        }
         if (PENDING_STATUS.equals(response.status()) && isBlank(response.providerPaymentId())) {
             markManualReview(entry, now, "PENDING_WITHOUT_PROVIDER_PAYMENT_ID");
             return;
@@ -110,6 +114,9 @@ public class PaymentIdempotencyRecoveryService {
         if (PROVIDER_TIMEOUT_STATUS.equals(response.status())) {
             markPendingReconciliation(entry, now, "PROVIDER_TIMEOUT");
             return;
+        }
+        if (PROVIDER_SUCCEEDED_LEDGER_PENDING_STATUS.equals(response.status())) {
+            response = refundAttemptService.finalizeProviderSucceededRefund(entry.resourceId(), null);
         }
         if (PENDING_STATUS.equals(response.status()) && isBlank(response.providerRefundId())) {
             markManualReview(entry, now, "PENDING_WITHOUT_PROVIDER_REFUND_ID");
