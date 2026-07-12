@@ -72,6 +72,12 @@ class SecurityConfigTest {
     }
 
     @Test
+    void registerEndpointIsRemoved() throws Exception {
+        mockMvc.perform(post("/register").with(jwt()))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
     void jwtConverterMapsKeycloakRealmAndClientRoles() {
         Jwt jwt = Jwt.withTokenValue("token")
                 .header("alg", "none")

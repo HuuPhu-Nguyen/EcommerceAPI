@@ -38,7 +38,7 @@ class PostgreSqlIntegrationTest {
 
     @Test
     void flywayMigrationsCreateBankingCoreSchema() {
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("19");
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("20");
 
         assertThat(tableNames()).contains(
                 "user_model",
@@ -89,6 +89,12 @@ class PostgreSqlIntegrationTest {
                 );
         assertThat(indexNames("outbox_event"))
                 .contains("idx_outbox_event_processing_locked_at");
+        assertThat(indexNames("user_model"))
+                .contains(
+                        "ux_user_model_identity_subject",
+                        "ux_user_model_username_lower",
+                        "ux_user_model_email_lower"
+                );
     }
 
     @Test

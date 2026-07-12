@@ -7,6 +7,7 @@ import com.phu.ecommerceapi.identity.application.CurrentUser;
 import com.phu.ecommerceapi.identity.application.SecurityExpressions;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -24,6 +25,12 @@ public class CustomerProfileController {
     @PreAuthorize(SecurityExpressions.CUSTOMER_PROFILE_READ)
     public CustomerProfile getCurrentProfile(@AuthenticatedUser CurrentUser currentUser) {
         return customerProfileService.getCurrentProfile(currentUser);
+    }
+
+    @PostMapping("/customer/profile/me")
+    @PreAuthorize(SecurityExpressions.CUSTOMER_PROFILE_READ)
+    public CustomerProfile provisionCurrentProfile(@AuthenticatedUser CurrentUser currentUser) {
+        return customerProfileService.provisionCurrentProfile(currentUser);
     }
 
     @GetMapping("/admin/customer-profiles")

@@ -92,6 +92,7 @@ Important authorities:
 Realm roles remain accepted intentionally so the local Keycloak realm can express user roles once at the realm level. Client roles are trusted only from the configured API resource client, `ecommerce-api` by default; roles under any other `resource_access` client are ignored.
 
 Ownership checks use the durable OAuth2 subject, not username or email claims.
+Customer profiles are created or returned by signing in through Keycloak and calling `POST /customer/profile/me`; the API does not accept anonymous password registration.
 
 ## Runtime Security Controls
 
@@ -101,7 +102,7 @@ The API includes an application-level in-memory abuse limiter for sensitive loca
 - `POST /payments/{paymentId}/refunds`
 - `POST /payments/provider-webhooks/fake`
 - `POST /payments/provider-webhooks/stripe`
-- `POST /register`
+- `POST /customer/profile/me`
 - `GET /customer/profile/me`
 
 Repeated requests from the same remote address receive a `429 Too Many Requests` Problem Details response with a `Retry-After` header. Provider webhook endpoints also reject oversized bodies before controller logic using `WEBHOOK_MAX_BODY_BYTES`.
@@ -271,6 +272,9 @@ $auditorToken = Get-DemoToken "auditor@example.com" "auditor-password"
 
 $customerHeaders = @{ Authorization = "Bearer $customerToken" }
 $auditorHeaders = @{ Authorization = "Bearer $auditorToken" }
+
+$profile = Invoke-RestMethod -Method Post -Uri "$base/customer/profile/me" -Headers $customerHeaders
+$profile
 
 $products = Invoke-RestMethod -Method Get -Uri "$base/products"
 $products.content
@@ -507,7 +511,7 @@ Important environment variables:
 - Fake provider: `FAKE_PROVIDER_WEBHOOK_SECRET` when `fake` is enabled
 - Stripe provider: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_API_VERSION`, `STRIPE_CONNECT_TIMEOUT_MS`, `STRIPE_READ_TIMEOUT_MS` when `stripe` is enabled
 - Payment idempotency recovery: `PAYMENT_IDEMPOTENCY_IN_PROGRESS_LEASE_SECONDS`
-- Abuse protection: `RATE_LIMIT_ENABLED`, `RATE_LIMIT_WINDOW_SECONDS`, `RATE_LIMIT_SENSITIVE_REQUESTS_PER_WINDOW`, `RATE_LIMIT_WEBHOOK_REQUESTS_PER_WINDOW`, `RATE_LIMIT_REGISTRATION_REQUESTS_PER_WINDOW`, `RATE_LIMIT_PROFILE_REQUESTS_PER_WINDOW`, `WEBHOOK_MAX_BODY_BYTES`
+- Abuse protection: `RATE_LIMIT_ENABLED`, `RATE_LIMIT_WINDOW_SECONDS`, `RATE_LIMIT_SENSITIVE_REQUESTS_PER_WINDOW`, `RATE_LIMIT_WEBHOOK_REQUESTS_PER_WINDOW`, `RATE_LIMIT_PROFILE_REQUESTS_PER_WINDOW`, `WEBHOOK_MAX_BODY_BYTES`
 - Operations: `APP_ENVIRONMENT`, `SHUTDOWN_TIMEOUT`, `LOG_STRUCTURED_FORMAT`, `OUTBOX_PROCESSING_ENABLED`, `RECONCILIATION_SCHEDULING_ENABLED`
 
 No real card data, JWTs, private keys, or production secrets should be committed.

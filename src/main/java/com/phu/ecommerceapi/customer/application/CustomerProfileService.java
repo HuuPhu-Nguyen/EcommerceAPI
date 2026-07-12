@@ -10,14 +10,23 @@ import java.util.List;
 public class CustomerProfileService {
 
     private final CustomerProfileLookup customerProfileLookup;
+    private final CustomerProfileProvisioningPort customerProfileProvisioningPort;
 
-    public CustomerProfileService(CustomerProfileLookup customerProfileLookup) {
+    public CustomerProfileService(
+            CustomerProfileLookup customerProfileLookup,
+            CustomerProfileProvisioningPort customerProfileProvisioningPort
+    ) {
         this.customerProfileLookup = customerProfileLookup;
+        this.customerProfileProvisioningPort = customerProfileProvisioningPort;
     }
 
     public CustomerProfile getCurrentProfile(CurrentUser currentUser) {
         return customerProfileLookup.findCurrentUserProfile(currentUser)
                 .orElseThrow(() -> new NotFoundException("Customer profile not found"));
+    }
+
+    public CustomerProfile provisionCurrentProfile(CurrentUser currentUser) {
+        return customerProfileProvisioningPort.provisionCurrentProfile(currentUser);
     }
 
     public List<CustomerProfile> getAllProfiles() {

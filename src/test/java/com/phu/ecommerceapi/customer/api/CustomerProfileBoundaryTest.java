@@ -9,11 +9,12 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.http.MediaType;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -89,29 +90,62 @@ class CustomerProfileBoundaryTest {
     }
 
     @Test
-    void registrationReturnsSafeProfileDto() throws Exception {
-        String requestBody = """
-                {
-                  "username": "new-customer@example.com",
-                  "password": "plain-text-password",
-                  "firstName": "New",
-                  "lastName": "Customer",
-                  "email": "new-customer@example.com",
-                  "phone": "555-0100",
-                  "address": "Sensitive Address"
-                }
-                """;
+    void profileProvisioningRequiresAuthentication() throws Exception {
+        mockMvc.perform(post("/customer/profile/me"))
+                .andExpect(status().isUnauthorized());
+    }
 
-        mockMvc.perform(post("/register")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(requestBody))
+    @Test
+    void profileProvisioningCreatesSafeProfileFromAuthenticatedSubject() throws Exception {
+        mockMvc.perform(post("/customer/profile/me")
+                        .with(customerJwt("provision-subject-1", "new-customer@example.com")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.username").value("new-customer@example.com"))
+                .andExpect(jsonPath("$.identitySubject").value("provision-subject-1"))
                 .andExpect(jsonPath("$.email").value("new-customer@example.com"))
                 .andExpect(jsonPath("$.password").doesNotExist())
                 .andExpect(jsonPath("$.phone").doesNotExist())
                 .andExpect(jsonPath("$.address").doesNotExist())
                 .andExpect(jsonPath("$.carts").doesNotExist());
+
+        UserModel user = userRepo.findByIdentitySubject("provision-subject-1");
+        assertThat(user).isNotNull();
+        assertThat(user.getUsername()).isEqualTo("new-customer@example.com");
+        assertThat(user.getEmail()).isEqualTo("new-customer@example.com");
+        assertThat(user.getPassword()).isNull();
+        assertThat(user.getFirstName()).isNull();
+        assertThat(user.getLastName()).isNull();
+    }
+
+    @Test
+    void profileProvisioningReturnsExistingProfileForSameSubject() throws Exception {
+        mockMvc.perform(post("/customer/profile/me")
+                        .with(customerJwt("provision-subject-2", "first-profile@example.com")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.username").value("first-profile@example.com"));
+
+        mockMvc.perform(post("/customer/profile/me")
+                        .with(customerJwt("provision-subject-2", "changed-profile@example.com")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.username").value("first-profile@example.com"))
+                .andExpect(jsonPath("$.email").value("first-profile@example.com"))
+                .andExpect(jsonPath("$.password").doesNotExist());
+
+        assertThat(userRepo.findAll()).hasSize(1);
+    }
+
+    @Test
+    void currentProfileWorksAfterProvisioning() throws Exception {
+        RequestPostProcessor jwt = customerJwt("provision-subject-3", "profile-after-provision@example.com");
+
+        mockMvc.perform(post("/customer/profile/me").with(jwt))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/customer/profile/me").with(jwt))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.identitySubject").value("provision-subject-3"))
+                .andExpect(jsonPath("$.username").value("profile-after-provision@example.com"))
+                .andExpect(jsonPath("$.password").doesNotExist());
     }
 
     @Test
@@ -143,5 +177,17 @@ class CustomerProfileBoundaryTest {
                 .address("Sensitive Address")
                 .build();
         userRepo.save(user);
+    }
+
+    private RequestPostProcessor customerJwt(String subject, String username) {
+        return jwt()
+                .jwt(jwt -> jwt
+                        .subject(subject)
+                        .claim("preferred_username", username)
+                        .claim("email", username))
+                .authorities(
+                        new SimpleGrantedAuthority("ROLE_CUSTOMER"),
+                        new SimpleGrantedAuthority("SCOPE_profile:read")
+                );
     }
 }

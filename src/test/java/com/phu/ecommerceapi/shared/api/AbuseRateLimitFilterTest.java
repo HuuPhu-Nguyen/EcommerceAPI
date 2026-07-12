@@ -23,7 +23,6 @@ class AbuseRateLimitFilterTest {
             1,
             1,
             1,
-            1,
             64
     );
 
@@ -75,12 +74,22 @@ class AbuseRateLimitFilterTest {
     }
 
     @Test
-    void rateLimitsRegistrationAndProfileReadsByClientAddress() throws Exception {
-        assertAllowed("POST", "/register");
-        assertRateLimited(perform("POST", "/register"), "/register");
-
+    void rateLimitsProfileReadsAndProvisioningByClientAddress() throws Exception {
         assertAllowed("GET", "/customer/profile/me");
         assertRateLimited(perform("GET", "/customer/profile/me"), "/customer/profile/me");
+
+        AbuseRateLimitFilter provisioningFilter = newFilter();
+        assertAllowed(provisioningFilter, "POST", "/customer/profile/me");
+        assertRateLimited(
+                perform(provisioningFilter, "POST", "/customer/profile/me"),
+                "/customer/profile/me"
+        );
+    }
+
+    @Test
+    void doesNotSpecialCaseRemovedRegistrationEndpoint() throws Exception {
+        assertAllowed("POST", "/register");
+        assertAllowed("POST", "/register");
     }
 
     @Test
@@ -90,19 +99,28 @@ class AbuseRateLimitFilterTest {
     }
 
     private void assertAllowed(String method, String path) throws Exception {
-        MockHttpServletResponse response = perform(method, path);
+        assertAllowed(filter, method, path);
+    }
+
+    private void assertAllowed(AbuseRateLimitFilter targetFilter, String method, String path) throws Exception {
+        MockHttpServletResponse response = perform(targetFilter, method, path);
 
         assertThat(response.getStatus()).isEqualTo(HttpStatus.OK.value());
     }
 
     private MockHttpServletResponse perform(String method, String path) throws Exception {
+        return perform(filter, method, path);
+    }
+
+    private MockHttpServletResponse perform(AbuseRateLimitFilter targetFilter, String method, String path)
+            throws Exception {
         MockHttpServletRequest request = new MockHttpServletRequest(method, path);
         request.setRemoteAddr("203.0.113.10");
         request.setRequestURI(path);
         request.setAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE, "request-123");
         MockHttpServletResponse response = new MockHttpServletResponse();
 
-        filter.doFilter(request, response, new MockFilterChain());
+        targetFilter.doFilter(request, response, new MockFilterChain());
         return response;
     }
 
@@ -112,5 +130,18 @@ class AbuseRateLimitFilterTest {
         assertThat(response.getContentAsString())
                 .contains("RATE_LIMITED", path, "request-123")
                 .doesNotContain("Authorization", "Idempotency-Key");
+    }
+
+    private AbuseRateLimitFilter newFilter() {
+        return new AbuseRateLimitFilter(
+                new ObjectMapper(),
+                Clock.fixed(Instant.parse("2026-07-11T00:00:00Z"), ZoneOffset.UTC),
+                true,
+                60,
+                1,
+                1,
+                1,
+                64
+        );
     }
 }

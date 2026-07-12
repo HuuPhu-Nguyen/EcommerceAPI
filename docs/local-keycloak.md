@@ -50,6 +50,7 @@ Use the token against protected API endpoints:
 
 ```powershell
 Invoke-RestMethod `
+  -Method Post `
   -Uri "http://localhost:8080/customer/profile/me" `
   -Headers @{ Authorization = "Bearer $accessToken" }
 ```

@@ -29,7 +29,6 @@ public class AbuseRateLimitFilter extends OncePerRequestFilter {
     private static final String PAYMENT_GROUP = "payment-create";
     private static final String REFUND_GROUP = "refund-create";
     private static final String WEBHOOK_GROUP = "provider-webhook";
-    private static final String REGISTRATION_GROUP = "registration";
     private static final String PROFILE_GROUP = "customer-profile";
 
     private final ObjectMapper objectMapper;
@@ -38,7 +37,6 @@ public class AbuseRateLimitFilter extends OncePerRequestFilter {
     private final long windowSeconds;
     private final int sensitiveRequestLimit;
     private final int webhookRequestLimit;
-    private final int registrationRequestLimit;
     private final int profileRequestLimit;
     private final long webhookMaxBodyBytes;
     private final Map<String, WindowCounter> counters = new ConcurrentHashMap<>();
@@ -50,12 +48,11 @@ public class AbuseRateLimitFilter extends OncePerRequestFilter {
             @Value("${app.security.rate-limit.window-seconds:60}") long windowSeconds,
             @Value("${app.security.rate-limit.sensitive-requests-per-window:30}") int sensitiveRequestLimit,
             @Value("${app.security.rate-limit.webhook-requests-per-window:120}") int webhookRequestLimit,
-            @Value("${app.security.rate-limit.registration-requests-per-window:10}") int registrationRequestLimit,
             @Value("${app.security.rate-limit.profile-requests-per-window:60}") int profileRequestLimit,
             @Value("${app.security.webhook.max-body-bytes:65536}") long webhookMaxBodyBytes
     ) {
         this(objectMapper, Clock.systemUTC(), enabled, windowSeconds, sensitiveRequestLimit,
-                webhookRequestLimit, registrationRequestLimit, profileRequestLimit, webhookMaxBodyBytes);
+                webhookRequestLimit, profileRequestLimit, webhookMaxBodyBytes);
     }
 
     AbuseRateLimitFilter(
@@ -65,7 +62,6 @@ public class AbuseRateLimitFilter extends OncePerRequestFilter {
             long windowSeconds,
             int sensitiveRequestLimit,
             int webhookRequestLimit,
-            int registrationRequestLimit,
             int profileRequestLimit,
             long webhookMaxBodyBytes
     ) {
@@ -75,7 +71,6 @@ public class AbuseRateLimitFilter extends OncePerRequestFilter {
         this.windowSeconds = Math.max(1, windowSeconds);
         this.sensitiveRequestLimit = Math.max(1, sensitiveRequestLimit);
         this.webhookRequestLimit = Math.max(1, webhookRequestLimit);
-        this.registrationRequestLimit = Math.max(1, registrationRequestLimit);
         this.profileRequestLimit = Math.max(1, profileRequestLimit);
         this.webhookMaxBodyBytes = Math.max(1, webhookMaxBodyBytes);
     }
@@ -131,10 +126,7 @@ public class AbuseRateLimitFilter extends OncePerRequestFilter {
         if ("POST".equals(method) && isProviderWebhookPath(path)) {
             return new RateLimitRule(WEBHOOK_GROUP, webhookRequestLimit);
         }
-        if ("POST".equals(method) && "/register".equals(path)) {
-            return new RateLimitRule(REGISTRATION_GROUP, registrationRequestLimit);
-        }
-        if ("GET".equals(method) && "/customer/profile/me".equals(path)) {
+        if (("GET".equals(method) || "POST".equals(method)) && "/customer/profile/me".equals(path)) {
             return new RateLimitRule(PROFILE_GROUP, profileRequestLimit);
         }
         return null;

@@ -60,6 +60,9 @@ class SecurityAuthorizationIntegrationTest {
         mockMvc.perform(get("/customer/profile/me"))
                 .andExpect(status().isUnauthorized());
 
+        mockMvc.perform(post("/customer/profile/me"))
+                .andExpect(status().isUnauthorized());
+
         mockMvc.perform(post("/cart"))
                 .andExpect(status().isUnauthorized());
 
