@@ -70,7 +70,7 @@ Relevant ADRs:
 
 ## Security Model
 
-Authentication uses standard Spring Security OAuth2 Resource Server JWT validation. Local development uses Keycloak from Docker Compose with a preloaded `ecommerce` realm.
+Authentication uses standard Spring Security OAuth2 Resource Server JWT validation. Local development uses Keycloak from Docker Compose with a preloaded `ecommerce` realm. Tokens must be issued by the configured issuer, include the configured API audience, and, when configured, come from an allowed authorized party such as the local `ecommerce-web` client.
 
 The detailed threat model is in [docs/threat-model.md](docs/threat-model.md).
 
@@ -88,6 +88,8 @@ Important authorities:
 - `ROLE_ADMIN` plus `product:write` for product management.
 - `ROLE_AUDITOR` or `ROLE_ADMIN` plus `audit:read` for audit and reconciliation.
 - `ROLE_AUDITOR` or `ROLE_ADMIN` plus `ledger:read` for ledger reads.
+
+Realm roles remain accepted intentionally so the local Keycloak realm can express user roles once at the realm level. Client roles are trusted only from the configured API resource client, `ecommerce-api` by default; roles under any other `resource_access` client are ignored.
 
 Ownership checks use the durable OAuth2 subject, not username or email claims.
 
@@ -228,6 +230,9 @@ docker run --rm -p 8080:8080 `
     -e ECOMMERCE_DB_USERNAME="ecommerce_app" `
     -e ECOMMERCE_DB_PASSWORD="<from-secret-manager>" `
     -e OAUTH2_ISSUER_URI="https://issuer.example.com/realms/ecommerce" `
+    -e OAUTH2_REQUIRED_AUDIENCE="ecommerce-api" `
+    -e OAUTH2_RESOURCE_CLIENT_ID="ecommerce-api" `
+    -e OAUTH2_ALLOWED_AUTHORIZED_PARTIES="ecommerce-web" `
     -e PAYMENT_PROVIDER_ACTIVE="stripe" `
     -e PAYMENT_PROVIDER_ENABLED="stripe" `
     -e STRIPE_SECRET_KEY="<from-secret-manager>" `
@@ -497,7 +502,7 @@ Safe local defaults are documented in `.env.example`.
 Important environment variables:
 
 - Database: `ECOMMERCE_DB_URL`, `ECOMMERCE_DB_USERNAME`, `ECOMMERCE_DB_PASSWORD`
-- OAuth2: `OAUTH2_ISSUER_URI`; local profile can also use `OAUTH2_JWK_SET_URI`
+- OAuth2: `OAUTH2_ISSUER_URI`, `OAUTH2_REQUIRED_AUDIENCE`, `OAUTH2_RESOURCE_CLIENT_ID`, `OAUTH2_ALLOWED_AUTHORIZED_PARTIES`; local profile can also use `OAUTH2_JWK_SET_URI`
 - Providers: `PAYMENT_PROVIDER_ACTIVE`, `PAYMENT_PROVIDER_ENABLED`
 - Fake provider: `FAKE_PROVIDER_WEBHOOK_SECRET` when `fake` is enabled
 - Stripe provider: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_API_VERSION`, `STRIPE_CONNECT_TIMEOUT_MS`, `STRIPE_READ_TIMEOUT_MS` when `stripe` is enabled

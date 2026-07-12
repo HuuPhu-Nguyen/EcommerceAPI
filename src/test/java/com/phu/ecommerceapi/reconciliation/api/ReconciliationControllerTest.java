@@ -27,7 +27,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @WebMvcTest(ReconciliationController.class)
 @Import(SecurityConfig.class)
-@TestPropertySource(properties = "spring.security.oauth2.resourceserver.jwt.jwk-set-uri=http://localhost/unused-jwks")
+@TestPropertySource(properties = {
+        "spring.security.oauth2.resourceserver.jwt.jwk-set-uri=http://localhost/unused-jwks",
+        "spring.security.oauth2.resourceserver.jwt.issuer-uri=http://localhost/realms/test"
+})
 class ReconciliationControllerTest {
 
     @Autowired

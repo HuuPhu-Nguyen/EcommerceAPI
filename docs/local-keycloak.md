@@ -62,6 +62,9 @@ Local profile defaults:
 
 - Issuer: `http://localhost:8081/realms/ecommerce`
 - JWK set: `http://localhost:8081/realms/ecommerce/protocol/openid-connect/certs`
+- Required audience: `ecommerce-api`
+- Trusted resource client roles: `resource_access.ecommerce-api.roles`
+- Allowed authorized party: `ecommerce-web`
 
 Both are configured so the API validates the token issuer while avoiding a hard startup dependency on Keycloak availability.
 

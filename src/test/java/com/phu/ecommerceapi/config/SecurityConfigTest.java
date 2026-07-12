@@ -91,6 +91,63 @@ class SecurityConfigTest {
                 .contains("ROLE_CUSTOMER", "ROLE_ADMIN");
     }
 
+    @Test
+    void jwtConverterDoesNotMapRolesFromOtherResourceClients() {
+        Jwt jwt = Jwt.withTokenValue("token")
+                .header("alg", "none")
+                .subject("customer-1")
+                .issuedAt(Instant.now())
+                .expiresAt(Instant.now().plusSeconds(300))
+                .claim("resource_access", Map.of(
+                        "other-client", Map.of("roles", List.of("admin"))
+                ))
+                .build();
+
+        var authentication = jwtAuthenticationConverter.convert(jwt);
+
+        assertThat(authentication.getAuthorities())
+                .extracting("authority")
+                .doesNotContain("ROLE_ADMIN");
+    }
+
+    @Test
+    void jwtConverterMapsOnlyConfiguredResourceClientRolesWhenMultipleClientsArePresent() {
+        Jwt jwt = Jwt.withTokenValue("token")
+                .header("alg", "none")
+                .subject("customer-1")
+                .issuedAt(Instant.now())
+                .expiresAt(Instant.now().plusSeconds(300))
+                .claim("resource_access", Map.of(
+                        "ecommerce-api", Map.of("roles", List.of("customer")),
+                        "other-client", Map.of("roles", List.of("admin"))
+                ))
+                .build();
+
+        var authentication = jwtAuthenticationConverter.convert(jwt);
+
+        assertThat(authentication.getAuthorities())
+                .extracting("authority")
+                .contains("ROLE_CUSTOMER")
+                .doesNotContain("ROLE_ADMIN");
+    }
+
+    @Test
+    void jwtConverterKeepsScopeAuthorities() {
+        Jwt jwt = Jwt.withTokenValue("token")
+                .header("alg", "none")
+                .subject("customer-1")
+                .issuedAt(Instant.now())
+                .expiresAt(Instant.now().plusSeconds(300))
+                .claim("scope", "cart:read payment:create")
+                .build();
+
+        var authentication = jwtAuthenticationConverter.convert(jwt);
+
+        assertThat(authentication.getAuthorities())
+                .extracting("authority")
+                .contains("SCOPE_cart:read", "SCOPE_payment:create");
+    }
+
     private String webhookBody(String eventId) {
         return """
                 {
