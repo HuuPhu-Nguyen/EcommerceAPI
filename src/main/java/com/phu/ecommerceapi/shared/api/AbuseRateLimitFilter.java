@@ -3,6 +3,7 @@ package com.phu.ecommerceapi.shared.api;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
+import jakarta.servlet.ServletInputStream;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -15,6 +16,7 @@ import org.springframework.http.ProblemDetail;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.net.URI;
 import java.time.Clock;
@@ -38,7 +40,7 @@ public class AbuseRateLimitFilter extends OncePerRequestFilter {
     private final int sensitiveRequestLimit;
     private final int webhookRequestLimit;
     private final int profileRequestLimit;
-    private final long webhookMaxBodyBytes;
+    private final int webhookMaxBodyBytes;
     private final Map<String, WindowCounter> counters = new ConcurrentHashMap<>();
 
     @Autowired
@@ -72,7 +74,7 @@ public class AbuseRateLimitFilter extends OncePerRequestFilter {
         this.sensitiveRequestLimit = Math.max(1, sensitiveRequestLimit);
         this.webhookRequestLimit = Math.max(1, webhookRequestLimit);
         this.profileRequestLimit = Math.max(1, profileRequestLimit);
-        this.webhookMaxBodyBytes = Math.max(1, webhookMaxBodyBytes);
+        this.webhookMaxBodyBytes = normalizedWebhookMaxBodyBytes(webhookMaxBodyBytes);
     }
 
     @Override
@@ -82,18 +84,18 @@ public class AbuseRateLimitFilter extends OncePerRequestFilter {
             FilterChain filterChain
     ) throws ServletException, IOException {
         String normalizedPath = normalizePath(request.getRequestURI());
-        if (isOversizedWebhook(request, normalizedPath)) {
-            writePayloadTooLargeResponse(request, response);
+        HttpServletRequest filteredRequest = enforceWebhookBodyLimit(request, response, normalizedPath);
+        if (filteredRequest == null) {
             return;
         }
 
-        RateLimitRule rule = ruleFor(request, normalizedPath);
-        if (rule == null || allow(rule, clientKey(request, rule))) {
-            filterChain.doFilter(request, response);
+        RateLimitRule rule = ruleFor(filteredRequest, normalizedPath);
+        if (rule == null || allow(rule, clientKey(filteredRequest, rule))) {
+            filterChain.doFilter(filteredRequest, response);
             return;
         }
 
-        writeRateLimitedResponse(request, response);
+        writeRateLimitedResponse(filteredRequest, response);
     }
 
     private boolean allow(RateLimitRule rule, String clientKey) {
@@ -132,10 +134,47 @@ public class AbuseRateLimitFilter extends OncePerRequestFilter {
         return null;
     }
 
-    private boolean isOversizedWebhook(HttpServletRequest request, String path) {
-        return "POST".equals(request.getMethod())
-                && isProviderWebhookPath(path)
-                && request.getContentLengthLong() > webhookMaxBodyBytes;
+    private HttpServletRequest enforceWebhookBodyLimit(
+            HttpServletRequest request,
+            HttpServletResponse response,
+            String path
+    ) throws IOException {
+        if (!isProviderWebhookPost(request, path)) {
+            return request;
+        }
+        if (request.getContentLengthLong() > webhookMaxBodyBytes) {
+            writePayloadTooLargeResponse(request, response);
+            return null;
+        }
+
+        byte[] requestBody = readWebhookBody(request);
+        if (requestBody.length > webhookMaxBodyBytes) {
+            writePayloadTooLargeResponse(request, response);
+            return null;
+        }
+
+        return new CachedBodyHttpServletRequest(request, requestBody);
+    }
+
+    private byte[] readWebhookBody(HttpServletRequest request) throws IOException {
+        int readLimit = webhookMaxBodyBytes + 1;
+        ByteArrayOutputStream body = new ByteArrayOutputStream(Math.min(webhookMaxBodyBytes, 8192));
+        byte[] buffer = new byte[Math.min(readLimit, 8192)];
+        int remaining = readLimit;
+        ServletInputStream inputStream = request.getInputStream();
+        while (remaining > 0) {
+            int bytesRead = inputStream.read(buffer, 0, Math.min(buffer.length, remaining));
+            if (bytesRead == -1) {
+                break;
+            }
+            body.write(buffer, 0, bytesRead);
+            remaining -= bytesRead;
+        }
+        return body.toByteArray();
+    }
+
+    private boolean isProviderWebhookPost(HttpServletRequest request, String path) {
+        return "POST".equals(request.getMethod()) && isProviderWebhookPath(path);
     }
 
     private boolean isRefundPath(String path) {
@@ -211,6 +250,14 @@ public class AbuseRateLimitFilter extends OncePerRequestFilter {
         return normalized.length() > 1 && normalized.endsWith("/")
                 ? normalized.substring(0, normalized.length() - 1)
                 : normalized;
+    }
+
+    private int normalizedWebhookMaxBodyBytes(long value) {
+        long normalized = Math.max(1, value);
+        if (normalized >= Integer.MAX_VALUE) {
+            throw new IllegalArgumentException("webhook max body bytes must be less than " + Integer.MAX_VALUE);
+        }
+        return (int) normalized;
     }
 
     private record RateLimitRule(String group, int limit) {

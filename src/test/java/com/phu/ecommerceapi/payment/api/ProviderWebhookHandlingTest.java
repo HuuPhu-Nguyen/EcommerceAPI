@@ -467,6 +467,20 @@ class ProviderWebhookHandlingTest {
     }
 
     @Test
+    void oversizedWebhookPayloadIsRejectedBeforeControllerHandling() throws Exception {
+        mockMvc.perform(post("/payments/provider-webhooks/fake")
+                        .header(FakeProviderWebhookController.WEBHOOK_SECRET_HEADER, WEBHOOK_SECRET)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("a".repeat(65537)))
+                .andExpect(status().isPayloadTooLarge())
+                .andExpect(jsonPath("$.title").value("Payload too large"))
+                .andExpect(jsonPath("$.detail").value("Webhook request body is too large"))
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+
+        assertThat(webhookEventRepository.findAll()).isEmpty();
+    }
+
+    @Test
     void validStripeSignatureProcessesPaymentSuccess() throws Exception {
         String username = "stripe-webhook-payment@example.com";
         PaymentFixture fixture = pendingPayment(username, "stripe");

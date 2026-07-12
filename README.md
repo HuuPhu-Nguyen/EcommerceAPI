@@ -106,7 +106,7 @@ The API includes an application-level in-memory abuse limiter for sensitive loca
 - `POST /customer/profile/me`
 - `GET /customer/profile/me`
 
-Repeated requests from the same remote address receive a `429 Too Many Requests` Problem Details response with a `Retry-After` header. Provider webhook endpoints also reject oversized bodies before controller logic using `WEBHOOK_MAX_BODY_BYTES`.
+Repeated requests from the same remote address receive a `429 Too Many Requests` Problem Details response with a `Retry-After` header. Provider webhook endpoints also reject oversized bodies before controller logic using `WEBHOOK_MAX_BODY_BYTES`, even when `Content-Length` is missing or false. Production ingress or reverse proxy body-size limits are still required and should be set to the same or a lower value than `WEBHOOK_MAX_BODY_BYTES`.
 
 Every HTTP request receives an internally generated `X-Request-Id`; caller-provided `X-Request-Id` values are validated and stored only as `externalCorrelationId` for correlation. `X-Forwarded-For` is ignored unless the immediate remote address matches a CIDR in `TRUSTED_PROXY_CIDRS`; production deployments behind a reverse proxy must configure that list or rely on a platform layer that overwrites forwarding headers.
 
