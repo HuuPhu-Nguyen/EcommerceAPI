@@ -23,8 +23,31 @@ public interface LedgerTransactionRepository extends JpaRepository<LedgerTransac
                 ledgerTransaction.referenceId
             )
             from LedgerTransactionRecord ledgerTransaction
+            where (:afterIdExclusive is null or ledgerTransaction.id > :afterIdExclusive)
+            order by ledgerTransaction.id asc
             """)
-    List<LedgerTransactionReconciliationItem> findAllForReconciliation();
+    List<LedgerTransactionReconciliationItem> findPageForReconciliation(
+            @Param("afterIdExclusive") UUID afterIdExclusive,
+            Pageable pageable
+    );
+
+    @Query("""
+            select new com.phu.ecommerceapi.reconciliation.application.LedgerTransactionReconciliationItem(
+                ledgerTransaction.id,
+                ledgerTransaction.transactionType,
+                ledgerTransaction.referenceType,
+                ledgerTransaction.referenceId
+            )
+            from LedgerTransactionRecord ledgerTransaction
+            where ledgerTransaction.transactionType in :transactionTypes
+              and ledgerTransaction.referenceType in :referenceTypes
+              and ledgerTransaction.referenceId in :referenceIds
+            """)
+    List<LedgerTransactionReconciliationItem> findByReferenceCandidatesForReconciliation(
+            @Param("transactionTypes") List<LedgerTransactionType> transactionTypes,
+            @Param("referenceTypes") List<String> referenceTypes,
+            @Param("referenceIds") List<String> referenceIds
+    );
 
     @Query("""
             select ledgerTransaction

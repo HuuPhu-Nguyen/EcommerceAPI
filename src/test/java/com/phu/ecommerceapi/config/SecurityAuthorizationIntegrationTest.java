@@ -148,7 +148,7 @@ class SecurityAuthorizationIntegrationTest {
                         .with(jwtWith("auditor-subject", role("AUDITOR"), scope("audit:read"))))
                 .andExpect(status().isOk());
 
-        mockMvc.perform(get("/reconciliation/report")
+        mockMvc.perform(post("/reconciliation/runs")
                         .with(jwtWith("admin-subject", role("ADMIN"), scope("audit:read"))))
                 .andExpect(status().isOk());
     }

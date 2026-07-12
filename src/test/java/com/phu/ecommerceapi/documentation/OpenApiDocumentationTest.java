@@ -41,6 +41,7 @@ class OpenApiDocumentationTest {
                 .andExpect(jsonPath("$.paths['/audit/events'].get.responses['200']").exists())
                 .andExpect(jsonPath("$.paths['/audit/events/verification'].get.responses['200']").exists())
                 .andExpect(jsonPath("$.paths['/reconciliation/report'].get.responses['200']").exists())
+                .andExpect(jsonPath("$.paths['/reconciliation/runs'].post.responses['200']").exists())
                 .andExpect(jsonPath("$.paths['/products/{productId}/stock/stream'].get.responses['200'].content['text/event-stream']").exists());
     }
 }

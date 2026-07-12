@@ -1,6 +1,7 @@
 package com.phu.ecommerceapi.payment.infrastructure;
 
 import com.phu.ecommerceapi.reconciliation.application.ProviderWebhookReconciliationItem;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -76,6 +77,11 @@ public interface ProviderWebhookEventRepository extends JpaRepository<ProviderWe
                 event.providerObjectType
             )
             from ProviderWebhookEventRecord event
+            where (:afterIdExclusive is null or event.id > :afterIdExclusive)
+            order by event.id asc
             """)
-    List<ProviderWebhookReconciliationItem> findAllForReconciliation();
+    List<ProviderWebhookReconciliationItem> findPageForReconciliation(
+            @Param("afterIdExclusive") UUID afterIdExclusive,
+            Pageable pageable
+    );
 }

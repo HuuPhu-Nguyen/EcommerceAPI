@@ -3,6 +3,7 @@ package com.phu.ecommerceapi.ledger.infrastructure;
 import com.phu.ecommerceapi.reconciliation.application.LedgerEntryReconciliationItem;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.UUID;
@@ -20,8 +21,11 @@ public interface LedgerEntryRepository extends JpaRepository<LedgerEntryRecord, 
             from LedgerEntryRecord entry
             join entry.transaction ledgerTransaction
             join entry.account account
+            where ledgerTransaction.id in :transactionIds
             """)
-    List<LedgerEntryReconciliationItem> findAllForReconciliation();
+    List<LedgerEntryReconciliationItem> findForReconciliationByTransactionIds(
+            @Param("transactionIds") List<UUID> transactionIds
+    );
 
     List<LedgerEntryRecord> findByTransactionId(UUID transactionId);
 }

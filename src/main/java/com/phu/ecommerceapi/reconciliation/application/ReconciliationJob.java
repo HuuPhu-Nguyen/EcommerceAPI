@@ -9,7 +9,6 @@ import org.springframework.stereotype.Component;
 public class ReconciliationJob {
 
     private final ReconciliationService reconciliationService;
-    private volatile ReconciliationReport latestReport;
 
     public ReconciliationJob(ReconciliationService reconciliationService) {
         this.reconciliationService = reconciliationService;
@@ -17,10 +16,6 @@ public class ReconciliationJob {
 
     @Scheduled(fixedDelayString = "${app.reconciliation.fixed-delay-ms:300000}")
     public void runScheduledReconciliation() {
-        latestReport = reconciliationService.runReport();
-    }
-
-    public ReconciliationReport latestReport() {
-        return latestReport;
+        reconciliationService.runReport();
     }
 }

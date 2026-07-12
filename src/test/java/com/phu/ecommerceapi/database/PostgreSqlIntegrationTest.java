@@ -38,7 +38,7 @@ class PostgreSqlIntegrationTest {
 
     @Test
     void flywayMigrationsCreateBankingCoreSchema() {
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("21");
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("22");
 
         assertThat(tableNames()).contains(
                 "user_model",
@@ -53,7 +53,9 @@ class PostgreSqlIntegrationTest {
                 "ledger_transaction",
                 "ledger_entry",
                 "audit_event",
-                "outbox_event"
+                "outbox_event",
+                "reconciliation_run",
+                "reconciliation_issue_record"
         );
 
         assertThat(columnDataType("product_model", "price")).isEqualTo("numeric");
@@ -89,6 +91,10 @@ class PostgreSqlIntegrationTest {
                 );
         assertThat(indexNames("outbox_event"))
                 .contains("idx_outbox_event_processing_locked_at");
+        assertThat(indexNames("reconciliation_run"))
+                .contains("idx_reconciliation_run_status_completed_at");
+        assertThat(indexNames("reconciliation_issue_record"))
+                .contains("idx_reconciliation_issue_record_run_id_id");
         assertThat(indexNames("user_model"))
                 .contains(
                         "ux_user_model_identity_subject",

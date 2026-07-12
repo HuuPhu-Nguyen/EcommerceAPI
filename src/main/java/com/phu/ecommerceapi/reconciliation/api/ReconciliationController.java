@@ -15,6 +15,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ProblemDetail;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -32,8 +33,8 @@ public class ReconciliationController {
     @GetMapping("/report")
     @PreAuthorize(SecurityExpressions.ADMIN_OR_AUDITOR_RECONCILIATION_READ)
     @Operation(
-            summary = "Run reconciliation report",
-            description = "Checks that payments/refunds have matching balanced ledger transactions and flags orphaned money records."
+            summary = "Read latest reconciliation report",
+            description = "Returns the latest completed materialized reconciliation run."
     )
     @ApiResponses({
             @ApiResponse(
@@ -65,6 +66,45 @@ public class ReconciliationController {
             )
     })
     public ReconciliationReport report() {
+        return reconciliationService.latestCompletedReport();
+    }
+
+    @PostMapping("/runs")
+    @PreAuthorize(SecurityExpressions.ADMIN_OR_AUDITOR_RECONCILIATION_READ)
+    @Operation(
+            summary = "Start reconciliation run",
+            description = "Runs bounded reconciliation synchronously for local and demo use, then stores and returns the report."
+    )
+    @ApiResponses({
+            @ApiResponse(
+                    responseCode = "200",
+                    description = "Stored reconciliation report for the completed run.",
+                    content = @Content(
+                            mediaType = MediaType.APPLICATION_JSON_VALUE,
+                            schema = @Schema(implementation = ReconciliationReport.class),
+                            examples = @ExampleObject(value = OpenApiExamples.RECONCILIATION_REPORT_RESPONSE)
+                    )
+            ),
+            @ApiResponse(
+                    responseCode = "401",
+                    description = "Missing or invalid bearer token.",
+                    content = @Content(
+                            mediaType = MediaType.APPLICATION_JSON_VALUE,
+                            schema = @Schema(implementation = ProblemDetail.class),
+                            examples = @ExampleObject(value = OpenApiExamples.UNAUTHORIZED_PROBLEM)
+                    )
+            ),
+            @ApiResponse(
+                    responseCode = "403",
+                    description = "Admin or auditor role with audit read scope is required.",
+                    content = @Content(
+                            mediaType = MediaType.APPLICATION_JSON_VALUE,
+                            schema = @Schema(implementation = ProblemDetail.class),
+                            examples = @ExampleObject(value = OpenApiExamples.FORBIDDEN_PROBLEM)
+                    )
+            )
+    })
+    public ReconciliationReport startRun() {
         return reconciliationService.runReport();
     }
 }

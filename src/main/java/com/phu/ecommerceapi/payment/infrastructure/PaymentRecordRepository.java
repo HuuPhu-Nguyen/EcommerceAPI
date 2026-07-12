@@ -2,7 +2,9 @@ package com.phu.ecommerceapi.payment.infrastructure;
 
 import com.phu.ecommerceapi.payment.domain.PaymentStatus;
 import com.phu.ecommerceapi.reconciliation.application.PaymentReconciliationItem;
+import com.phu.ecommerceapi.reconciliation.application.ProviderReconciliationReference;
 import jakarta.persistence.LockModeType;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
@@ -25,8 +27,48 @@ public interface PaymentRecordRepository extends JpaRepository<PaymentRecord, UU
                 payment.providerPaymentId
             )
             from PaymentRecord payment
+            where (:afterIdExclusive is null or payment.id > :afterIdExclusive)
+            order by payment.id asc
             """)
-    List<PaymentReconciliationItem> findAllForReconciliation();
+    List<PaymentReconciliationItem> findPageForReconciliation(
+            @Param("afterIdExclusive") UUID afterIdExclusive,
+            Pageable pageable
+    );
+
+    @Query("""
+            select new com.phu.ecommerceapi.reconciliation.application.PaymentReconciliationItem(
+                payment.id,
+                payment.amount,
+                payment.currency,
+                payment.status,
+                payment.providerCode,
+                payment.providerPaymentId
+            )
+            from PaymentRecord payment
+            where payment.id in :paymentIds
+            """)
+    List<PaymentReconciliationItem> findByIdsForReconciliation(@Param("paymentIds") Collection<UUID> paymentIds);
+
+    @Query("""
+            select payment.id
+            from PaymentRecord payment
+            where payment.id in :paymentIds
+            """)
+    List<UUID> findExistingIdsForReconciliation(@Param("paymentIds") Collection<UUID> paymentIds);
+
+    @Query("""
+            select new com.phu.ecommerceapi.reconciliation.application.ProviderReconciliationReference(
+                payment.providerCode,
+                payment.providerPaymentId
+            )
+            from PaymentRecord payment
+            where payment.providerCode in :providerCodes
+              and payment.providerPaymentId in :providerPaymentIds
+            """)
+    List<ProviderReconciliationReference> findProviderReferencesForReconciliation(
+            @Param("providerCodes") Collection<String> providerCodes,
+            @Param("providerPaymentIds") Collection<String> providerPaymentIds
+    );
 
     Optional<PaymentRecord> findByOrderId(UUID orderId);
 

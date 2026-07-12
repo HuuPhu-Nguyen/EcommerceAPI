@@ -201,6 +201,8 @@ public final class OpenApiExamples {
               "checkedPayments": 12,
               "checkedRefunds": 2,
               "checkedLedgerTransactions": 14,
+              "issueCount": 0,
+              "issuesTruncated": false,
               "issues": []
             }
             """;

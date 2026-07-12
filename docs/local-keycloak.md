@@ -55,7 +55,7 @@ Invoke-RestMethod `
   -Headers @{ Authorization = "Bearer $accessToken" }
 ```
 
-Admin and auditor users can call review endpoints such as `/admin/customer-profiles`, `/ledger/transactions`, `/audit/events`, and `/reconciliation/report` when their token contains the matching role and scope.
+Admin and auditor users can call review endpoints such as `/admin/customer-profiles`, `/ledger/transactions`, `/audit/events`, `/reconciliation/report`, and `/reconciliation/runs` when their token contains the matching role and scope.
 
 ## Token Validation Settings
 

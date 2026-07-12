@@ -148,6 +148,8 @@ The reconciliation report checks:
 - Provider-success rows still stuck in `PROVIDER_SUCCEEDED_LEDGER_PENDING` after the recovery pass are flagged for operator review.
 - Orphaned payments, refunds, or ledger transactions are flagged.
 
+Reconciliation runs are materialized. `POST /reconciliation/runs` starts a bounded run for local/demo use, paging through records with `RECONCILIATION_BATCH_SIZE` and storing at most the first `RECONCILIATION_MAX_ISSUES_PER_RUN` issue rows while preserving the full issue count. `GET /reconciliation/report` reads the latest completed run and does not run reconciliation synchronously.
+
 ## Local Setup
 
 Prerequisites:
@@ -338,7 +340,7 @@ $refund = Invoke-RestMethod `
 $ledger = Invoke-RestMethod -Method Get -Uri "$base/ledger/transactions?limit=10" -Headers $auditorHeaders
 $audit = Invoke-RestMethod -Method Get -Uri "$base/audit/events?limit=10" -Headers $auditorHeaders
 $auditVerification = Invoke-RestMethod -Method Get -Uri "$base/audit/events/verification" -Headers $auditorHeaders
-$reconciliation = Invoke-RestMethod -Method Get -Uri "$base/reconciliation/report" -Headers $auditorHeaders
+$reconciliation = Invoke-RestMethod -Method Post -Uri "$base/reconciliation/runs" -Headers $auditorHeaders
 
 $payment
 $paymentReplay
@@ -516,7 +518,7 @@ Important environment variables:
 - Stripe provider: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_API_VERSION`, `STRIPE_CONNECT_TIMEOUT_MS`, `STRIPE_READ_TIMEOUT_MS` when `stripe` is enabled
 - Payment idempotency recovery: `PAYMENT_IDEMPOTENCY_IN_PROGRESS_LEASE_SECONDS`
 - Abuse protection: `RATE_LIMIT_ENABLED`, `RATE_LIMIT_WINDOW_SECONDS`, `RATE_LIMIT_SENSITIVE_REQUESTS_PER_WINDOW`, `RATE_LIMIT_WEBHOOK_REQUESTS_PER_WINDOW`, `RATE_LIMIT_PROFILE_REQUESTS_PER_WINDOW`, `WEBHOOK_MAX_BODY_BYTES`
-- Operations: `APP_ENVIRONMENT`, `SHUTDOWN_TIMEOUT`, `LOG_STRUCTURED_FORMAT`, `OUTBOX_PROCESSING_ENABLED`, `RECONCILIATION_SCHEDULING_ENABLED`
+- Operations: `APP_ENVIRONMENT`, `SHUTDOWN_TIMEOUT`, `LOG_STRUCTURED_FORMAT`, `OUTBOX_PROCESSING_ENABLED`, `RECONCILIATION_SCHEDULING_ENABLED`, `RECONCILIATION_BATCH_SIZE`, `RECONCILIATION_MAX_ISSUES_PER_RUN`
 
 No real card data, JWTs, private keys, or production secrets should be committed.
 

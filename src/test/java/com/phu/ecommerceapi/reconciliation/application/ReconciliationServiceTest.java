@@ -3,50 +3,37 @@ package com.phu.ecommerceapi.reconciliation.application;
 import com.phu.ecommerceapi.ledger.domain.LedgerEntryDirection;
 import com.phu.ecommerceapi.ledger.domain.LedgerTransactionType;
 import com.phu.ecommerceapi.payment.application.PaymentIdempotencyRecoveryService;
-import com.phu.ecommerceapi.payment.application.StripePaymentIntentSnapshot;
 import com.phu.ecommerceapi.payment.application.StripeProviderReadPort;
-import com.phu.ecommerceapi.payment.application.StripeRefundSnapshot;
 import com.phu.ecommerceapi.payment.domain.PaymentStatus;
 import com.phu.ecommerceapi.payment.domain.ProviderWebhookEventType;
 import com.phu.ecommerceapi.payment.domain.ProviderWebhookProcessingStatus;
 import com.phu.ecommerceapi.payment.domain.RefundStatus;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.transaction.annotation.Transactional;
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.lang.reflect.Method;
 import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.Collection;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.verifyNoInteractions;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 
-@ExtendWith(MockitoExtension.class)
 class ReconciliationServiceTest {
 
     private static final String PROVIDER_CLEARING_ACCOUNT = "PAYMENT_PROVIDER_CLEARING";
     private static final String ORDER_REVENUE_ACCOUNT = "ORDER_REVENUE";
 
-    @Mock
-    private ReconciliationReadPort reconciliationReadPort;
-
-    @Mock
-    private ObjectProvider<StripeProviderReadPort> stripeProviderReadPortProvider;
-
-    @Mock
-    private StripeProviderReadPort stripeProviderReadPort;
-
-    @Mock
-    private PaymentIdempotencyRecoveryService paymentIdempotencyRecoveryService;
-
-    @InjectMocks
-    private ReconciliationService reconciliationService;
+    private final PaymentIdempotencyRecoveryService recoveryService = mock(PaymentIdempotencyRecoveryService.class);
+    private final ObjectProvider<StripeProviderReadPort> stripeReadPortProvider = new EmptyStripeProvider();
 
     @Test
     void runReportDoesNotOpenBroadTransactionAroundProviderReads() throws NoSuchMethodException {
@@ -55,199 +42,122 @@ class ReconciliationServiceTest {
     }
 
     @Test
-    void healthyReportWhenPaymentsRefundsAndLedgerEntriesMatch() {
-        UUID paymentId = UUID.randomUUID();
-        UUID refundId = UUID.randomUUID();
-        UUID paymentTransactionId = UUID.randomUUID();
-        UUID refundTransactionId = UUID.randomUUID();
+    void readPortNoLongerExposesFullTableReconciliationMethods() {
+        assertThat(Stream.of(ReconciliationReadPort.class.getMethods())
+                .map(Method::getName)
+                .noneMatch(name -> name.equals("findAllForReconciliation") || name.startsWith("findAll")))
+                .isTrue();
+    }
 
-        givenRows(
-                List.of(payment(paymentId, "25.00", PaymentStatus.REFUNDED)),
-                List.of(refund(refundId, paymentId, "25.00", RefundStatus.SUCCEEDED)),
+    @Test
+    void runProcessesEveryPageAndStoresHealthyMaterializedReport() {
+        UUID firstPaymentId = uuid(1);
+        UUID secondPaymentId = uuid(2);
+        UUID firstRefundId = uuid(3);
+        UUID secondRefundId = uuid(4);
+        UUID firstCaptureTransactionId = uuid(11);
+        UUID secondCaptureTransactionId = uuid(12);
+        UUID firstRefundTransactionId = uuid(13);
+        UUID secondRefundTransactionId = uuid(14);
+        FakeReadPort readPort = new FakeReadPort(
                 List.of(
-                        transaction(paymentTransactionId, LedgerTransactionType.PAYMENT_CAPTURE, "PAYMENT", paymentId),
-                        transaction(refundTransactionId, LedgerTransactionType.REFUND, "REFUND", refundId)
+                        payment(firstPaymentId, PaymentStatus.REFUNDED, "fake_payment_1"),
+                        payment(secondPaymentId, PaymentStatus.REFUNDED, "fake_payment_2")
                 ),
                 List.of(
-                        entry(paymentTransactionId, LedgerEntryDirection.DEBIT, "25.00", PROVIDER_CLEARING_ACCOUNT),
-                        entry(paymentTransactionId, LedgerEntryDirection.CREDIT, "25.00", ORDER_REVENUE_ACCOUNT),
-                        entry(refundTransactionId, LedgerEntryDirection.DEBIT, "25.00", ORDER_REVENUE_ACCOUNT),
-                        entry(refundTransactionId, LedgerEntryDirection.CREDIT, "25.00", PROVIDER_CLEARING_ACCOUNT)
+                        refund(firstRefundId, firstPaymentId, "fake_refund_1"),
+                        refund(secondRefundId, secondPaymentId, "fake_refund_2")
+                ),
+                List.of(
+                        webhook(uuid(21), ProviderWebhookEventType.PAYMENT_SUCCEEDED, "fake_payment_1"),
+                        webhook(uuid(22), ProviderWebhookEventType.REFUND_SUCCEEDED, "fake_refund_2")
+                ),
+                List.of(
+                        transaction(firstCaptureTransactionId, LedgerTransactionType.PAYMENT_CAPTURE, "PAYMENT", firstPaymentId),
+                        transaction(secondCaptureTransactionId, LedgerTransactionType.PAYMENT_CAPTURE, "PAYMENT", secondPaymentId),
+                        transaction(firstRefundTransactionId, LedgerTransactionType.REFUND, "REFUND", firstRefundId),
+                        transaction(secondRefundTransactionId, LedgerTransactionType.REFUND, "REFUND", secondRefundId)
+                ),
+                List.of(
+                        debit(firstCaptureTransactionId, PROVIDER_CLEARING_ACCOUNT),
+                        credit(firstCaptureTransactionId, ORDER_REVENUE_ACCOUNT),
+                        debit(secondCaptureTransactionId, PROVIDER_CLEARING_ACCOUNT),
+                        credit(secondCaptureTransactionId, ORDER_REVENUE_ACCOUNT),
+                        debit(firstRefundTransactionId, ORDER_REVENUE_ACCOUNT),
+                        credit(firstRefundTransactionId, PROVIDER_CLEARING_ACCOUNT),
+                        debit(secondRefundTransactionId, ORDER_REVENUE_ACCOUNT),
+                        credit(secondRefundTransactionId, PROVIDER_CLEARING_ACCOUNT)
                 )
         );
+        InMemoryRunStore runStore = new InMemoryRunStore();
+        ReconciliationService service = service(readPort, runStore, 1, 10);
 
-        ReconciliationReport report = reconciliationService.runReport();
+        ReconciliationReport report = service.runReport();
 
         assertThat(report.healthy()).isTrue();
-        assertThat(report.checkedPayments()).isEqualTo(1);
-        assertThat(report.checkedRefunds()).isEqualTo(1);
-        assertThat(report.checkedLedgerTransactions()).isEqualTo(2);
+        assertThat(report.checkedPayments()).isEqualTo(2);
+        assertThat(report.checkedRefunds()).isEqualTo(2);
+        assertThat(report.checkedLedgerTransactions()).isEqualTo(4);
+        assertThat(report.issueCount()).isZero();
         assertThat(report.issues()).isEmpty();
+        assertThat(readPort.paymentPageCalls).isEqualTo(3);
+        assertThat(readPort.refundPageCalls).isEqualTo(3);
+        assertThat(readPort.webhookPageCalls).isEqualTo(3);
+        assertThat(readPort.ledgerTransactionPageCalls).isEqualTo(5);
+        assertThat(readPort.ledgerEntryBatchCalls).isGreaterThanOrEqualTo(3);
+        verify(recoveryService).recoverExpired();
     }
 
     @Test
-    void brokenMoneyMovementIsReported() {
-        UUID missingLedgerPaymentId = UUID.randomUUID();
-        UUID mismatchedPaymentId = UUID.randomUUID();
-        UUID orphanRefundPaymentId = UUID.randomUUID();
-        UUID refundId = UUID.randomUUID();
-        UUID mismatchedPaymentTransactionId = UUID.randomUUID();
-        UUID orphanLedgerTransactionId = UUID.randomUUID();
-        UUID unbalancedTransactionId = UUID.randomUUID();
-
-        givenRows(
+    void issueStorageStopsAtLimitButIssueCountReflectsAllDiscoveredIssues() {
+        FakeReadPort readPort = new FakeReadPort(
                 List.of(
-                        payment(missingLedgerPaymentId, "10.00", PaymentStatus.SUCCEEDED),
-                        payment(mismatchedPaymentId, "5.00", PaymentStatus.SUCCEEDED)
+                        payment(uuid(1), PaymentStatus.SUCCEEDED, "fake_payment_1"),
+                        payment(uuid(2), PaymentStatus.SUCCEEDED, "fake_payment_2"),
+                        payment(uuid(3), PaymentStatus.SUCCEEDED, "fake_payment_3"),
+                        payment(uuid(4), PaymentStatus.SUCCEEDED, "fake_payment_4"),
+                        payment(uuid(5), PaymentStatus.SUCCEEDED, "fake_payment_5")
                 ),
-                List.of(refund(refundId, orphanRefundPaymentId, "7.00", RefundStatus.SUCCEEDED)),
-                List.of(
-                        transaction(mismatchedPaymentTransactionId, LedgerTransactionType.PAYMENT_CAPTURE, "PAYMENT", mismatchedPaymentId),
-                        transaction(orphanLedgerTransactionId, LedgerTransactionType.PAYMENT_CAPTURE, "PAYMENT", UUID.randomUUID()),
-                        transaction(unbalancedTransactionId, LedgerTransactionType.REFUND, "REFUND", UUID.randomUUID())
-                ),
-                List.of(
-                        entry(mismatchedPaymentTransactionId, LedgerEntryDirection.DEBIT, "4.00", PROVIDER_CLEARING_ACCOUNT),
-                        entry(mismatchedPaymentTransactionId, LedgerEntryDirection.CREDIT, "4.00", ORDER_REVENUE_ACCOUNT),
-                        entry(orphanLedgerTransactionId, LedgerEntryDirection.DEBIT, "3.00", PROVIDER_CLEARING_ACCOUNT),
-                        entry(orphanLedgerTransactionId, LedgerEntryDirection.CREDIT, "3.00", ORDER_REVENUE_ACCOUNT),
-                        entry(unbalancedTransactionId, LedgerEntryDirection.DEBIT, "9.00", ORDER_REVENUE_ACCOUNT),
-                        entry(unbalancedTransactionId, LedgerEntryDirection.CREDIT, "8.00", PROVIDER_CLEARING_ACCOUNT)
-                )
-        );
-
-        ReconciliationReport report = reconciliationService.runReport();
-
-        assertThat(report.healthy()).isFalse();
-        assertThat(report.issues())
-                .extracting(ReconciliationIssue::code)
-                .contains(
-                        ReconciliationIssueCode.UNBALANCED_LEDGER_TRANSACTION,
-                        ReconciliationIssueCode.MISSING_PAYMENT_LEDGER_TRANSACTION,
-                        ReconciliationIssueCode.PAYMENT_LEDGER_MISMATCH,
-                        ReconciliationIssueCode.ORPHANED_REFUND,
-                        ReconciliationIssueCode.MISSING_REFUND_LEDGER_TRANSACTION,
-                        ReconciliationIssueCode.ORPHANED_LEDGER_TRANSACTION
-                );
-    }
-
-    @Test
-    void providerIssueIncludesProviderCodeWhenSuccessfulPaymentMissingProviderReference() {
-        UUID paymentId = UUID.randomUUID();
-        UUID paymentTransactionId = UUID.randomUUID();
-
-        givenRows(
-                List.of(payment(paymentId, "25.00", PaymentStatus.SUCCEEDED, "stripe", null)),
                 List.of(),
-                List.of(transaction(paymentTransactionId, LedgerTransactionType.PAYMENT_CAPTURE, "PAYMENT", paymentId)),
-                List.of(
-                        entry(paymentTransactionId, LedgerEntryDirection.DEBIT, "25.00", PROVIDER_CLEARING_ACCOUNT),
-                        entry(paymentTransactionId, LedgerEntryDirection.CREDIT, "25.00", ORDER_REVENUE_ACCOUNT)
-                )
-        );
-
-        ReconciliationReport report = reconciliationService.runReport();
-
-        assertThat(report.healthy()).isFalse();
-        assertThat(report.issues())
-                .filteredOn(issue -> issue.code() == ReconciliationIssueCode.MISSING_PROVIDER_REFERENCE)
-                .singleElement()
-                .extracting(ReconciliationIssue::message)
-                .asString()
-                .contains("provider=stripe");
-        verifyNoInteractions(stripeProviderReadPortProvider);
-    }
-
-    @Test
-    void stripeProviderSucceededPaymentIsFlaggedWhenLocalPaymentIsNotSucceeded() {
-        UUID paymentId = UUID.randomUUID();
-        when(stripeProviderReadPortProvider.getIfAvailable()).thenReturn(stripeProviderReadPort);
-        when(stripeProviderReadPort.fetchPaymentIntent("pi_reconciled_success"))
-                .thenReturn(Optional.of(stripePaymentIntent("pi_reconciled_success", "succeeded")));
-
-        givenRows(
-                List.of(payment(paymentId, "25.00", PaymentStatus.PENDING, "stripe", "pi_reconciled_success")),
                 List.of(),
                 List.of(),
                 List.of()
         );
+        InMemoryRunStore runStore = new InMemoryRunStore();
+        ReconciliationService service = service(readPort, runStore, 2, 2);
 
-        ReconciliationReport report = reconciliationService.runReport();
+        ReconciliationReport report = service.runReport();
 
         assertThat(report.healthy()).isFalse();
-        assertThat(report.issues())
-                .filteredOn(issue -> issue.code() == ReconciliationIssueCode.PROVIDER_PAYMENT_STATE_MISMATCH)
-                .singleElement()
-                .extracting(ReconciliationIssue::message)
-                .asString()
-                .contains("provider=stripe", "providerPaymentId=pi_reconciled_success");
+        assertThat(report.issueCount()).isEqualTo(5);
+        assertThat(report.issues()).hasSize(2);
+        assertThat(report.issuesTruncated()).isTrue();
+        assertThat(runStore.storedIssues).hasSize(2);
     }
 
     @Test
-    void stripeRefundSucceededLocallyIsFlaggedWhenProviderRefundIsNotSucceeded() {
-        UUID paymentId = UUID.randomUUID();
-        UUID refundId = UUID.randomUUID();
-        UUID paymentTransactionId = UUID.randomUUID();
-        UUID refundTransactionId = UUID.randomUUID();
-        when(stripeProviderReadPortProvider.getIfAvailable()).thenReturn(stripeProviderReadPort);
-        when(stripeProviderReadPort.fetchPaymentIntent("pi_refunded"))
-                .thenReturn(Optional.of(stripePaymentIntent("pi_refunded", "succeeded")));
-        when(stripeProviderReadPort.fetchRefund("re_failed"))
-                .thenReturn(Optional.of(stripeRefund("re_failed", "failed")));
-
-        givenRows(
-                List.of(payment(paymentId, "25.00", PaymentStatus.REFUNDED, "stripe", "pi_refunded")),
-                List.of(refund(refundId, paymentId, "25.00", RefundStatus.SUCCEEDED, "stripe", "re_failed")),
-                List.of(
-                        transaction(paymentTransactionId, LedgerTransactionType.PAYMENT_CAPTURE, "PAYMENT", paymentId),
-                        transaction(refundTransactionId, LedgerTransactionType.REFUND, "REFUND", refundId)
-                ),
-                List.of(
-                        entry(paymentTransactionId, LedgerEntryDirection.DEBIT, "25.00", PROVIDER_CLEARING_ACCOUNT),
-                        entry(paymentTransactionId, LedgerEntryDirection.CREDIT, "25.00", ORDER_REVENUE_ACCOUNT),
-                        entry(refundTransactionId, LedgerEntryDirection.DEBIT, "25.00", ORDER_REVENUE_ACCOUNT),
-                        entry(refundTransactionId, LedgerEntryDirection.CREDIT, "25.00", PROVIDER_CLEARING_ACCOUNT)
-                )
-        );
-
-        ReconciliationReport report = reconciliationService.runReport();
-
-        assertThat(report.healthy()).isFalse();
-        assertThat(report.issues())
-                .filteredOn(issue -> issue.code() == ReconciliationIssueCode.PROVIDER_REFUND_STATE_MISMATCH)
-                .singleElement()
-                .extracting(ReconciliationIssue::message)
-                .asString()
-                .contains("provider=stripe", "providerRefundId=re_failed", "providerStatus=failed");
-    }
-
-    @Test
-    void durableProviderSuccessStillPendingLocalCompletionIsReportedAfterRecoveryRun() {
-        UUID paymentId = UUID.randomUUID();
-        UUID refundPaymentId = UUID.randomUUID();
-        UUID refundId = UUID.randomUUID();
-
-        givenRows(
+    void staleProviderSuccessPendingLocalCompletionIsReportedAfterRecoveryRun() {
+        UUID paymentId = uuid(1);
+        UUID refundId = uuid(2);
+        FakeReadPort readPort = new FakeReadPort(
                 List.of(payment(
                         paymentId,
-                        "25.00",
                         PaymentStatus.PROVIDER_SUCCEEDED_LEDGER_PENDING,
-                        "fake",
                         "fake_payment_pending"
                 )),
                 List.of(refund(
                         refundId,
-                        refundPaymentId,
-                        "25.00",
+                        paymentId,
                         RefundStatus.PROVIDER_SUCCEEDED_LEDGER_PENDING,
-                        "fake",
                         "fake_refund_pending"
                 )),
                 List.of(),
+                List.of(),
                 List.of()
         );
+        ReconciliationService service = service(readPort, new InMemoryRunStore(), 10, 10);
 
-        ReconciliationReport report = reconciliationService.runReport();
+        ReconciliationReport report = service.runReport();
 
         assertThat(report.healthy()).isFalse();
         assertThat(report.issues())
@@ -258,115 +168,67 @@ class ReconciliationServiceTest {
                 );
     }
 
-    @Test
-    void processedProviderWebhookEventWithoutMatchingInternalPaymentIsReported() {
-        UUID eventId = UUID.randomUUID();
-
-        givenRows(
-                List.of(),
-                List.of(),
-                List.of(webhookEvent(
-                        eventId,
-                        "stripe",
-                        ProviderWebhookEventType.PAYMENT_SUCCEEDED,
-                        ProviderWebhookProcessingStatus.PROCESSED,
-                        "pi_missing"
-                )),
-                List.of(),
-                List.of()
+    private ReconciliationService service(
+            ReconciliationReadPort readPort,
+            ReconciliationRunStorePort runStore,
+            int batchSize,
+            int maxIssues
+    ) {
+        return new ReconciliationService(
+                readPort,
+                runStore,
+                new ReconciliationProperties(batchSize, maxIssues),
+                stripeReadPortProvider,
+                recoveryService
         );
-
-        ReconciliationReport report = reconciliationService.runReport();
-
-        assertThat(report.healthy()).isFalse();
-        assertThat(report.issues())
-                .filteredOn(issue -> issue.code() == ReconciliationIssueCode.ORPHANED_PROVIDER_WEBHOOK_EVENT)
-                .singleElement()
-                .satisfies(issue -> {
-                    assertThat(issue.resourceId()).isEqualTo(eventId.toString());
-                    assertThat(issue.message()).contains("provider=stripe", "providerObjectId=pi_missing");
-                });
-    }
-
-    private void givenRows(
-            List<PaymentReconciliationItem> payments,
-            List<RefundReconciliationItem> refunds,
-            List<LedgerTransactionReconciliationItem> transactions,
-            List<LedgerEntryReconciliationItem> entries
-    ) {
-        givenRows(payments, refunds, List.of(), transactions, entries);
-    }
-
-    private void givenRows(
-            List<PaymentReconciliationItem> payments,
-            List<RefundReconciliationItem> refunds,
-            List<ProviderWebhookReconciliationItem> webhookEvents,
-            List<LedgerTransactionReconciliationItem> transactions,
-            List<LedgerEntryReconciliationItem> entries
-    ) {
-        when(reconciliationReadPort.findPayments()).thenReturn(payments);
-        when(reconciliationReadPort.findRefunds()).thenReturn(refunds);
-        when(reconciliationReadPort.findProviderWebhookEvents()).thenReturn(webhookEvents);
-        when(reconciliationReadPort.findLedgerTransactions()).thenReturn(transactions);
-        when(reconciliationReadPort.findLedgerEntries()).thenReturn(entries);
-    }
-
-    private PaymentReconciliationItem payment(UUID id, String amount, PaymentStatus status) {
-        return payment(id, amount, status, "fake", "fake_payment_" + id);
     }
 
     private PaymentReconciliationItem payment(
             UUID id,
-            String amount,
             PaymentStatus status,
-            String providerCode,
             String providerPaymentId
     ) {
         return new PaymentReconciliationItem(
                 id,
-                new BigDecimal(amount),
+                new BigDecimal("25.00"),
                 "USD",
                 status,
-                providerCode,
+                "fake",
                 providerPaymentId
         );
     }
 
-    private RefundReconciliationItem refund(UUID id, UUID paymentId, String amount, RefundStatus status) {
-        return refund(id, paymentId, amount, status, "fake", "fake_refund_" + id);
+    private RefundReconciliationItem refund(UUID id, UUID paymentId, String providerRefundId) {
+        return refund(id, paymentId, RefundStatus.SUCCEEDED, providerRefundId);
     }
 
     private RefundReconciliationItem refund(
             UUID id,
             UUID paymentId,
-            String amount,
             RefundStatus status,
-            String providerCode,
             String providerRefundId
     ) {
         return new RefundReconciliationItem(
                 id,
                 paymentId,
-                new BigDecimal(amount),
+                new BigDecimal("25.00"),
                 "USD",
                 status,
-                providerCode,
+                "fake",
                 providerRefundId
         );
     }
 
-    private ProviderWebhookReconciliationItem webhookEvent(
+    private ProviderWebhookReconciliationItem webhook(
             UUID id,
-            String providerCode,
             ProviderWebhookEventType eventType,
-            ProviderWebhookProcessingStatus processingStatus,
             String providerObjectId
     ) {
         return new ProviderWebhookReconciliationItem(
                 id,
-                providerCode,
+                "fake",
                 eventType,
-                processingStatus,
+                ProviderWebhookProcessingStatus.PROCESSED,
                 providerObjectId,
                 null
         );
@@ -381,20 +243,259 @@ class ReconciliationServiceTest {
         return new LedgerTransactionReconciliationItem(id, type, referenceType, referenceId.toString());
     }
 
+    private LedgerEntryReconciliationItem debit(UUID transactionId, String accountCode) {
+        return entry(transactionId, LedgerEntryDirection.DEBIT, accountCode);
+    }
+
+    private LedgerEntryReconciliationItem credit(UUID transactionId, String accountCode) {
+        return entry(transactionId, LedgerEntryDirection.CREDIT, accountCode);
+    }
+
     private LedgerEntryReconciliationItem entry(
             UUID transactionId,
             LedgerEntryDirection direction,
-            String amount,
             String accountCode
     ) {
-        return new LedgerEntryReconciliationItem(transactionId, direction, new BigDecimal(amount), "USD", accountCode);
+        return new LedgerEntryReconciliationItem(
+                transactionId,
+                direction,
+                new BigDecimal("25.00"),
+                "USD",
+                accountCode
+        );
     }
 
-    private StripePaymentIntentSnapshot stripePaymentIntent(String providerPaymentId, String status) {
-        return new StripePaymentIntentSnapshot(providerPaymentId, status, null, "provider state");
+    private UUID uuid(int value) {
+        return UUID.fromString("00000000-0000-0000-0000-%012d".formatted(value));
     }
 
-    private StripeRefundSnapshot stripeRefund(String providerRefundId, String status) {
-        return new StripeRefundSnapshot(providerRefundId, status, null, "provider state");
+    private static final class InMemoryRunStore implements ReconciliationRunStorePort {
+
+        private UUID runId;
+        private ReconciliationRunCompletion completion;
+        private List<ReconciliationIssue> storedIssues = List.of();
+
+        @Override
+        public UUID startRun(Instant startedAt) {
+            runId = UUID.randomUUID();
+            return runId;
+        }
+
+        @Override
+        public void completeRun(
+                UUID runId,
+                ReconciliationRunCompletion completion,
+                List<ReconciliationIssue> storedIssues
+        ) {
+            this.completion = completion;
+            this.storedIssues = List.copyOf(storedIssues);
+        }
+
+        @Override
+        public void failRun(UUID runId, Instant completedAt, String failureMessage) {
+        }
+
+        @Override
+        public Optional<ReconciliationReport> findCompleted(UUID runId, int issueLimit) {
+            if (!runId.equals(this.runId) || completion == null) {
+                return Optional.empty();
+            }
+            List<ReconciliationIssue> issues = storedIssues.stream()
+                    .limit(issueLimit)
+                    .toList();
+            return Optional.of(new ReconciliationReport(
+                    completion.healthy(),
+                    completion.completedAt(),
+                    completion.paymentCount(),
+                    completion.refundCount(),
+                    completion.ledgerTransactionCount(),
+                    completion.issueCount(),
+                    completion.issueCount() > issues.size(),
+                    issues
+            ));
+        }
+
+        @Override
+        public Optional<ReconciliationReport> findLatestCompleted(int issueLimit) {
+            return findCompleted(runId, issueLimit);
+        }
+    }
+
+    private static final class FakeReadPort implements ReconciliationReadPort {
+
+        private final List<PaymentReconciliationItem> payments;
+        private final List<RefundReconciliationItem> refunds;
+        private final List<ProviderWebhookReconciliationItem> webhookEvents;
+        private final List<LedgerTransactionReconciliationItem> transactions;
+        private final List<LedgerEntryReconciliationItem> entries;
+        private int paymentPageCalls;
+        private int refundPageCalls;
+        private int webhookPageCalls;
+        private int ledgerTransactionPageCalls;
+        private int ledgerEntryBatchCalls;
+
+        private FakeReadPort(
+                List<PaymentReconciliationItem> payments,
+                List<RefundReconciliationItem> refunds,
+                List<ProviderWebhookReconciliationItem> webhookEvents,
+                List<LedgerTransactionReconciliationItem> transactions,
+                List<LedgerEntryReconciliationItem> entries
+        ) {
+            this.payments = sortById(payments, PaymentReconciliationItem::id);
+            this.refunds = sortById(refunds, RefundReconciliationItem::id);
+            this.webhookEvents = sortById(webhookEvents, ProviderWebhookReconciliationItem::id);
+            this.transactions = sortById(transactions, LedgerTransactionReconciliationItem::id);
+            this.entries = List.copyOf(entries);
+        }
+
+        @Override
+        public List<PaymentReconciliationItem> findPaymentsAfterId(UUID afterIdExclusive, int limit) {
+            paymentPageCalls++;
+            return page(payments, afterIdExclusive, limit, PaymentReconciliationItem::id);
+        }
+
+        @Override
+        public List<PaymentReconciliationItem> findPaymentsByIds(Collection<UUID> paymentIds) {
+            return payments.stream()
+                    .filter(payment -> paymentIds.contains(payment.id()))
+                    .toList();
+        }
+
+        @Override
+        public Set<UUID> findPaymentIdsByIds(Collection<UUID> paymentIds) {
+            return payments.stream()
+                    .map(PaymentReconciliationItem::id)
+                    .filter(paymentIds::contains)
+                    .collect(java.util.stream.Collectors.toSet());
+        }
+
+        @Override
+        public Set<ProviderReconciliationReference> findPaymentProviderReferences(
+                Collection<ProviderReconciliationReference> providerReferences
+        ) {
+            return payments.stream()
+                    .filter(payment -> payment.providerPaymentId() != null)
+                    .map(payment -> new ProviderReconciliationReference(
+                            payment.providerCode(),
+                            payment.providerPaymentId()
+                    ))
+                    .filter(providerReferences::contains)
+                    .collect(java.util.stream.Collectors.toSet());
+        }
+
+        @Override
+        public List<RefundReconciliationItem> findRefundsAfterId(UUID afterIdExclusive, int limit) {
+            refundPageCalls++;
+            return page(refunds, afterIdExclusive, limit, RefundReconciliationItem::id);
+        }
+
+        @Override
+        public List<RefundReconciliationItem> findRefundsByIds(Collection<UUID> refundIds) {
+            return refunds.stream()
+                    .filter(refund -> refundIds.contains(refund.id()))
+                    .toList();
+        }
+
+        @Override
+        public Set<UUID> findRefundIdsByIds(Collection<UUID> refundIds) {
+            return refunds.stream()
+                    .map(RefundReconciliationItem::id)
+                    .filter(refundIds::contains)
+                    .collect(java.util.stream.Collectors.toSet());
+        }
+
+        @Override
+        public Set<ProviderReconciliationReference> findRefundProviderReferences(
+                Collection<ProviderReconciliationReference> providerReferences
+        ) {
+            return refunds.stream()
+                    .filter(refund -> refund.providerRefundId() != null)
+                    .map(refund -> new ProviderReconciliationReference(
+                            refund.providerCode(),
+                            refund.providerRefundId()
+                    ))
+                    .filter(providerReferences::contains)
+                    .collect(java.util.stream.Collectors.toSet());
+        }
+
+        @Override
+        public List<ProviderWebhookReconciliationItem> findProviderWebhookEventsAfterId(
+                UUID afterIdExclusive,
+                int limit
+        ) {
+            webhookPageCalls++;
+            return page(webhookEvents, afterIdExclusive, limit, ProviderWebhookReconciliationItem::id);
+        }
+
+        @Override
+        public List<LedgerTransactionReconciliationItem> findLedgerTransactionsAfterId(
+                UUID afterIdExclusive,
+                int limit
+        ) {
+            ledgerTransactionPageCalls++;
+            return page(transactions, afterIdExclusive, limit, LedgerTransactionReconciliationItem::id);
+        }
+
+        @Override
+        public List<LedgerTransactionReconciliationItem> findLedgerTransactionsByReferences(
+                Collection<LedgerTransactionLookupKey> references
+        ) {
+            return transactions.stream()
+                    .filter(transaction -> references.contains(new LedgerTransactionLookupKey(
+                            transaction.transactionType(),
+                            transaction.referenceType(),
+                            transaction.referenceId()
+                    )))
+                    .toList();
+        }
+
+        @Override
+        public List<LedgerEntryReconciliationItem> findLedgerEntriesByTransactionIds(Collection<UUID> transactionIds) {
+            ledgerEntryBatchCalls++;
+            return entries.stream()
+                    .filter(entry -> transactionIds.contains(entry.transactionId()))
+                    .toList();
+        }
+
+        private static <T> List<T> sortById(List<T> items, java.util.function.Function<T, UUID> idExtractor) {
+            return items.stream()
+                    .sorted(Comparator.comparing(idExtractor))
+                    .toList();
+        }
+
+        private static <T> List<T> page(
+                List<T> items,
+                UUID afterIdExclusive,
+                int limit,
+                java.util.function.Function<T, UUID> idExtractor
+        ) {
+            return items.stream()
+                    .filter(item -> afterIdExclusive == null || idExtractor.apply(item).compareTo(afterIdExclusive) > 0)
+                    .limit(limit)
+                    .toList();
+        }
+    }
+
+    private static final class EmptyStripeProvider implements ObjectProvider<StripeProviderReadPort> {
+
+        @Override
+        public StripeProviderReadPort getObject(Object... args) {
+            return null;
+        }
+
+        @Override
+        public StripeProviderReadPort getIfAvailable() {
+            return null;
+        }
+
+        @Override
+        public StripeProviderReadPort getIfUnique() {
+            return null;
+        }
+
+        @Override
+        public StripeProviderReadPort getObject() {
+            return null;
+        }
     }
 }

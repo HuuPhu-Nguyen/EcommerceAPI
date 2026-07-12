@@ -17,11 +17,13 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import java.time.Instant;
 import java.util.List;
 
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -50,15 +52,46 @@ class ReconciliationControllerTest {
                 1,
                 0,
                 1,
+                0,
+                false,
                 List.of()
         );
-        when(reconciliationService.runReport()).thenReturn(report);
+        when(reconciliationService.latestCompletedReport()).thenReturn(report);
 
         mockMvc.perform(get("/reconciliation/report").with(auditorJwt()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.healthy").value(true))
                 .andExpect(jsonPath("$.checkedPayments").value(1))
                 .andExpect(jsonPath("$.checkedLedgerTransactions").value(1))
+                .andExpect(jsonPath("$.issueCount").value(0))
+                .andExpect(jsonPath("$.issuesTruncated").value(false))
+                .andExpect(jsonPath("$.issues").isEmpty());
+
+        verify(reconciliationService).latestCompletedReport();
+        verify(reconciliationService, never()).runReport();
+    }
+
+    @Test
+    void auditorCanStartReconciliationRun() throws Exception {
+        ReconciliationReport report = new ReconciliationReport(
+                true,
+                Instant.parse("2026-07-06T08:00:00Z"),
+                1,
+                0,
+                1,
+                0,
+                false,
+                List.of()
+        );
+        when(reconciliationService.runReport()).thenReturn(report);
+
+        mockMvc.perform(post("/reconciliation/runs").with(auditorJwt()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.healthy").value(true))
+                .andExpect(jsonPath("$.checkedPayments").value(1))
+                .andExpect(jsonPath("$.checkedLedgerTransactions").value(1))
+                .andExpect(jsonPath("$.issueCount").value(0))
+                .andExpect(jsonPath("$.issuesTruncated").value(false))
                 .andExpect(jsonPath("$.issues").isEmpty());
 
         verify(reconciliationService).runReport();

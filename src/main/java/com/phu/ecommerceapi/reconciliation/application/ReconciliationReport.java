@@ -10,6 +10,8 @@ public record ReconciliationReport(
         long checkedPayments,
         long checkedRefunds,
         long checkedLedgerTransactions,
+        long issueCount,
+        boolean issuesTruncated,
         List<ReconciliationIssue> issues
 ) {
 
