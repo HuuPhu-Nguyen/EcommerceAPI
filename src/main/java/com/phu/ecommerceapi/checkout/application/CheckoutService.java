@@ -3,14 +3,10 @@ package com.phu.ecommerceapi.checkout.application;
 import com.phu.ecommerceapi.audit.application.AuditEventCommand;
 import com.phu.ecommerceapi.audit.application.AuditEventRecorder;
 import com.phu.ecommerceapi.cart.application.CartItemSnapshot;
-import com.phu.ecommerceapi.cart.infrastructure.CartModel;
-import com.phu.ecommerceapi.cart.infrastructure.CartRepo;
+import com.phu.ecommerceapi.cart.application.CartPersistencePort;
+import com.phu.ecommerceapi.cart.application.CartSnapshot;
 import com.phu.ecommerceapi.identity.application.CurrentUser;
-import com.phu.ecommerceapi.inventory.application.InventoryReservationService;
 import com.phu.ecommerceapi.order.application.OrderItemResponse;
-import com.phu.ecommerceapi.order.infrastructure.CustomerOrderRecord;
-import com.phu.ecommerceapi.order.infrastructure.CustomerOrderRepository;
-import com.phu.ecommerceapi.order.infrastructure.OrderItemRecord;
 import com.phu.ecommerceapi.payment.application.PaymentProviderAvailabilityService;
 import com.phu.ecommerceapi.shared.api.ConflictException;
 import com.phu.ecommerceapi.shared.api.NotFoundException;
@@ -28,24 +24,24 @@ public class CheckoutService {
 
     private static final String ORDER_RESOURCE_TYPE = "ORDER";
 
-    private final CartRepo cartRepo;
-    private final InventoryReservationService inventoryReservationService;
-    private final CustomerOrderRepository orderRepository;
+    private final CartPersistencePort cartPersistencePort;
+    private final CheckoutInventoryReservationPort inventoryReservationPort;
+    private final CheckoutOrderStorePort checkoutOrderStorePort;
     private final PaymentProviderAvailabilityService paymentProviderAvailabilityService;
     private final AuditEventRecorder auditEventRecorder;
     private final BusinessMetrics businessMetrics;
 
     public CheckoutService(
-            CartRepo cartRepo,
-            InventoryReservationService inventoryReservationService,
-            CustomerOrderRepository orderRepository,
+            CartPersistencePort cartPersistencePort,
+            CheckoutInventoryReservationPort inventoryReservationPort,
+            CheckoutOrderStorePort checkoutOrderStorePort,
             PaymentProviderAvailabilityService paymentProviderAvailabilityService,
             AuditEventRecorder auditEventRecorder,
             BusinessMetrics businessMetrics
     ) {
-        this.cartRepo = cartRepo;
-        this.inventoryReservationService = inventoryReservationService;
-        this.orderRepository = orderRepository;
+        this.cartPersistencePort = cartPersistencePort;
+        this.inventoryReservationPort = inventoryReservationPort;
+        this.checkoutOrderStorePort = checkoutOrderStorePort;
         this.paymentProviderAvailabilityService = paymentProviderAvailabilityService;
         this.auditEventRecorder = auditEventRecorder;
         this.businessMetrics = businessMetrics;
@@ -54,36 +50,33 @@ public class CheckoutService {
     @Transactional
     public CheckoutResponse checkout(long cartId, CurrentUser currentUser) {
         try {
-            CartModel cart = cartRepo.findForCheckoutById(cartId)
-                    .orElseThrow(() -> new NotFoundException("Cart not found"));
-            assertCartOwner(cart, currentUser);
+            CheckoutOrderSnapshot savedOrder = cartPersistencePort.updateWithItemsForCheckout(cartId, cart -> {
+                CartSnapshot snapshot = cart.snapshot();
+                assertCartOwner(snapshot, currentUser);
 
-            if (orderRepository.existsByCartId(cart.getId())) {
-                throw new ConflictException("Cart has already been checked out");
-            }
-            if (cart.isEmpty()) {
-                throw new ConflictException("Cannot checkout an empty cart");
-            }
+                if (checkoutOrderStorePort.existsByCartId(snapshot.id())) {
+                    throw new ConflictException("Cart has already been checked out");
+                }
+                if (snapshot.isEmpty()) {
+                    throw new ConflictException("Cannot checkout an empty cart");
+                }
 
-            validateCartItemsForCheckout(cart);
-            requireAvailablePaymentProvider(cart.getTotal(), cart.getCurrency());
+                validateCartItemsForCheckout(snapshot);
+                requireAvailablePaymentProvider(snapshot.total().amount(), snapshot.currency());
 
-            CustomerOrderRecord order = CustomerOrderRecord.pendingPayment(
-                    cart
-            );
-            for (CartItemSnapshot item : cart.itemSnapshots()) {
-                inventoryReservationService.reserve(item.productId(), item.quantity());
-            }
-            order.addItemsFromCart(cart);
+                for (CartItemSnapshot item : snapshot.items()) {
+                    inventoryReservationPort.reserve(item.productId(), item.quantity());
+                }
 
-            CustomerOrderRecord savedOrder = orderRepository.save(order);
-            cart.clear();
-            cartRepo.save(cart);
-            recordAudit(currentUser, savedOrder);
+                CheckoutOrderSnapshot order = checkoutOrderStorePort.createPendingPayment(snapshot);
+                cart.clear();
+                recordAudit(currentUser, order);
+                return order;
+            }).orElseThrow(() -> new NotFoundException("Cart not found"));
             businessMetrics.checkoutAttempt("success");
             return toResponse(
                     savedOrder,
-                    requireAvailablePaymentProvider(savedOrder.getTotalAmount(), savedOrder.getCurrency())
+                    requireAvailablePaymentProvider(savedOrder.totalAmount(), savedOrder.currency())
             );
         } catch (RuntimeException exception) {
             businessMetrics.checkoutAttempt("failure");
@@ -91,18 +84,18 @@ public class CheckoutService {
         }
     }
 
-    private void validateCartItemsForCheckout(CartModel cart) {
-        for (CartItemSnapshot item : cart.itemSnapshots()) {
+    private void validateCartItemsForCheckout(CartSnapshot cart) {
+        for (CartItemSnapshot item : cart.items()) {
             if (!item.active()) {
                 throw new ConflictException("Product is no longer available for checkout");
             }
-            if (!item.unitPrice().currency().getCurrencyCode().equals(cart.getCurrency())) {
+            if (!item.unitPrice().currency().getCurrencyCode().equals(cart.currency())) {
                 throw new ConflictException("Cart contains mixed currencies");
             }
         }
     }
 
-    private void assertCartOwner(CartModel cart, CurrentUser currentUser) {
+    private void assertCartOwner(CartSnapshot cart, CurrentUser currentUser) {
         if (currentUser == null || !cart.belongsToIdentitySubject(currentUser.subject())) {
             throw new AccessDeniedException("Cart does not belong to current user");
         }
@@ -116,43 +109,43 @@ public class CheckoutService {
         return allowedProviders;
     }
 
-    private void recordAudit(CurrentUser actor, CustomerOrderRecord order) {
+    private void recordAudit(CurrentUser actor, CheckoutOrderSnapshot order) {
         auditEventRecorder.record(new AuditEventCommand(
                 actor.subject(),
                 "CHECKOUT_ORDER_CREATED",
                 ORDER_RESOURCE_TYPE,
-                order.getId().toString(),
+                order.id().toString(),
                 "cartId=%d;status=%s;total=%s %s".formatted(
-                        order.getCartId(),
-                        order.getStatus(),
-                        order.getTotalAmount(),
-                        order.getCurrency()
+                        order.cartId(),
+                        order.status(),
+                        order.totalAmount(),
+                        order.currency()
                 )
         ));
     }
 
-    private CheckoutResponse toResponse(CustomerOrderRecord order, List<String> allowedPaymentProviders) {
-        List<OrderItemResponse> items = order.getItems()
+    private CheckoutResponse toResponse(CheckoutOrderSnapshot order, List<String> allowedPaymentProviders) {
+        List<OrderItemResponse> items = order.items()
                 .stream()
-                .sorted(Comparator.comparingLong(OrderItemRecord::getProductId))
+                .sorted(Comparator.comparingLong(CheckoutOrderItemSnapshot::productId))
                 .map(item -> new OrderItemResponse(
-                        item.getProductId(),
-                        item.getProductName(),
-                        item.getQuantity(),
-                        item.getUnitPriceAmount(),
-                        order.getCurrency(),
-                        item.getLineTotalAmount()
+                        item.productId(),
+                        item.productName(),
+                        item.quantity(),
+                        item.unitPriceAmount(),
+                        order.currency(),
+                        item.lineTotalAmount()
                 ))
                 .toList();
 
         return new CheckoutResponse(
-                order.getId(),
-                order.getCartId(),
-                order.getCustomerId(),
-                order.getStatus(),
-                order.getTotalAmount(),
-                order.getCurrency(),
-                order.getCreatedAt(),
+                order.id(),
+                order.cartId(),
+                order.customerId(),
+                order.status(),
+                order.totalAmount(),
+                order.currency(),
+                order.createdAt(),
                 items,
                 allowedPaymentProviders
         );

@@ -1,13 +1,10 @@
 package com.phu.ecommerceapi.cart.application;
 
-import com.phu.ecommerceapi.User.UserModel;
-import com.phu.ecommerceapi.cart.infrastructure.CartModel;
-import com.phu.ecommerceapi.cart.infrastructure.CartRepo;
 import com.phu.ecommerceapi.catalog.application.CartProductLookupPort;
 import com.phu.ecommerceapi.customer.application.CustomerIdentityLookupPort;
 import com.phu.ecommerceapi.identity.application.CurrentUser;
 import com.phu.ecommerceapi.inventory.application.InventoryReservationService;
-import com.phu.ecommerceapi.order.infrastructure.CustomerOrderRepository;
+import com.phu.ecommerceapi.shared.domain.Money;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -26,7 +23,7 @@ import static org.mockito.Mockito.when;
 class CartServiceAuthorizationTest {
 
     @Mock
-    private CartRepo cartRepo;
+    private CartPersistencePort cartPersistencePort;
 
     @Mock
     private CartProductLookupPort cartProductLookupPort;
@@ -38,25 +35,25 @@ class CartServiceAuthorizationTest {
     private InventoryReservationService inventoryReservationService;
 
     @Mock
-    private CustomerOrderRepository orderRepository;
+    private CartCheckoutStatusPort cartCheckoutStatusPort;
 
     private CartService cartService;
 
     @BeforeEach
     void setUp() {
         cartService = new CartService(
-                cartRepo,
+                cartPersistencePort,
                 cartProductLookupPort,
                 customerIdentityLookupPort,
                 inventoryReservationService,
-                orderRepository
+                cartCheckoutStatusPort
         );
     }
 
     @Test
     void ownerCanReadCartItems() {
-        CartModel cart = cartOwnedBy("subject-1", "customer@example.com", "customer@example.com");
-        when(cartRepo.findWithItemsById(10L)).thenReturn(Optional.of(cart));
+        CartSnapshot cart = cartOwnedBy("subject-1");
+        when(cartPersistencePort.findWithItemsById(10L)).thenReturn(Optional.of(cart));
 
         assertThat(cartService.getCartItems(10L, currentUser("customer@example.com")).isEmpty())
                 .isTrue();
@@ -64,8 +61,8 @@ class CartServiceAuthorizationTest {
 
     @Test
     void crossCustomerCartReadIsDenied() {
-        CartModel cart = cartOwnedBy("owner-subject", "owner@example.com", "owner@example.com");
-        when(cartRepo.findWithItemsById(10L)).thenReturn(Optional.of(cart));
+        CartSnapshot cart = cartOwnedBy("owner-subject");
+        when(cartPersistencePort.findWithItemsById(10L)).thenReturn(Optional.of(cart));
 
         assertThatThrownBy(() -> cartService.getCartItems(10L, currentUser("attacker@example.com")))
                 .isInstanceOf(AccessDeniedException.class)
@@ -74,21 +71,23 @@ class CartServiceAuthorizationTest {
 
     @Test
     void matchingUsernameAndEmailDoNotGrantOwnershipWhenSubjectDiffers() {
-        CartModel cart = cartOwnedBy("owner-subject", "customer@example.com", "customer@example.com");
-        when(cartRepo.findWithItemsById(10L)).thenReturn(Optional.of(cart));
+        CartSnapshot cart = cartOwnedBy("owner-subject");
+        when(cartPersistencePort.findWithItemsById(10L)).thenReturn(Optional.of(cart));
 
         assertThatThrownBy(() -> cartService.getCartItems(10L, currentUser("customer@example.com")))
                 .isInstanceOf(AccessDeniedException.class)
                 .hasMessage("Cart does not belong to current user");
     }
 
-    private CartModel cartOwnedBy(String identitySubject, String username, String email) {
-        UserModel owner = UserModel.builder()
-                .identitySubject(identitySubject)
-                .username(username)
-                .email(email)
-                .build();
-        return new CartModel(owner);
+    private CartSnapshot cartOwnedBy(String identitySubject) {
+        return new CartSnapshot(
+                10L,
+                100L,
+                identitySubject,
+                Money.of("0.00", "USD"),
+                "USD",
+                java.util.List.of()
+        );
     }
 
     private CurrentUser currentUser(String username) {

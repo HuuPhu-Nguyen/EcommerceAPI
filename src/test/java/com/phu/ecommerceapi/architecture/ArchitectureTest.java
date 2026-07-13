@@ -194,6 +194,8 @@ class ArchitectureTest {
                 .that()
                 .resideInAnyPackage(
                         "..audit.application..",
+                        "..cart.application..",
+                        "..checkout.application..",
                         "..inventory.application..",
                         "..ledger.application..",
                         "..payment.application..",

@@ -1,7 +1,5 @@
 package com.phu.ecommerceapi.cart.application;
 
-import com.phu.ecommerceapi.cart.infrastructure.CartModel;
-import com.phu.ecommerceapi.cart.infrastructure.CartRepo;
 import com.phu.ecommerceapi.catalog.application.CartProductLookupPort;
 import com.phu.ecommerceapi.catalog.application.CartProductSnapshot;
 import com.phu.ecommerceapi.customer.application.CustomerIdentity;
@@ -9,7 +7,6 @@ import com.phu.ecommerceapi.customer.application.CustomerIdentityLookupPort;
 import com.phu.ecommerceapi.identity.application.CurrentUser;
 import com.phu.ecommerceapi.inventory.application.InventoryReservationService;
 import com.phu.ecommerceapi.inventory.application.InventorySnapshot;
-import com.phu.ecommerceapi.order.infrastructure.CustomerOrderRepository;
 import com.phu.ecommerceapi.shared.api.ConflictException;
 import com.phu.ecommerceapi.shared.api.NotFoundException;
 import com.phu.ecommerceapi.shared.api.OutOfStockException;
@@ -25,31 +22,30 @@ import java.util.List;
 @Service
 public class CartService {
 
-    private final CartRepo cartRepo;
+    private final CartPersistencePort cartPersistencePort;
     private final CartProductLookupPort cartProductLookupPort;
     private final CustomerIdentityLookupPort customerIdentityLookupPort;
     private final InventoryReservationService inventoryReservationService;
-    private final CustomerOrderRepository orderRepository;
+    private final CartCheckoutStatusPort cartCheckoutStatusPort;
 
     public CartService(
-            CartRepo cartRepo,
+            CartPersistencePort cartPersistencePort,
             CartProductLookupPort cartProductLookupPort,
             CustomerIdentityLookupPort customerIdentityLookupPort,
             InventoryReservationService inventoryReservationService,
-            CustomerOrderRepository orderRepository
+            CartCheckoutStatusPort cartCheckoutStatusPort
     ) {
-        this.cartRepo = cartRepo;
+        this.cartPersistencePort = cartPersistencePort;
         this.cartProductLookupPort = cartProductLookupPort;
         this.customerIdentityLookupPort = customerIdentityLookupPort;
         this.inventoryReservationService = inventoryReservationService;
-        this.orderRepository = orderRepository;
+        this.cartCheckoutStatusPort = cartCheckoutStatusPort;
     }
 
     @Transactional
     public CartResponse createCart(CurrentUser currentUser) {
         CustomerIdentity owner = resolveOwner(currentUser);
-        CartModel cart = new CartModel(owner);
-        return toResponse(cartRepo.save(cart));
+        return toResponse(cartPersistencePort.create(owner));
     }
 
     @Transactional(readOnly = true)
@@ -65,52 +61,52 @@ public class CartService {
     @Transactional
     public CartResponse addItem(long cartId, long productId, int quantity, CurrentUser currentUser) {
         Quantity requestedQuantity = Quantity.of(quantity);
-        CartModel cart = getOwnedMutableCart(cartId, currentUser);
-        CartProductSnapshot product = getActiveProduct(productId);
-
-        int requestedTotalQuantity = cart.quantityForProduct(productId) + requestedQuantity.value();
-        assertInventoryCanSupport(productId, requestedTotalQuantity);
-
-        cart.addItem(product, requestedQuantity.value());
-        return toResponse(cart);
+        return toResponse(cartPersistencePort.updateWithItemsForMutation(cartId, cart -> {
+            CartSnapshot snapshot = cart.snapshot();
+            assertCartOwner(snapshot, currentUser);
+            assertCartNotCheckedOut(snapshot);
+            CartProductSnapshot product = getActiveProduct(productId);
+            int requestedTotalQuantity = cart.quantityForProduct(productId) + requestedQuantity.value();
+            assertInventoryCanSupport(productId, requestedTotalQuantity);
+            cart.addItem(product, requestedQuantity.value());
+            return cart.snapshot();
+        }).orElseThrow(() -> new NotFoundException("Cart not found")));
     }
 
     @Transactional
     public CartResponse updateItemQuantity(long cartId, long productId, int quantity, CurrentUser currentUser) {
         Quantity requestedQuantity = Quantity.of(quantity);
-        CartModel cart = getOwnedMutableCart(cartId, currentUser);
-        CartProductSnapshot product = getActiveProduct(productId);
-
-        assertInventoryCanSupport(productId, requestedQuantity.value());
-
-        cart.updateItemQuantity(product, requestedQuantity.value());
-        return toResponse(cart);
+        return toResponse(cartPersistencePort.updateWithItemsForMutation(cartId, cart -> {
+            CartSnapshot snapshot = cart.snapshot();
+            assertCartOwner(snapshot, currentUser);
+            assertCartNotCheckedOut(snapshot);
+            CartProductSnapshot product = getActiveProduct(productId);
+            assertInventoryCanSupport(productId, requestedQuantity.value());
+            cart.updateItemQuantity(product, requestedQuantity.value());
+            return cart.snapshot();
+        }).orElseThrow(() -> new NotFoundException("Cart not found")));
     }
 
     @Transactional
     public CartResponse removeItem(long cartId, long productId, CurrentUser currentUser) {
-        CartModel cart = getOwnedMutableCart(cartId, currentUser);
-        cart.removeItem(productId);
-        return toResponse(cart);
+        return toResponse(cartPersistencePort.updateWithItemsForMutation(cartId, cart -> {
+            CartSnapshot snapshot = cart.snapshot();
+            assertCartOwner(snapshot, currentUser);
+            assertCartNotCheckedOut(snapshot);
+            cart.removeItem(productId);
+            return cart.snapshot();
+        }).orElseThrow(() -> new NotFoundException("Cart not found")));
     }
 
-    private CartModel getOwnedMutableCart(long cartId, CurrentUser currentUser) {
-        CartModel cart = cartRepo.findForUpdateWithItemsById(cartId)
-                .orElseThrow(() -> new NotFoundException("Cart not found"));
-        assertCartOwner(cart, currentUser);
-        assertCartNotCheckedOut(cart);
-        return cart;
-    }
-
-    private CartModel getOwnedCart(long cartId, CurrentUser currentUser) {
-        CartModel cart = cartRepo.findWithItemsById(cartId)
+    private CartSnapshot getOwnedCart(long cartId, CurrentUser currentUser) {
+        CartSnapshot cart = cartPersistencePort.findWithItemsById(cartId)
                 .orElseThrow(() -> new NotFoundException("Cart not found"));
         assertCartOwner(cart, currentUser);
         return cart;
     }
 
-    private void assertCartNotCheckedOut(CartModel cart) {
-        if (orderRepository.existsByCartId(cart.getId())) {
+    private void assertCartNotCheckedOut(CartSnapshot cart) {
+        if (cartCheckoutStatusPort.existsOrderForCart(cart.id())) {
             throw new ConflictException("Cart has already been checked out");
         }
     }
@@ -136,21 +132,21 @@ public class CartService {
                 .orElseThrow(() -> new NotFoundException("Customer profile not found"));
     }
 
-    private void assertCartOwner(CartModel cart, CurrentUser currentUser) {
+    private void assertCartOwner(CartSnapshot cart, CurrentUser currentUser) {
         if (currentUser == null || !cart.belongsToIdentitySubject(currentUser.subject())) {
             throw new AccessDeniedException("Cart does not belong to current user");
         }
     }
 
-    private CartResponse toResponse(CartModel cart) {
-        List<CartItemResponse> items = cart.itemSnapshots()
+    private CartResponse toResponse(CartSnapshot cart) {
+        List<CartItemResponse> items = cart.items()
                 .stream()
                 .sorted(Comparator.comparingLong(CartItemSnapshot::productId))
                 .map(this::toItemResponse)
                 .toList();
 
-        Money total = cart.totalMoney();
-        return new CartResponse(cart.getId(), total.amount(), total.currency().getCurrencyCode(), items);
+        Money total = cart.total();
+        return new CartResponse(cart.id(), total.amount(), total.currency().getCurrencyCode(), items);
     }
 
     private CartItemResponse toItemResponse(CartItemSnapshot item) {
