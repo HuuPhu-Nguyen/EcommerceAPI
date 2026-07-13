@@ -2,8 +2,6 @@ package com.phu.ecommerceapi.outbox.application;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.phu.ecommerceapi.outbox.infrastructure.OutboxEventRecord;
-import com.phu.ecommerceapi.outbox.infrastructure.OutboxEventRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -15,21 +13,21 @@ import java.util.UUID;
 @Service
 public class OutboxEventRecorder {
 
-    private final OutboxEventRepository outboxEventRepository;
+    private final OutboxEventStorePort outboxEventStorePort;
     private final ObjectMapper objectMapper;
 
     public OutboxEventRecorder(
-            OutboxEventRepository outboxEventRepository,
+            OutboxEventStorePort outboxEventStorePort,
             ObjectMapper objectMapper
     ) {
-        this.outboxEventRepository = outboxEventRepository;
+        this.outboxEventStorePort = outboxEventStorePort;
         this.objectMapper = objectMapper;
     }
 
     @Transactional(propagation = Propagation.MANDATORY)
     public UUID record(String aggregateType, String aggregateId, String eventType, Object payload) {
         Instant now = Instant.now().truncatedTo(ChronoUnit.MILLIS);
-        OutboxEventRecord event = OutboxEventRecord.pending(
+        OutboxEvent event = new OutboxEvent(
                 UUID.randomUUID(),
                 aggregateType,
                 aggregateId,
@@ -37,8 +35,8 @@ public class OutboxEventRecorder {
                 serialize(payload),
                 now
         );
-        outboxEventRepository.save(event);
-        return event.getId();
+        outboxEventStorePort.savePending(event);
+        return event.id();
     }
 
     private String serialize(Object payload) {

@@ -1,7 +1,5 @@
 package com.phu.ecommerceapi.outbox.application;
 
-import com.phu.ecommerceapi.outbox.infrastructure.OutboxEventRecord;
-import com.phu.ecommerceapi.outbox.infrastructure.OutboxEventRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
@@ -21,16 +19,19 @@ public class OutboxEventProcessor {
     private static final Duration PROCESSING_TIMEOUT = Duration.ofMinutes(5);
     private static final String PROCESSING_TIMEOUT_ERROR = "Outbox event processing timed out before completion";
 
-    private final OutboxEventRepository outboxEventRepository;
+    private final OutboxEventClaimPort outboxEventClaimPort;
+    private final OutboxEventOutcomePort outboxEventOutcomePort;
     private final List<OutboxEventPublisher> publishers;
     private final TransactionTemplate transactionTemplate;
 
     public OutboxEventProcessor(
-            OutboxEventRepository outboxEventRepository,
+            OutboxEventClaimPort outboxEventClaimPort,
+            OutboxEventOutcomePort outboxEventOutcomePort,
             List<OutboxEventPublisher> publishers,
             PlatformTransactionManager transactionManager
     ) {
-        this.outboxEventRepository = outboxEventRepository;
+        this.outboxEventClaimPort = outboxEventClaimPort;
+        this.outboxEventOutcomePort = outboxEventOutcomePort;
         this.publishers = List.copyOf(publishers);
         this.transactionTemplate = new TransactionTemplate(transactionManager);
         this.transactionTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
@@ -50,20 +51,12 @@ public class OutboxEventProcessor {
 
     private List<ClaimedOutboxEvent> claimDueEvents(int batchSize) {
         Instant claimedAt = now();
-        return transactionTemplate.execute(status -> {
-            outboxEventRepository.resetTimedOutProcessing(
-                    claimedAt.minus(PROCESSING_TIMEOUT),
-                    claimedAt,
-                    PROCESSING_TIMEOUT_ERROR
-            );
-            List<OutboxEventRecord> records = outboxEventRepository.findDueForProcessing(claimedAt, batchSize);
-            for (OutboxEventRecord record : records) {
-                record.markProcessing(claimedAt);
-            }
-            return records.stream()
-                    .map(record -> new ClaimedOutboxEvent(record.toEvent(), claimedAt))
-                    .toList();
-        });
+        return transactionTemplate.execute(status -> outboxEventClaimPort.claimDueEvents(
+                claimedAt,
+                batchSize,
+                claimedAt.minus(PROCESSING_TIMEOUT),
+                PROCESSING_TIMEOUT_ERROR
+        ));
     }
 
     private void publishAndMarkOutcome(ClaimedOutboxEvent claimedEvent) {
@@ -86,26 +79,21 @@ public class OutboxEventProcessor {
     }
 
     private void markProcessed(ClaimedOutboxEvent claimedEvent) {
-        transactionTemplate.executeWithoutResult(status -> outboxEventRepository
-                .findByIdForUpdate(claimedEvent.event().id())
-                .ifPresent(record -> {
-                    if (record.isProcessed() || !record.isProcessingClaim(claimedEvent.claimedAt())) {
-                        return;
-                    }
-                    record.markProcessed(now());
-                }));
+        transactionTemplate.executeWithoutResult(status -> outboxEventOutcomePort.markProcessed(
+                claimedEvent.event().id(),
+                claimedEvent.claimedAt(),
+                now()
+        ));
     }
 
     private void markFailed(ClaimedOutboxEvent claimedEvent, RuntimeException exception) {
         Instant failedAt = now();
-        transactionTemplate.executeWithoutResult(status -> outboxEventRepository
-                .findByIdForUpdate(claimedEvent.event().id())
-                .ifPresent(record -> {
-                    if (record.isProcessed() || !record.isProcessingClaim(claimedEvent.claimedAt())) {
-                        return;
-                    }
-                    record.markFailed(errorMessage(exception), nextAttemptAt(record.getAttempts(), failedAt));
-                }));
+        transactionTemplate.executeWithoutResult(status -> outboxEventOutcomePort.markFailed(
+                claimedEvent.event().id(),
+                claimedEvent.claimedAt(),
+                errorMessage(exception),
+                nextAttemptAt(claimedEvent.attempts(), failedAt)
+        ));
     }
 
     private Instant nextAttemptAt(int attemptsBeforeFailure, Instant failedAt) {
@@ -122,8 +110,5 @@ public class OutboxEventProcessor {
 
     private Instant now() {
         return Instant.now().truncatedTo(ChronoUnit.MILLIS);
-    }
-
-    private record ClaimedOutboxEvent(OutboxEvent event, Instant claimedAt) {
     }
 }

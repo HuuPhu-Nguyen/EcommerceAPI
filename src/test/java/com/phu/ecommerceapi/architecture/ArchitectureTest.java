@@ -198,6 +198,7 @@ class ArchitectureTest {
                         "..checkout.application..",
                         "..inventory.application..",
                         "..ledger.application..",
+                        "..outbox.application..",
                         "..payment.application..",
                         "..reconciliation.application.."
                 )
