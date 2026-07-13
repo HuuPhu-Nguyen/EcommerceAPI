@@ -7,6 +7,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.test.context.ActiveProfiles;
@@ -37,6 +38,46 @@ class SecurityConfigTest {
     void protectedEndpointRequiresAuthentication() throws Exception {
         mockMvc.perform(get("/admin/customer-profiles"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void healthProbesAllowAnonymousRequests() throws Exception {
+        mockMvc.perform(get("/actuator/health"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/actuator/health/liveness"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/actuator/health/readiness"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void operationalActuatorEndpointsRejectAnonymousRequests() throws Exception {
+        mockMvc.perform(get("/actuator/info"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void operationalActuatorEndpointsRejectCustomerTokens() throws Exception {
+        mockMvc.perform(get("/actuator/metrics").with(jwt()
+                        .authorities(new SimpleGrantedAuthority("ROLE_CUSTOMER"))))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(get("/actuator/prometheus").with(jwt()
+                        .authorities(new SimpleGrantedAuthority("ROLE_CUSTOMER"))))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void operationalActuatorEndpointsAllowOpsTokens() throws Exception {
+        mockMvc.perform(get("/actuator/info").with(jwt()
+                        .authorities(new SimpleGrantedAuthority("ROLE_OPS"))))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/actuator/metrics").with(jwt()
+                        .authorities(new SimpleGrantedAuthority("ROLE_OPS"))))
+                .andExpect(status().isOk());
     }
 
     @Test

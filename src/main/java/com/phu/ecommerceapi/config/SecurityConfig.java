@@ -42,6 +42,17 @@ public class SecurityConfig {
             "/swagger-ui/**",
             "/swagger-ui.html"
     };
+    private static final String[] PUBLIC_HEALTH_PATHS = {
+            "/actuator/health",
+            "/actuator/health/liveness",
+            "/actuator/health/readiness"
+    };
+    private static final String[] OPS_ACTUATOR_PATHS = {
+            "/actuator/info",
+            "/actuator/metrics",
+            "/actuator/metrics/**",
+            "/actuator/prometheus"
+    };
 
     private final OAuth2ResourceServerSecurityProperties securityProperties;
     private final OpenApiExposureProperties openApiExposureProperties;
@@ -63,7 +74,9 @@ public class SecurityConfig {
                     } else {
                         auth.requestMatchers(OPEN_API_DOC_PATHS).hasAnyRole("ADMIN", "AUDITOR");
                     }
-                    auth.requestMatchers(HttpMethod.POST, "/payments/provider-webhooks/fake").permitAll()
+                    auth.requestMatchers(PUBLIC_HEALTH_PATHS).permitAll()
+                            .requestMatchers(OPS_ACTUATOR_PATHS).hasRole("OPS")
+                            .requestMatchers(HttpMethod.POST, "/payments/provider-webhooks/fake").permitAll()
                             .requestMatchers(HttpMethod.POST, "/payments/provider-webhooks/stripe").permitAll()
                             .anyRequest().authenticated();
                 })

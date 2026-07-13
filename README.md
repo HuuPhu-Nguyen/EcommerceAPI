@@ -88,6 +88,7 @@ Important authorities:
 - `ROLE_ADMIN` plus `product:write` for product management.
 - `ROLE_AUDITOR` or `ROLE_ADMIN` plus `audit:read` for audit and reconciliation.
 - `ROLE_AUDITOR` or `ROLE_ADMIN` plus `ledger:read` for ledger reads.
+- `ROLE_OPS` for operational Actuator endpoints such as info, metrics, and Prometheus.
 
 Realm roles remain accepted intentionally so the local Keycloak realm can express user roles once at the realm level. Client roles are trusted only from the configured API resource client, `ecommerce-api` by default; roles under any other `resource_access` client are ignored.
 
@@ -111,6 +112,8 @@ Repeated requests from the same remote address receive a `429 Too Many Requests`
 Every HTTP request receives an internally generated `X-Request-Id`; caller-provided `X-Request-Id` values are validated and stored only as `externalCorrelationId` for correlation. `X-Forwarded-For` is ignored unless the immediate remote address matches a CIDR in `TRUSTED_PROXY_CIDRS`; production deployments behind a reverse proxy must configure that list or rely on a platform layer that overwrites forwarding headers.
 
 OpenAPI and Swagger UI are public in local/test by default for development. Production disables SpringDoc by default with `SPRINGDOC_API_DOCS_ENABLED=false` and `SPRINGDOC_SWAGGER_UI_ENABLED=false`. To expose authenticated production docs, set both SpringDoc flags to `true` and keep `OPENAPI_PUBLIC_DOCS_ENABLED=false`; only admin or auditor users can access docs. Setting `OPENAPI_PUBLIC_DOCS_ENABLED=true` intentionally makes docs public.
+
+Actuator health, liveness, and readiness probes are anonymous so orchestration can check the service. Operational Actuator endpoints including `/actuator/info`, `/actuator/metrics/**`, and `/actuator/prometheus` require `ROLE_OPS`; customer, admin, and auditor tokens are not sufficient unless they also carry the ops role.
 
 For production multi-instance deployments, use Redis-backed rate limiting, an API gateway, or WAF-level throttling with trusted proxy configuration. Keep durable payment/refund idempotency records in PostgreSQL; do not move money-movement idempotency to Redis.
 
