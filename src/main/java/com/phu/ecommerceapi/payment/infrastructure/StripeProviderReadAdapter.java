@@ -21,13 +21,11 @@ import java.util.Optional;
 class StripeProviderReadAdapter implements StripeProviderReadPort {
 
     private final StripeClient stripeClient;
-    private final int connectTimeoutMs;
-    private final int readTimeoutMs;
+    private final StripeRequestOptionsFactory requestOptionsFactory;
 
     StripeProviderReadAdapter(StripeClient stripeClient, AppProperties appProperties) {
         this.stripeClient = stripeClient;
-        this.connectTimeoutMs = appProperties.stripe().connectTimeoutMs();
-        this.readTimeoutMs = appProperties.stripe().readTimeoutMs();
+        this.requestOptionsFactory = new StripeRequestOptionsFactory(appProperties);
     }
 
     @Override
@@ -71,10 +69,7 @@ class StripeProviderReadAdapter implements StripeProviderReadPort {
     }
 
     private RequestOptions requestOptions() {
-        return RequestOptions.builder()
-                .setConnectTimeout(connectTimeoutMs)
-                .setReadTimeout(readTimeoutMs)
-                .build();
+        return requestOptionsFactory.requestOptions();
     }
 
     private String failureCode(PaymentIntent paymentIntent) {

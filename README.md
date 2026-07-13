@@ -216,6 +216,8 @@ $env:STRIPE_READ_TIMEOUT_MS = "5000"
 
 When more than one provider is enabled, payment requests should include `"provider": "fake"` or `"provider": "stripe"`. Refunds do not choose a provider; they route through the provider that captured the original payment.
 
+`STRIPE_API_VERSION` is optional. When set, the application applies it as a Stripe request-level API-version override for PaymentIntent creation, refund creation, and provider-state reads. When unset, Stripe Java SDK/account defaults apply.
+
 Stripe webhook local testing can be done with the Stripe CLI:
 
 ```powershell

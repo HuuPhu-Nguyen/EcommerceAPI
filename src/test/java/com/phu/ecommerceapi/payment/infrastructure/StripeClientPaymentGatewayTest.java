@@ -56,6 +56,7 @@ class StripeClientPaymentGatewayTest {
         assertThat(client.options.getIdempotencyKey()).isEqualTo("payment:stripe:42:%s:key".formatted(orderId));
         assertThat(client.options.getConnectTimeout()).isEqualTo(1234);
         assertThat(client.options.getReadTimeout()).isEqualTo(5678);
+        assertThat(RequestOptions.unsafeGetStripeVersionOverride(client.options)).isEqualTo("2024-06-20");
     }
 
     @Test
@@ -164,6 +165,31 @@ class StripeClientPaymentGatewayTest {
         assertThat(refundClient.options.getIdempotencyKey()).isEqualTo("refund:stripe:42:%s:key".formatted(paymentId));
         assertThat(refundClient.options.getConnectTimeout()).isEqualTo(1234);
         assertThat(refundClient.options.getReadTimeout()).isEqualTo(5678);
+        assertThat(RequestOptions.unsafeGetStripeVersionOverride(refundClient.options)).isEqualTo("2024-06-20");
+    }
+
+    @Test
+    void blankStripeApiVersionUsesSdkDefaultRequestVersion() {
+        StripeRequestOptionsFactory factory = new StripeRequestOptionsFactory(appProperties(""));
+
+        RequestOptions requestOptions = factory.requestOptions("stripe:test:key");
+
+        assertThat(requestOptions.getIdempotencyKey()).isEqualTo("stripe:test:key");
+        assertThat(requestOptions.getConnectTimeout()).isEqualTo(1234);
+        assertThat(requestOptions.getReadTimeout()).isEqualTo(5678);
+        assertThat(RequestOptions.unsafeGetStripeVersionOverride(requestOptions)).isNull();
+    }
+
+    @Test
+    void providerReadRequestOptionsApplyConfiguredApiVersionWithoutIdempotencyKey() {
+        StripeRequestOptionsFactory factory = new StripeRequestOptionsFactory(appProperties());
+
+        RequestOptions requestOptions = factory.requestOptions();
+
+        assertThat(requestOptions.getIdempotencyKey()).isNull();
+        assertThat(requestOptions.getConnectTimeout()).isEqualTo(1234);
+        assertThat(requestOptions.getReadTimeout()).isEqualTo(5678);
+        assertThat(RequestOptions.unsafeGetStripeVersionOverride(requestOptions)).isEqualTo("2024-06-20");
     }
 
     @Test
@@ -278,6 +304,10 @@ class StripeClientPaymentGatewayTest {
     }
 
     private AppProperties appProperties() {
+        return appProperties("2024-06-20");
+    }
+
+    private AppProperties appProperties(String apiVersion) {
         return new AppProperties(
                 "test",
                 "keycloak",
@@ -286,7 +316,7 @@ class StripeClientPaymentGatewayTest {
                 new AppProperties.StripeProviderProperties(
                         "sk_test_safe_placeholder",
                         "whsec_test_safe_placeholder",
-                        "",
+                        apiVersion,
                         1234,
                         5678
                 )

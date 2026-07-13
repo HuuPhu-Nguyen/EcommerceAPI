@@ -18,8 +18,7 @@ final class StripeClientPaymentGateway implements StripePaymentGateway {
 
     private final StripePaymentIntentClient paymentIntentClient;
     private final StripeRefundClient refundClient;
-    private final int connectTimeoutMs;
-    private final int readTimeoutMs;
+    private final StripeRequestOptionsFactory requestOptionsFactory;
 
     StripeClientPaymentGateway(
             StripePaymentIntentClient paymentIntentClient,
@@ -28,8 +27,7 @@ final class StripeClientPaymentGateway implements StripePaymentGateway {
     ) {
         this.paymentIntentClient = paymentIntentClient;
         this.refundClient = refundClient;
-        this.connectTimeoutMs = appProperties.stripe().connectTimeoutMs();
-        this.readTimeoutMs = appProperties.stripe().readTimeoutMs();
+        this.requestOptionsFactory = new StripeRequestOptionsFactory(appProperties);
     }
 
     @Override
@@ -102,11 +100,7 @@ final class StripeClientPaymentGateway implements StripePaymentGateway {
     }
 
     private RequestOptions requestOptions(String idempotencyKey) {
-        return RequestOptions.builder()
-                .setIdempotencyKey(idempotencyKey)
-                .setConnectTimeout(connectTimeoutMs)
-                .setReadTimeout(readTimeoutMs)
-                .build();
+        return requestOptionsFactory.requestOptions(idempotencyKey);
     }
 
     private String failureCode(PaymentIntent paymentIntent) {
