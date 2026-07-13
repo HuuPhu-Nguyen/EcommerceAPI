@@ -138,26 +138,20 @@ public class JpaRefundAttemptPersistenceAdapter implements RefundAttemptPersiste
             String providerRefundId
     ) {
         String normalizedProviderCode = normalizeProviderCode(providerCode);
-        Optional<RefundRecord> refund;
         if (refundId != null) {
-            refund = refundRepository.findForUpdateById(refundId)
-                    .filter(record -> record.getProviderCode().equals(normalizedProviderCode))
-                    .filter(record -> providerRefundId == null
-                            || record.getProviderRefundId() == null
-                            || record.getProviderRefundId().equals(providerRefundId));
-        } else if (providerRefundId != null) {
-            refund = refundRepository.findForUpdateByProviderCodeAndProviderRefundId(
+            return refundRepository.findWebhookAttemptByIdAndProvider(
+                    refundId,
                     normalizedProviderCode,
                     providerRefundId
             );
-        } else {
-            refund = Optional.empty();
         }
-        return refund.map(record -> new RefundWebhookAttempt(
-                record.getId(),
-                record.getStatus(),
-                record.getProviderRefundId()
-        ));
+        if (providerRefundId != null) {
+            return refundRepository.findWebhookAttemptByProviderReference(
+                    normalizedProviderCode,
+                    providerRefundId
+            );
+        }
+        return Optional.empty();
     }
 
     private RefundRecord findForUpdate(UUID refundId) {

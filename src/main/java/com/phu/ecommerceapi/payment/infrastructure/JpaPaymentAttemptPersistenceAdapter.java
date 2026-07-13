@@ -144,26 +144,20 @@ public class JpaPaymentAttemptPersistenceAdapter implements PaymentAttemptPersis
             String providerPaymentId
     ) {
         String normalizedProviderCode = normalizeProviderCode(providerCode);
-        Optional<PaymentRecord> payment;
         if (paymentId != null) {
-            payment = paymentRepository.findForUpdateById(paymentId)
-                    .filter(record -> record.getProviderCode().equals(normalizedProviderCode))
-                    .filter(record -> providerPaymentId == null
-                            || record.getProviderPaymentId() == null
-                            || record.getProviderPaymentId().equals(providerPaymentId));
-        } else if (providerPaymentId != null) {
-            payment = paymentRepository.findForUpdateByProviderCodeAndProviderPaymentId(
+            return paymentRepository.findWebhookAttemptByIdAndProvider(
+                    paymentId,
                     normalizedProviderCode,
                     providerPaymentId
             );
-        } else {
-            payment = Optional.empty();
         }
-        return payment.map(record -> new PaymentWebhookAttempt(
-                record.getId(),
-                record.getStatus(),
-                record.getProviderPaymentId()
-        ));
+        if (providerPaymentId != null) {
+            return paymentRepository.findWebhookAttemptByProviderReference(
+                    normalizedProviderCode,
+                    providerPaymentId
+            );
+        }
+        return Optional.empty();
     }
 
     private PaymentRecord findForUpdate(UUID paymentId) {

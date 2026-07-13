@@ -1,6 +1,7 @@
 package com.phu.ecommerceapi.payment.infrastructure;
 
 import com.phu.ecommerceapi.payment.domain.PaymentStatus;
+import com.phu.ecommerceapi.payment.application.PaymentWebhookAttempt;
 import com.phu.ecommerceapi.reconciliation.application.PaymentReconciliationItem;
 import com.phu.ecommerceapi.reconciliation.application.ProviderReconciliationReference;
 import jakarta.persistence.LockModeType;
@@ -109,6 +110,42 @@ public interface PaymentRecordRepository extends JpaRepository<PaymentRecord, UU
             where payment.id = :paymentId
             """)
     Optional<PaymentRecord> findWithOrderById(@Param("paymentId") UUID paymentId);
+
+    @Query("""
+            select new com.phu.ecommerceapi.payment.application.PaymentWebhookAttempt(
+                payment.id,
+                payment.status,
+                payment.providerPaymentId
+            )
+            from PaymentRecord payment
+            where payment.id = :paymentId
+              and payment.providerCode = :providerCode
+              and (
+                :providerPaymentId is null
+                or payment.providerPaymentId is null
+                or payment.providerPaymentId = :providerPaymentId
+              )
+            """)
+    Optional<PaymentWebhookAttempt> findWebhookAttemptByIdAndProvider(
+            @Param("paymentId") UUID paymentId,
+            @Param("providerCode") String providerCode,
+            @Param("providerPaymentId") String providerPaymentId
+    );
+
+    @Query("""
+            select new com.phu.ecommerceapi.payment.application.PaymentWebhookAttempt(
+                payment.id,
+                payment.status,
+                payment.providerPaymentId
+            )
+            from PaymentRecord payment
+            where payment.providerCode = :providerCode
+              and payment.providerPaymentId = :providerPaymentId
+            """)
+    Optional<PaymentWebhookAttempt> findWebhookAttemptByProviderReference(
+            @Param("providerCode") String providerCode,
+            @Param("providerPaymentId") String providerPaymentId
+    );
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""

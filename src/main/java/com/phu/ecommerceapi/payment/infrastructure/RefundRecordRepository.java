@@ -2,6 +2,7 @@ package com.phu.ecommerceapi.payment.infrastructure;
 
 import com.phu.ecommerceapi.reconciliation.application.ProviderReconciliationReference;
 import com.phu.ecommerceapi.reconciliation.application.RefundReconciliationItem;
+import com.phu.ecommerceapi.payment.application.RefundWebhookAttempt;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -99,6 +100,42 @@ public interface RefundRecordRepository extends JpaRepository<RefundRecord, UUID
             where refund.id = :refundId
             """)
     Optional<RefundRecord> findWithPaymentById(@Param("refundId") UUID refundId);
+
+    @Query("""
+            select new com.phu.ecommerceapi.payment.application.RefundWebhookAttempt(
+                refund.id,
+                refund.status,
+                refund.providerRefundId
+            )
+            from RefundRecord refund
+            where refund.id = :refundId
+              and refund.providerCode = :providerCode
+              and (
+                :providerRefundId is null
+                or refund.providerRefundId is null
+                or refund.providerRefundId = :providerRefundId
+              )
+            """)
+    Optional<RefundWebhookAttempt> findWebhookAttemptByIdAndProvider(
+            @Param("refundId") UUID refundId,
+            @Param("providerCode") String providerCode,
+            @Param("providerRefundId") String providerRefundId
+    );
+
+    @Query("""
+            select new com.phu.ecommerceapi.payment.application.RefundWebhookAttempt(
+                refund.id,
+                refund.status,
+                refund.providerRefundId
+            )
+            from RefundRecord refund
+            where refund.providerCode = :providerCode
+              and refund.providerRefundId = :providerRefundId
+            """)
+    Optional<RefundWebhookAttempt> findWebhookAttemptByProviderReference(
+            @Param("providerCode") String providerCode,
+            @Param("providerRefundId") String providerRefundId
+    );
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""

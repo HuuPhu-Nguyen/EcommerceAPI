@@ -142,6 +142,7 @@ class PaymentProviderPersistenceConstraintTest {
     }
 
     private TestOrder insertOrder() {
+        String uniqueCustomer = UUID.randomUUID().toString();
         Long customerId = jdbcTemplate.queryForObject(
                 """
                         INSERT INTO user_model (
@@ -155,11 +156,11 @@ class PaymentProviderPersistenceConstraintTest {
                         RETURNING id
                         """,
                 Long.class,
-                "provider-constraints-" + UUID.randomUUID() + "@example.com",
-                "provider-constraints@example.com",
+                "provider-constraints-" + uniqueCustomer + "@example.com",
+                "provider-constraints-" + uniqueCustomer + "@example.com",
                 "Provider",
                 "Customer",
-                "provider-constraints-" + UUID.randomUUID()
+                "provider-constraints-" + uniqueCustomer
         );
         Long cartId = jdbcTemplate.queryForObject("SELECT nextval('cart_model_seq')", Long.class);
         UUID orderId = UUID.randomUUID();
