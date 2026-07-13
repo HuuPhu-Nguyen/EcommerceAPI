@@ -7,9 +7,12 @@ import com.phu.ecommerceapi.User.UserModel;
 import com.phu.ecommerceapi.User.UserRepo;
 import com.phu.ecommerceapi.audit.infrastructure.AuditEventRepository;
 import com.phu.ecommerceapi.cart.infrastructure.CartRepo;
+import com.phu.ecommerceapi.catalog.application.AdminProductService;
+import com.phu.ecommerceapi.identity.application.CurrentUser;
 import com.phu.ecommerceapi.inventory.application.InventoryReservationService;
 import com.phu.ecommerceapi.inventory.infrastructure.InventoryRecord;
 import com.phu.ecommerceapi.inventory.infrastructure.InventoryRepository;
+import com.phu.ecommerceapi.order.infrastructure.CustomerOrderRecord;
 import com.phu.ecommerceapi.order.infrastructure.CustomerOrderRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -29,6 +32,8 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -69,6 +74,9 @@ class CheckoutUseCaseTest {
 
     @Autowired
     private InventoryReservationService inventoryReservationService;
+
+    @Autowired
+    private AdminProductService adminProductService;
 
     @Autowired
     private AuditEventRepository auditEventRepository;
@@ -141,6 +149,98 @@ class CheckoutUseCaseTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items.length()").value(0))
                 .andExpect(jsonPath("$.total").value(0.00));
+    }
+
+    @Test
+    void checkoutRejectsProductDeactivatedAfterCartAddWithoutReservingInventory() throws Exception {
+        String username = "checkout-inactive-product@example.com";
+        user(username);
+        ProductModel product = product("Soon Disabled Product", 5);
+        long cartId = createCart(username);
+        addItem(username, cartId, product.getProductId(), 2);
+
+        adminProductService.deactivate(product.getProductId(), adminUser());
+
+        mockMvc.perform(post("/checkout")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "cartId": %d
+                                }
+                                """.formatted(cartId))
+                        .with(customerJwt(username, "checkout:write")))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CONFLICT"))
+                .andExpect(jsonPath("$.detail").value("Product is no longer available for checkout"));
+
+        InventoryRecord inventory = inventoryRepository.findById(product.getProductId()).orElseThrow();
+        assertThat(inventory.getAvailableQuantity()).isEqualTo(5);
+        assertThat(inventory.getReservedQuantity()).isEqualTo(0);
+        assertThat(orderRepository.findAll()).isEmpty();
+        assertThat(cartRepo.findWithItemsById(cartId).orElseThrow().getItems()).hasSize(1);
+        assertThat(auditActions()).doesNotContain("CHECKOUT_ORDER_CREATED");
+    }
+
+    @Test
+    void checkoutCreatesPendingOrderInSupportedNonUsdCartCurrency() throws Exception {
+        String username = "checkout-eur-customer@example.com";
+        user(username);
+        ProductModel product = product("Euro Keyboard", 5, "10.00", "EUR");
+        long cartId = createCart(username);
+        addItem(username, cartId, product.getProductId(), 2);
+
+        mockMvc.perform(post("/checkout")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "cartId": %d
+                                }
+                                """.formatted(cartId))
+                        .with(customerJwt(username, "checkout:write")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("PENDING_PAYMENT"))
+                .andExpect(jsonPath("$.total").value(20.00))
+                .andExpect(jsonPath("$.currency").value("EUR"))
+                .andExpect(jsonPath("$.allowedPaymentProviders.length()").value(1))
+                .andExpect(jsonPath("$.allowedPaymentProviders[0]").value("fake"))
+                .andExpect(jsonPath("$.items[0].currency").value("EUR"));
+
+        CustomerOrderRecord order = orderRepository.findAll().getFirst();
+        assertThat(order.getCurrency()).isEqualTo("EUR");
+        assertThat(order.getTotalAmount()).isEqualByComparingTo("20.00");
+
+        InventoryRecord inventory = inventoryRepository.findById(product.getProductId()).orElseThrow();
+        assertThat(inventory.getAvailableQuantity()).isEqualTo(3);
+        assertThat(inventory.getReservedQuantity()).isEqualTo(2);
+    }
+
+    @Test
+    void checkoutRejectsMixedCurrencyCartBeforeOrderCreationAndInventoryReservation() throws Exception {
+        String username = "checkout-mixed-currency@example.com";
+        user(username);
+        ProductModel product = product("Euro Product In Corrupt Cart", 5, "10.00", "EUR");
+        long cartId = createCart(username);
+        addItem(username, cartId, product.getProductId(), 1);
+        jdbcTemplate.update("UPDATE cart_model SET currency = 'USD' WHERE id = ?", cartId);
+
+        mockMvc.perform(post("/checkout")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "cartId": %d
+                                }
+                                """.formatted(cartId))
+                        .with(customerJwt(username, "checkout:write")))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CONFLICT"))
+                .andExpect(jsonPath("$.detail").value("Cart contains mixed currencies"));
+
+        InventoryRecord inventory = inventoryRepository.findById(product.getProductId()).orElseThrow();
+        assertThat(inventory.getAvailableQuantity()).isEqualTo(5);
+        assertThat(inventory.getReservedQuantity()).isEqualTo(0);
+        assertThat(orderRepository.findAll()).isEmpty();
+        assertThat(cartRepo.findWithItemsById(cartId).orElseThrow().getItems()).hasSize(1);
+        assertThat(auditActions()).doesNotContain("CHECKOUT_ORDER_CREATED");
     }
 
     @Test
@@ -229,7 +329,7 @@ class CheckoutUseCaseTest {
     void checkoutFailsBeforeInventoryReservationWhenNoProviderSupportsCurrency() throws Exception {
         String username = "unsupported-currency-customer@example.com";
         user(username);
-        ProductModel product = product("Euro Keyboard", 5, "10.00", "EUR");
+        ProductModel product = product("Yen Keyboard", 5, "1000.00", "JPY");
         long cartId = createCart(username);
         addItem(username, cartId, product.getProductId(), 2);
 
@@ -467,6 +567,23 @@ class CheckoutUseCaseTest {
                 .build());
         inventoryRepository.save(new InventoryRecord(product.getProductId(), availableQuantity, 0));
         return product;
+    }
+
+    private CurrentUser adminUser() {
+        return new CurrentUser(
+                "admin@example.com",
+                "admin@example.com",
+                "admin@example.com",
+                Set.of("admin"),
+                Set.of()
+        );
+    }
+
+    private List<String> auditActions() {
+        return auditEventRepository.findAll()
+                .stream()
+                .map(event -> event.getAction())
+                .toList();
     }
 
     private RequestPostProcessor customerJwt(String username, String scope) {

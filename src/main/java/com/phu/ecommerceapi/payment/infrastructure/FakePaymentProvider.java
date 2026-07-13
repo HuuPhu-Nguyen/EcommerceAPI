@@ -24,7 +24,7 @@ public class FakePaymentProvider implements PaymentProvider {
 
     private static final String DECLINED_CODE = "fake_declined";
     private static final PaymentProviderCapabilities CAPABILITIES = new PaymentProviderCapabilities(
-            Set.of("USD"),
+            Set.of("EUR", "USD"),
             new BigDecimal("0.50"),
             new BigDecimal("999999.99"),
             true,

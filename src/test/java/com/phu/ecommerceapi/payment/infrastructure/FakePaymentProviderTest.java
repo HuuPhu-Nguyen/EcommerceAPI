@@ -21,7 +21,7 @@ class FakePaymentProviderTest {
     @Test
     void reportsFakeProviderCapabilities() {
         assertThat(provider.providerCode()).isEqualTo("fake");
-        assertThat(provider.capabilities().supportedCurrencies()).containsExactly("USD");
+        assertThat(provider.capabilities().supportedCurrencies()).containsExactlyInAnyOrder("EUR", "USD");
         assertThat(provider.capabilities().minimumAmount()).isEqualByComparingTo("0.50");
         assertThat(provider.capabilities().supportsPayments()).isTrue();
         assertThat(provider.capabilities().supportsRefunds()).isTrue();

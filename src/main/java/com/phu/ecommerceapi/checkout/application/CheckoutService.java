@@ -29,7 +29,6 @@ import java.util.List;
 public class CheckoutService {
 
     private static final String ORDER_RESOURCE_TYPE = "ORDER";
-    private static final String DEFAULT_CURRENCY = "USD";
 
     private final CartRepo cartRepo;
     private final InventoryReservationService inventoryReservationService;
@@ -68,16 +67,17 @@ public class CheckoutService {
                 throw new ConflictException("Cannot checkout an empty cart");
             }
 
+            validateCartItemsForCheckout(cart);
             requireAvailablePaymentProvider(cart.getTotal(), cart.getCurrency());
 
             CustomerOrderRecord order = CustomerOrderRecord.pendingPayment(
                     cart.getOwner(),
                     cart.getId(),
-                    DEFAULT_CURRENCY
+                    cart.getCurrency()
             );
             for (CartItemModel item : cart.getItems()) {
-                inventoryReservationService.reserve(item.getProductId(), item.getQuantity());
                 ProductModel product = item.getProductModel();
+                inventoryReservationService.reserve(item.getProductId(), item.getQuantity());
                 order.addItem(product, item.getQuantity(), product.priceMoney());
             }
 
@@ -93,6 +93,18 @@ public class CheckoutService {
         } catch (RuntimeException exception) {
             businessMetrics.checkoutAttempt("failure");
             throw exception;
+        }
+    }
+
+    private void validateCartItemsForCheckout(CartModel cart) {
+        for (CartItemModel item : cart.getItems()) {
+            ProductModel product = item.getProductModel();
+            if (product == null || !product.isActive()) {
+                throw new ConflictException("Product is no longer available for checkout");
+            }
+            if (!product.priceMoney().currency().getCurrencyCode().equals(cart.getCurrency())) {
+                throw new ConflictException("Cart contains mixed currencies");
+            }
         }
     }
 

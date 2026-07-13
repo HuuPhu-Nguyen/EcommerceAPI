@@ -254,7 +254,7 @@ class CreatePaymentUseCaseTest {
     @Test
     void providerUnsupportedForOrderReturnsConflictBeforePaymentAttempt() throws Exception {
         String username = "payment-unsupported-provider@example.com";
-        UUID orderId = pendingOrderWithoutCheckout(username, "Euro Payment Product", "10.00", "EUR");
+        UUID orderId = pendingOrderWithoutCheckout(username, "Yen Payment Product", "1000.00", "JPY");
 
         createPayment(username, "payment-provider-key-3", paymentJson(orderId, "fake", "pm_approved"))
                 .andExpect(status().isConflict())

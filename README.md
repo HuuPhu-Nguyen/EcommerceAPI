@@ -55,7 +55,7 @@ The code is organized as a pragmatic modular monolith under `com.phu.ecommerceap
 - `identity`: current-user resolution, role/scope expressions, OAuth2 integration.
 - `customer`: safe customer profile reads and ownership mapping.
 - `catalog`: product browsing and admin product management.
-- `cart` and `checkout`: customer cart workflow and atomic inventory reservation.
+- `cart` and `checkout`: customer cart workflow and atomic inventory reservation; checkout revalidates product sellability and cart/item currency, so product deactivation blocks existing carts.
 - `order`: order state and lifecycle rules.
 - `payment`: idempotency, provider port, payment attempts, refunds, and webhooks.
 - `ledger`: immutable accounting-style records for money movement.
@@ -197,7 +197,7 @@ $env:PAYMENT_PROVIDER_ENABLED = "fake"
 .\mvnw.cmd spring-boot:run "-Dspring-boot.run.profiles=local"
 ```
 
-Use this mode for the main demo, local development, and CI. The fake provider is deterministic, supports success/failure/timeout paths, and keeps tests independent from external accounts.
+Use this mode for the main demo, local development, and CI. The fake provider supports USD and EUR, is deterministic, supports success/failure/timeout paths, and keeps tests independent from external accounts.
 
 To review Stripe sandbox behavior, enable both providers and keep `fake` as the active default:
 
