@@ -90,6 +90,10 @@ public class ReconciliationRunRecord {
         return completedAt;
     }
 
+    public Instant getStartedAt() {
+        return startedAt;
+    }
+
     public Boolean getHealthy() {
         return healthy;
     }

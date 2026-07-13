@@ -8,6 +8,7 @@ import com.phu.ecommerceapi.payment.domain.PaymentStatus;
 import com.phu.ecommerceapi.payment.domain.ProviderWebhookEventType;
 import com.phu.ecommerceapi.payment.domain.ProviderWebhookProcessingStatus;
 import com.phu.ecommerceapi.payment.domain.RefundStatus;
+import com.phu.ecommerceapi.shared.api.ConflictException;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,6 +25,7 @@ import java.util.UUID;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
@@ -47,6 +49,55 @@ class ReconciliationServiceTest {
                 .map(Method::getName)
                 .noneMatch(name -> name.equals("findAllForReconciliation") || name.startsWith("findAll")))
                 .isTrue();
+    }
+
+    @Test
+    void runReportReturnsConflictWhenAnotherRunHoldsTheLock() {
+        UUID activeRunId = uuid(99);
+        InMemoryRunStore runStore = new InMemoryRunStore();
+        runStore.activeRunId = activeRunId;
+        InMemoryRunLockPort runLock = new InMemoryRunLockPort(false);
+        ReconciliationService service = service(FakeReadPort.empty(), runStore, runLock, 10, 10);
+
+        assertThatThrownBy(service::runReport)
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining(activeRunId.toString());
+
+        assertThat(runStore.runId).isNull();
+        assertThat(runLock.acquireAttempts).isEqualTo(1);
+        assertThat(runLock.closeCount).isZero();
+    }
+
+    @Test
+    void scheduledRunSkipsWhenAnotherRunHoldsTheLock() {
+        InMemoryRunStore runStore = new InMemoryRunStore();
+        InMemoryRunLockPort runLock = new InMemoryRunLockPort(false);
+        ReconciliationService service = service(FakeReadPort.empty(), runStore, runLock, 10, 10);
+
+        Optional<ReconciliationReport> report = service.runScheduledReport();
+
+        assertThat(report).isEmpty();
+        assertThat(runStore.runId).isNull();
+        assertThat(runLock.acquireAttempts).isEqualTo(1);
+        assertThat(runLock.closeCount).isZero();
+    }
+
+    @Test
+    void failedRunIsMarkedFailedAndReleasesTheLock() {
+        FakeReadPort readPort = FakeReadPort.empty();
+        readPort.failOnPaymentPage = true;
+        InMemoryRunStore runStore = new InMemoryRunStore();
+        InMemoryRunLockPort runLock = new InMemoryRunLockPort();
+        ReconciliationService service = service(readPort, runStore, runLock, 10, 10);
+
+        assertThatThrownBy(service::runReport)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("boom");
+
+        assertThat(runStore.failedRunId).isEqualTo(runStore.runId);
+        assertThat(runStore.failureMessage).isEqualTo("boom");
+        assertThat(runStore.activeRunId).isNull();
+        assertThat(runLock.closeCount).isEqualTo(1);
     }
 
     @Test
@@ -174,9 +225,20 @@ class ReconciliationServiceTest {
             int batchSize,
             int maxIssues
     ) {
+        return service(readPort, runStore, new InMemoryRunLockPort(), batchSize, maxIssues);
+    }
+
+    private ReconciliationService service(
+            ReconciliationReadPort readPort,
+            ReconciliationRunStorePort runStore,
+            ReconciliationRunLockPort runLock,
+            int batchSize,
+            int maxIssues
+    ) {
         return new ReconciliationService(
                 readPort,
                 runStore,
+                runLock,
                 new ReconciliationProperties(batchSize, maxIssues),
                 stripeReadPortProvider,
                 recoveryService
@@ -272,12 +334,16 @@ class ReconciliationServiceTest {
     private static final class InMemoryRunStore implements ReconciliationRunStorePort {
 
         private UUID runId;
+        private UUID activeRunId;
+        private UUID failedRunId;
+        private String failureMessage;
         private ReconciliationRunCompletion completion;
         private List<ReconciliationIssue> storedIssues = List.of();
 
         @Override
         public UUID startRun(Instant startedAt) {
             runId = UUID.randomUUID();
+            activeRunId = runId;
             return runId;
         }
 
@@ -289,10 +355,19 @@ class ReconciliationServiceTest {
         ) {
             this.completion = completion;
             this.storedIssues = List.copyOf(storedIssues);
+            activeRunId = null;
         }
 
         @Override
         public void failRun(UUID runId, Instant completedAt, String failureMessage) {
+            this.failedRunId = runId;
+            this.failureMessage = failureMessage;
+            activeRunId = null;
+        }
+
+        @Override
+        public Optional<UUID> findActiveRunId() {
+            return Optional.ofNullable(activeRunId);
         }
 
         @Override
@@ -321,6 +396,30 @@ class ReconciliationServiceTest {
         }
     }
 
+    private static final class InMemoryRunLockPort implements ReconciliationRunLockPort {
+
+        private final boolean available;
+        private int acquireAttempts;
+        private int closeCount;
+
+        private InMemoryRunLockPort() {
+            this(true);
+        }
+
+        private InMemoryRunLockPort(boolean available) {
+            this.available = available;
+        }
+
+        @Override
+        public Optional<ReconciliationRunLock> tryAcquire() {
+            acquireAttempts++;
+            if (!available) {
+                return Optional.empty();
+            }
+            return Optional.of(() -> closeCount++);
+        }
+    }
+
     private static final class FakeReadPort implements ReconciliationReadPort {
 
         private final List<PaymentReconciliationItem> payments;
@@ -333,6 +432,11 @@ class ReconciliationServiceTest {
         private int webhookPageCalls;
         private int ledgerTransactionPageCalls;
         private int ledgerEntryBatchCalls;
+        private boolean failOnPaymentPage;
+
+        private static FakeReadPort empty() {
+            return new FakeReadPort(List.of(), List.of(), List.of(), List.of(), List.of());
+        }
 
         private FakeReadPort(
                 List<PaymentReconciliationItem> payments,
@@ -350,6 +454,9 @@ class ReconciliationServiceTest {
 
         @Override
         public List<PaymentReconciliationItem> findPaymentsAfterId(UUID afterIdExclusive, int limit) {
+            if (failOnPaymentPage) {
+                throw new IllegalStateException("boom");
+            }
             paymentPageCalls++;
             return page(payments, afterIdExclusive, limit, PaymentReconciliationItem::id);
         }

@@ -9,6 +9,7 @@ import com.phu.ecommerceapi.reconciliation.application.ReconciliationIssue;
 import com.phu.ecommerceapi.reconciliation.application.ReconciliationIssueCode;
 import com.phu.ecommerceapi.reconciliation.application.ReconciliationReport;
 import com.phu.ecommerceapi.reconciliation.application.ReconciliationRunCompletion;
+import com.phu.ecommerceapi.reconciliation.application.ReconciliationRunLockPort;
 import com.phu.ecommerceapi.reconciliation.application.ReconciliationRunStorePort;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -42,6 +43,9 @@ class ReconciliationPersistenceIntegrationTest {
 
     @Autowired
     private ReconciliationRunStorePort runStorePort;
+
+    @Autowired
+    private ReconciliationRunLockPort runLockPort;
 
     @BeforeEach
     void cleanUp() {
@@ -184,6 +188,33 @@ class ReconciliationPersistenceIntegrationTest {
                 .extracting(ReconciliationIssue::message)
                 .containsExactly("first");
         assertThat(runStorePort.findCompleted(failedRunId, 10)).isEmpty();
+    }
+
+    @Test
+    void runStoreReturnsLatestActiveRunId() {
+        UUID olderRunId = runStorePort.startRun(Instant.parse("2026-07-10T08:00:00Z"));
+        UUID activeRunId = runStorePort.startRun(Instant.parse("2026-07-11T08:00:00Z"));
+
+        assertThat(runStorePort.findActiveRunId()).contains(activeRunId);
+
+        runStorePort.failRun(activeRunId, Instant.parse("2026-07-11T08:01:00Z"), "interrupted");
+
+        assertThat(runStorePort.findActiveRunId()).contains(olderRunId);
+
+        runStorePort.failRun(olderRunId, Instant.parse("2026-07-10T08:01:00Z"), "interrupted");
+
+        assertThat(runStorePort.findActiveRunId()).isEmpty();
+    }
+
+    @Test
+    void advisoryRunLockAllowsOnlyOneHolderUntilReleased() {
+        try (ReconciliationRunLockPort.ReconciliationRunLock ignored = runLockPort.tryAcquire().orElseThrow()) {
+            assertThat(runLockPort.tryAcquire()).isEmpty();
+        }
+
+        try (ReconciliationRunLockPort.ReconciliationRunLock ignored = runLockPort.tryAcquire().orElseThrow()) {
+            assertThat(runLockPort.tryAcquire()).isEmpty();
+        }
     }
 
     private TestOrder insertOrder() {

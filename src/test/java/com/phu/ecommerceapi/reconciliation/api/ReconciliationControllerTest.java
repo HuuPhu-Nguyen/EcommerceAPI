@@ -4,6 +4,7 @@ import com.phu.ecommerceapi.config.SecurityConfig;
 import com.phu.ecommerceapi.identity.application.CurrentUserProvider;
 import com.phu.ecommerceapi.reconciliation.application.ReconciliationReport;
 import com.phu.ecommerceapi.reconciliation.application.ReconciliationService;
+import com.phu.ecommerceapi.shared.api.ConflictException;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -93,6 +94,20 @@ class ReconciliationControllerTest {
                 .andExpect(jsonPath("$.issueCount").value(0))
                 .andExpect(jsonPath("$.issuesTruncated").value(false))
                 .andExpect(jsonPath("$.issues").isEmpty());
+
+        verify(reconciliationService).runReport();
+    }
+
+    @Test
+    void activeRunConflictReturnsProblemDetails() throws Exception {
+        String activeRunId = "00000000-0000-0000-0000-000000000123";
+        String detail = "Reconciliation run is already active: runId=" + activeRunId;
+        when(reconciliationService.runReport()).thenThrow(new ConflictException(detail));
+
+        mockMvc.perform(post("/reconciliation/runs").with(auditorJwt()))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CONFLICT"))
+                .andExpect(jsonPath("$.detail").value(detail));
 
         verify(reconciliationService).runReport();
     }

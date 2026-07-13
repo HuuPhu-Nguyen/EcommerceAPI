@@ -102,6 +102,15 @@ public class ReconciliationController {
                             schema = @Schema(implementation = ProblemDetail.class),
                             examples = @ExampleObject(value = OpenApiExamples.FORBIDDEN_PROBLEM)
                     )
+            ),
+            @ApiResponse(
+                    responseCode = "409",
+                    description = "Another reconciliation run is already active.",
+                    content = @Content(
+                            mediaType = MediaType.APPLICATION_JSON_VALUE,
+                            schema = @Schema(implementation = ProblemDetail.class),
+                            examples = @ExampleObject(value = OpenApiExamples.CONFLICT_PROBLEM)
+                    )
             )
     })
     public ReconciliationReport startRun() {

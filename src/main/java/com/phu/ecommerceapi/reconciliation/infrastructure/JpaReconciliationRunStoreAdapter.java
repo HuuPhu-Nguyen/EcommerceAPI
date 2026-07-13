@@ -64,6 +64,13 @@ public class JpaReconciliationRunStoreAdapter implements ReconciliationRunStoreP
 
     @Override
     @Transactional(readOnly = true)
+    public Optional<UUID> findActiveRunId() {
+        return runRepository.findFirstByStatusOrderByStartedAtDesc(ReconciliationRunStatus.RUNNING)
+                .map(ReconciliationRunRecord::getId);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public Optional<ReconciliationReport> findCompleted(UUID runId, int issueLimit) {
         return runRepository.findById(runId)
                 .filter(run -> run.getStatus() == ReconciliationRunStatus.COMPLETED)

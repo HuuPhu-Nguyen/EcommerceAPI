@@ -8,4 +8,6 @@ import java.util.UUID;
 public interface ReconciliationRunRepository extends JpaRepository<ReconciliationRunRecord, UUID> {
 
     Optional<ReconciliationRunRecord> findFirstByStatusOrderByCompletedAtDesc(ReconciliationRunStatus status);
+
+    Optional<ReconciliationRunRecord> findFirstByStatusOrderByStartedAtDesc(ReconciliationRunStatus status);
 }

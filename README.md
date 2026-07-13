@@ -156,7 +156,7 @@ The reconciliation report checks:
 - Provider-success rows still stuck in `PROVIDER_SUCCEEDED_LEDGER_PENDING` after the recovery pass are flagged for operator review.
 - Orphaned payments, refunds, or ledger transactions are flagged.
 
-Reconciliation runs are materialized. `POST /reconciliation/runs` starts a bounded run for local/demo use, paging through records with `RECONCILIATION_BATCH_SIZE` and storing at most the first `RECONCILIATION_MAX_ISSUES_PER_RUN` issue rows while preserving the full issue count. `GET /reconciliation/report` reads the latest completed run and does not run reconciliation synchronously.
+Reconciliation runs are materialized. `POST /reconciliation/runs` starts a bounded run for local/demo use, paging through records with `RECONCILIATION_BATCH_SIZE` and storing at most the first `RECONCILIATION_MAX_ISSUES_PER_RUN` issue rows while preserving the full issue count. `GET /reconciliation/report` reads the latest completed run and does not run reconciliation synchronously. API and scheduled reconciliation share one PostgreSQL advisory lock, so only one run can execute across application nodes. A concurrent API-triggered run returns `409 Conflict` with the active run id when available; a scheduled trigger skips if another run owns the lock. PostgreSQL releases the advisory lock when the holder connection closes, so a crashed node does not permanently block future runs. Any historical `RUNNING` row left by a crash is operational evidence for investigation, but the advisory lock is the source of truth for admission control.
 
 ## Local Setup
 

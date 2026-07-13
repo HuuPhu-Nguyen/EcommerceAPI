@@ -13,6 +13,8 @@ public interface ReconciliationRunStorePort {
 
     void failRun(UUID runId, Instant completedAt, String failureMessage);
 
+    Optional<UUID> findActiveRunId();
+
     Optional<ReconciliationReport> findCompleted(UUID runId, int issueLimit);
 
     Optional<ReconciliationReport> findLatestCompleted(int issueLimit);

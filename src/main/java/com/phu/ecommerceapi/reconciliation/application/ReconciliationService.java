@@ -10,6 +10,7 @@ import com.phu.ecommerceapi.payment.domain.PaymentStatus;
 import com.phu.ecommerceapi.payment.domain.ProviderWebhookEventType;
 import com.phu.ecommerceapi.payment.domain.ProviderWebhookProcessingStatus;
 import com.phu.ecommerceapi.payment.domain.RefundStatus;
+import com.phu.ecommerceapi.shared.api.ConflictException;
 import com.phu.ecommerceapi.shared.api.NotFoundException;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
@@ -47,6 +48,7 @@ public class ReconciliationService {
 
     private final ReconciliationReadPort reconciliationReadPort;
     private final ReconciliationRunStorePort runStorePort;
+    private final ReconciliationRunLockPort runLockPort;
     private final ReconciliationProperties properties;
     private final ObjectProvider<StripeProviderReadPort> stripeProviderReadPort;
     private final PaymentIdempotencyRecoveryService paymentIdempotencyRecoveryService;
@@ -54,12 +56,14 @@ public class ReconciliationService {
     public ReconciliationService(
             ReconciliationReadPort reconciliationReadPort,
             ReconciliationRunStorePort runStorePort,
+            ReconciliationRunLockPort runLockPort,
             ReconciliationProperties properties,
             ObjectProvider<StripeProviderReadPort> stripeProviderReadPort,
             PaymentIdempotencyRecoveryService paymentIdempotencyRecoveryService
     ) {
         this.reconciliationReadPort = reconciliationReadPort;
         this.runStorePort = runStorePort;
+        this.runLockPort = runLockPort;
         this.properties = properties;
         this.stripeProviderReadPort = stripeProviderReadPort;
         this.paymentIdempotencyRecoveryService = paymentIdempotencyRecoveryService;
@@ -71,6 +75,24 @@ public class ReconciliationService {
     }
 
     public ReconciliationReport runReport() {
+        ReconciliationRunLockPort.ReconciliationRunLock lock = runLockPort.tryAcquire()
+                .orElseThrow(this::activeRunConflict);
+        try (lock) {
+            return runReportWithLock();
+        }
+    }
+
+    public Optional<ReconciliationReport> runScheduledReport() {
+        Optional<ReconciliationRunLockPort.ReconciliationRunLock> lock = runLockPort.tryAcquire();
+        if (lock.isEmpty()) {
+            return Optional.empty();
+        }
+        try (ReconciliationRunLockPort.ReconciliationRunLock acquiredLock = lock.get()) {
+            return Optional.of(runReportWithLock());
+        }
+    }
+
+    private ReconciliationReport runReportWithLock() {
         UUID runId = runStorePort.startRun(Instant.now().truncatedTo(ChronoUnit.MILLIS));
         try {
             paymentIdempotencyRecoveryService.recoverExpired();
@@ -106,6 +128,12 @@ public class ReconciliationService {
             );
             throw exception;
         }
+    }
+
+    private ConflictException activeRunConflict() {
+        return new ConflictException(runStorePort.findActiveRunId()
+                .map(runId -> "Reconciliation run is already active: runId=" + runId)
+                .orElse("Reconciliation run is already active"));
     }
 
     private void processPaymentPages(ReconciliationRunAccumulator accumulator) {
