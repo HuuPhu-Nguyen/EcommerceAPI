@@ -107,7 +107,7 @@ The API includes an application-level in-memory abuse limiter for sensitive loca
 - `POST /customer/profile/me`
 - `GET /customer/profile/me`
 
-Repeated requests from the same remote address receive a `429 Too Many Requests` Problem Details response with a `Retry-After` header. Provider webhook endpoints reject oversized bodies before controller logic using `WEBHOOK_MAX_BODY_BYTES`, even when `Content-Length` is missing or false. Normal JSON write APIs reject oversized bodies using `REQUEST_MAX_JSON_BODY_BYTES`; this covers payment, refund, checkout, cart item, and admin product writes. Production ingress or reverse proxy body-size limits are still required and should be set to the same or a lower value than the application limit for each route class.
+Repeated requests from the same client identity receive a `429 Too Many Requests` Problem Details response with a `Retry-After` header. The limiter uses trusted-proxy-aware request metadata, so `X-Forwarded-For` only affects identity when the immediate remote address is in `TRUSTED_PROXY_CIDRS`. The retained in-process limiter evicts inactive keys after the rate-limit window and rejects new limiter keys once `RATE_LIMIT_MAX_KEYS` is reached, keeping local memory bounded. Provider webhook endpoints reject oversized bodies before controller logic using `WEBHOOK_MAX_BODY_BYTES`, even when `Content-Length` is missing or false. Normal JSON write APIs reject oversized bodies using `REQUEST_MAX_JSON_BODY_BYTES`; this covers payment, refund, checkout, cart item, and admin product writes. Production ingress or reverse proxy body-size limits are still required and should be set to the same or a lower value than the application limit for each route class.
 
 Every HTTP request receives an internally generated `X-Request-Id`; caller-provided `X-Request-Id` values are validated and stored only as `externalCorrelationId` for correlation. `X-Forwarded-For` is ignored unless the immediate remote address matches a CIDR in `TRUSTED_PROXY_CIDRS`; production deployments behind a reverse proxy must configure that list or rely on a platform layer that overwrites forwarding headers.
 
@@ -115,7 +115,7 @@ OpenAPI and Swagger UI are public in local/test by default for development. Prod
 
 Actuator health, liveness, and readiness probes are anonymous so orchestration can check the service. Operational Actuator endpoints including `/actuator/info`, `/actuator/metrics/**`, and `/actuator/prometheus` require `ROLE_OPS`; customer, admin, and auditor tokens are not sufficient unless they also carry the ops role.
 
-For production multi-instance deployments, use Redis-backed rate limiting, an API gateway, or WAF-level throttling with trusted proxy configuration. Keep durable payment/refund idempotency records in PostgreSQL; do not move money-movement idempotency to Redis.
+For production multi-instance deployments, use Redis-backed rate limiting, an API gateway, or WAF-level throttling with trusted proxy configuration. The in-process limiter is bounded defense-in-depth only and is not authoritative across nodes. Keep durable payment/refund idempotency records in PostgreSQL; do not move money-movement idempotency to Redis.
 
 ## Payment, Idempotency, And Ledger
 
@@ -525,7 +525,7 @@ Important environment variables:
 - Fake provider: `FAKE_PROVIDER_WEBHOOK_SECRET` when `fake` is enabled
 - Stripe provider: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_API_VERSION`, `STRIPE_CONNECT_TIMEOUT_MS`, `STRIPE_READ_TIMEOUT_MS` when `stripe` is enabled
 - Payment idempotency recovery: `PAYMENT_IDEMPOTENCY_IN_PROGRESS_LEASE_SECONDS`
-- Abuse protection: `RATE_LIMIT_ENABLED`, `RATE_LIMIT_WINDOW_SECONDS`, `RATE_LIMIT_SENSITIVE_REQUESTS_PER_WINDOW`, `RATE_LIMIT_WEBHOOK_REQUESTS_PER_WINDOW`, `RATE_LIMIT_PROFILE_REQUESTS_PER_WINDOW`, `REQUEST_MAX_JSON_BODY_BYTES`, `WEBHOOK_MAX_BODY_BYTES`
+- Abuse protection: `RATE_LIMIT_ENABLED`, `RATE_LIMIT_WINDOW_SECONDS`, `RATE_LIMIT_SENSITIVE_REQUESTS_PER_WINDOW`, `RATE_LIMIT_WEBHOOK_REQUESTS_PER_WINDOW`, `RATE_LIMIT_PROFILE_REQUESTS_PER_WINDOW`, `RATE_LIMIT_MAX_KEYS`, `REQUEST_MAX_JSON_BODY_BYTES`, `WEBHOOK_MAX_BODY_BYTES`
 - Operations: `APP_ENVIRONMENT`, `SHUTDOWN_TIMEOUT`, `LOG_STRUCTURED_FORMAT`, `OUTBOX_PROCESSING_ENABLED`, `AUDIT_HASH_VERIFICATION_BATCH_SIZE`, `RECONCILIATION_SCHEDULING_ENABLED`, `RECONCILIATION_BATCH_SIZE`, `RECONCILIATION_MAX_ISSUES_PER_RUN`
 
 No real card data, JWTs, private keys, or production secrets should be committed.

@@ -10,6 +10,7 @@ import org.springframework.mock.web.MockHttpServletResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -28,6 +29,7 @@ class AbuseRateLimitFilterTest {
             1,
             1,
             1,
+            100,
             64,
             64
     );
@@ -59,6 +61,86 @@ class AbuseRateLimitFilterTest {
         MockHttpServletResponse response = perform("POST", path);
 
         assertRateLimited(response, path);
+    }
+
+    @Test
+    void evictsInactiveLimiterKeysAfterWindow() throws Exception {
+        MutableClock clock = new MutableClock(Instant.parse("2026-07-11T00:00:00Z"));
+        AbuseRateLimitFilter targetFilter = newFilter(clock, 1);
+        String path = "/payments";
+
+        assertAllowed(targetFilter, "POST", path, "203.0.113.20");
+        assertRateLimited(perform(targetFilter, "POST", path, "203.0.113.21"), path);
+
+        clock.advanceSeconds(60);
+
+        assertAllowed(targetFilter, "POST", path, "203.0.113.21");
+    }
+
+    @Test
+    void rejectsNewLimiterKeysWhenCounterCapacityIsFull() throws Exception {
+        AbuseRateLimitFilter targetFilter = newFilter(Clock.fixed(
+                Instant.parse("2026-07-11T00:00:00Z"),
+                ZoneOffset.UTC
+        ), 1);
+        String path = "/payments";
+
+        assertAllowed(targetFilter, "POST", path, "203.0.113.20");
+
+        assertRateLimited(perform(targetFilter, "POST", path, "203.0.113.21"), path);
+    }
+
+    @Test
+    void rateLimitIdentityUsesTrustedProxyAwareRequestMetadata() throws Exception {
+        RequestIdFilter requestIdFilter = new RequestIdFilter("10.0.0.0/8");
+        AbuseRateLimitFilter targetFilter = newFilter();
+        String path = "/payments";
+
+        assertThat(performThroughRequestIdFilter(
+                requestIdFilter,
+                targetFilter,
+                path,
+                "10.1.2.3",
+                "203.0.113.20"
+        ).getStatus()).isEqualTo(HttpStatus.OK.value());
+        assertThat(performThroughRequestIdFilter(
+                requestIdFilter,
+                targetFilter,
+                path,
+                "10.1.2.3",
+                "203.0.113.21"
+        ).getStatus()).isEqualTo(HttpStatus.OK.value());
+
+        assertRateLimited(performThroughRequestIdFilter(
+                requestIdFilter,
+                targetFilter,
+                path,
+                "10.1.2.3",
+                "203.0.113.20"
+        ), path);
+    }
+
+    @Test
+    void untrustedForwardedForDoesNotSpoofRateLimitIdentity() throws Exception {
+        RequestIdFilter requestIdFilter = new RequestIdFilter("10.0.0.0/8");
+        AbuseRateLimitFilter targetFilter = newFilter();
+        String path = "/payments";
+
+        assertThat(performThroughRequestIdFilter(
+                requestIdFilter,
+                targetFilter,
+                path,
+                "198.51.100.20",
+                "203.0.113.20"
+        ).getStatus()).isEqualTo(HttpStatus.OK.value());
+
+        assertRateLimited(performThroughRequestIdFilter(
+                requestIdFilter,
+                targetFilter,
+                path,
+                "198.51.100.20",
+                "203.0.113.21"
+        ), path);
     }
 
     @Test
@@ -230,7 +312,16 @@ class AbuseRateLimitFilterTest {
     }
 
     private void assertAllowed(AbuseRateLimitFilter targetFilter, String method, String path) throws Exception {
-        MockHttpServletResponse response = perform(targetFilter, method, path);
+        assertAllowed(targetFilter, method, path, "203.0.113.10");
+    }
+
+    private void assertAllowed(
+            AbuseRateLimitFilter targetFilter,
+            String method,
+            String path,
+            String remoteAddress
+    ) throws Exception {
+        MockHttpServletResponse response = perform(targetFilter, method, path, remoteAddress);
 
         assertThat(response.getStatus()).isEqualTo(HttpStatus.OK.value());
     }
@@ -241,8 +332,17 @@ class AbuseRateLimitFilterTest {
 
     private MockHttpServletResponse perform(AbuseRateLimitFilter targetFilter, String method, String path)
             throws Exception {
+        return perform(targetFilter, method, path, "203.0.113.10");
+    }
+
+    private MockHttpServletResponse perform(
+            AbuseRateLimitFilter targetFilter,
+            String method,
+            String path,
+            String remoteAddress
+    ) throws Exception {
         MockHttpServletRequest request = new MockHttpServletRequest(method, path);
-        request.setRemoteAddr("203.0.113.10");
+        request.setRemoteAddr(remoteAddress);
         request.setRequestURI(path);
         request.setAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE, "request-123");
         MockHttpServletResponse response = new MockHttpServletResponse();
@@ -251,30 +351,53 @@ class AbuseRateLimitFilterTest {
         return response;
     }
 
+    private MockHttpServletResponse performThroughRequestIdFilter(
+            RequestIdFilter requestIdFilter,
+            AbuseRateLimitFilter targetFilter,
+            String path,
+            String remoteAddress,
+            String forwardedFor
+    ) throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", path);
+        request.setRemoteAddr(remoteAddress);
+        request.setRequestURI(path);
+        request.addHeader("X-Forwarded-For", forwardedFor);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        requestIdFilter.doFilter(request, response, (servletRequest, servletResponse) ->
+                targetFilter.doFilter(servletRequest, servletResponse, new MockFilterChain()));
+        return response;
+    }
+
     private void assertRateLimited(MockHttpServletResponse response, String path) throws Exception {
         assertThat(response.getStatus()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS.value());
         assertThat(response.getHeader("Retry-After")).isEqualTo("60");
         assertThat(response.getContentAsString())
-                .contains("RATE_LIMITED", path, "request-123")
+                .contains("RATE_LIMITED", path, "requestId")
                 .doesNotContain("Authorization", "Idempotency-Key");
     }
 
     private void assertPayloadTooLarge(MockHttpServletResponse response, String path) throws Exception {
         assertThat(response.getStatus()).isEqualTo(HttpStatus.PAYLOAD_TOO_LARGE.value());
         assertThat(response.getContentAsString())
-                .contains("VALIDATION_FAILED", path, "request-123")
+                .contains("VALIDATION_FAILED", path, "requestId")
                 .doesNotContain("Authorization", "Idempotency-Key");
     }
 
     private AbuseRateLimitFilter newFilter() {
+        return newFilter(Clock.fixed(Instant.parse("2026-07-11T00:00:00Z"), ZoneOffset.UTC), 100);
+    }
+
+    private AbuseRateLimitFilter newFilter(Clock clock, int maxCounterKeys) {
         return new AbuseRateLimitFilter(
                 new ObjectMapper(),
-                Clock.fixed(Instant.parse("2026-07-11T00:00:00Z"), ZoneOffset.UTC),
+                clock,
                 true,
                 60,
                 1,
                 1,
                 1,
+                maxCounterKeys,
                 64,
                 64
         );
@@ -320,6 +443,34 @@ class AbuseRateLimitFilterTest {
         @Override
         public long getContentLengthLong() {
             return contentLength;
+        }
+    }
+
+    private static final class MutableClock extends Clock {
+
+        private Instant instant;
+
+        private MutableClock(Instant instant) {
+            this.instant = instant;
+        }
+
+        private void advanceSeconds(long seconds) {
+            instant = instant.plusSeconds(seconds);
+        }
+
+        @Override
+        public ZoneId getZone() {
+            return ZoneOffset.UTC;
+        }
+
+        @Override
+        public Clock withZone(ZoneId zone) {
+            return this;
+        }
+
+        @Override
+        public Instant instant() {
+            return instant;
         }
     }
 }
