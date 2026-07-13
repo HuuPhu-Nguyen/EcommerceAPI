@@ -189,15 +189,18 @@ class ArchitectureTest {
     }
 
     @Test
-    void coreApplicationPackagesMustUsePortsInsteadOfInfrastructure() {
+    void modularApplicationPackagesMustUsePortsInsteadOfInfrastructure() {
         noClasses()
                 .that()
                 .resideInAnyPackage(
                         "..audit.application..",
                         "..cart.application..",
+                        "..catalog.application..",
                         "..checkout.application..",
+                        "..customer.application..",
                         "..inventory.application..",
                         "..ledger.application..",
+                        "..order.application..",
                         "..outbox.application..",
                         "..payment.application..",
                         "..reconciliation.application.."
