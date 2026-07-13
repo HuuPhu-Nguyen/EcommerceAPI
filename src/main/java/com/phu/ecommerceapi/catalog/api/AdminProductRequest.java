@@ -11,7 +11,7 @@ import java.math.BigDecimal;
 import java.util.Locale;
 
 public record AdminProductRequest(
-        @NotBlank String name,
+        @NotBlank @Size(max = 120) String name,
         @NotNull @PositiveOrZero BigDecimal price,
         @Size(min = 3, max = 3) String currency,
         @PositiveOrZero int stock,
@@ -19,6 +19,7 @@ public record AdminProductRequest(
 ) {
 
     public AdminProductRequest {
+        name = name == null ? null : name.trim();
         currency = currency == null || currency.isBlank() ? "USD" : currency.trim().toUpperCase(Locale.ROOT);
     }
 

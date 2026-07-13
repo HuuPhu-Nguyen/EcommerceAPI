@@ -104,6 +104,19 @@ class AdminProductManagementTest {
     }
 
     @Test
+    void overlongProductNameIsRejectedBeforePersistence() throws Exception {
+        mockMvc.perform(post("/admin/products")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(productJson("p".repeat(121), "19.99", 8, true))
+                        .with(adminJwt()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+
+        assertThat(productRepo.findAll()).isEmpty();
+        assertThat(auditEventRepository.findAll()).isEmpty();
+    }
+
+    @Test
     void adminCanUpdateAndDeactivateProductWithAuditEvents() throws Exception {
         ProductModel product = productRepo.save(ProductModel.builder()
                 .name("Original Product")

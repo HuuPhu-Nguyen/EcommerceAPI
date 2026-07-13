@@ -290,6 +290,37 @@ class RefundFlowTest {
     }
 
     @Test
+    void oversizedRefundRequestIsRejectedBeforePersistence() throws Exception {
+        createRefund(
+                        "refund-large-body@example.com",
+                        UUID.randomUUID(),
+                        "refund-large-body-key",
+                        refundJson("x".repeat(33_000))
+                )
+                .andExpect(status().is(413))
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.detail").value("JSON request body is too large"));
+
+        assertThat(refundRepository.findAll()).isEmpty();
+        assertThat(idempotencyRepository.findAll()).isEmpty();
+    }
+
+    @Test
+    void overlongRefundReasonIsRejectedBeforePersistence() throws Exception {
+        createRefund(
+                        "refund-reason-too-long@example.com",
+                        UUID.randomUUID(),
+                        "refund-reason-too-long-key",
+                        refundJson("r".repeat(501))
+                )
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+
+        assertThat(refundRepository.findAll()).isEmpty();
+        assertThat(idempotencyRepository.findAll()).isEmpty();
+    }
+
+    @Test
     void concurrentDoubleRefundAllowsOnlyOneSuccess() throws Exception {
         String username = "refund-concurrent@example.com";
         PaymentFixture fixture = successfulPayment(username);

@@ -405,6 +405,47 @@ class CreatePaymentUseCaseTest {
         assertThat(auditActions()).doesNotContain("PAYMENT_SUCCEEDED", "PAYMENT_FAILED");
     }
 
+    @Test
+    void oversizedPaymentRequestIsRejectedBeforePersistence() throws Exception {
+        String requestBody = paymentJson(UUID.randomUUID(), "fake", "x".repeat(33_000));
+
+        createPayment("payment-large-body@example.com", "payment-large-body-key", requestBody)
+                .andExpect(status().is(413))
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.detail").value("JSON request body is too large"));
+
+        assertThat(paymentRepository.findAll()).isEmpty();
+        assertThat(idempotencyRepository.findAll()).isEmpty();
+    }
+
+    @Test
+    void overlongPaymentProviderIsRejectedBeforePersistence() throws Exception {
+        createPayment(
+                        "payment-provider-too-long@example.com",
+                        "payment-provider-too-long-key",
+                        paymentJson(UUID.randomUUID(), "p".repeat(33), "pm_approved")
+                )
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+
+        assertThat(paymentRepository.findAll()).isEmpty();
+        assertThat(idempotencyRepository.findAll()).isEmpty();
+    }
+
+    @Test
+    void overlongPaymentMethodTokenIsRejectedBeforePersistence() throws Exception {
+        createPayment(
+                        "payment-token-too-long@example.com",
+                        "payment-token-too-long-key",
+                        paymentJson(UUID.randomUUID(), "fake", "t".repeat(129))
+                )
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+
+        assertThat(paymentRepository.findAll()).isEmpty();
+        assertThat(idempotencyRepository.findAll()).isEmpty();
+    }
+
     private org.springframework.test.web.servlet.ResultActions createPayment(
             String username,
             String idempotencyKey,

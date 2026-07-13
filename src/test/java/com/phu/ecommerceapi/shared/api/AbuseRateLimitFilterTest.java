@@ -28,6 +28,7 @@ class AbuseRateLimitFilterTest {
             1,
             1,
             1,
+            64,
             64
     );
 
@@ -131,6 +132,56 @@ class AbuseRateLimitFilterTest {
     }
 
     @Test
+    void rejectsJsonApiPayloadWhenContentLengthExceedsLimitBeforeController() throws Exception {
+        String path = "/payments";
+        MockHttpServletRequest request = requestWithContentLength("POST", path, 65, body(65));
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        AtomicBoolean controllerReached = new AtomicBoolean(false);
+
+        newFilter().doFilter(request, response, (servletRequest, servletResponse) -> controllerReached.set(true));
+
+        assertPayloadTooLarge(response, path);
+        assertThat(controllerReached).isFalse();
+    }
+
+    @Test
+    void rejectsJsonApiPayloadWithoutContentLengthWhenActualBodyExceedsLimit() throws Exception {
+        String path = "/payments/638dc8e7-e7c5-47bf-a62f-a5728f9c19be/refunds";
+        MockHttpServletRequest request = requestWithContentLength("POST", path, -1, body(65));
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        AtomicBoolean controllerReached = new AtomicBoolean(false);
+
+        newFilter().doFilter(request, response, (servletRequest, servletResponse) -> controllerReached.set(true));
+
+        assertPayloadTooLarge(response, path);
+        assertThat(controllerReached).isFalse();
+    }
+
+    @Test
+    void cachesJsonApiPayloadWithoutContentLengthWhenActualBodyIsExactlyLimit() throws Exception {
+        String path = "/payments";
+        String requestBody = "a".repeat(64);
+        MockHttpServletRequest request = requestWithContentLength(
+                "POST",
+                path,
+                -1,
+                requestBody.getBytes(StandardCharsets.UTF_8)
+        );
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        AtomicReference<Boolean> cachedRequest = new AtomicReference<>(false);
+        AtomicReference<byte[]> inputStreamBody = new AtomicReference<>();
+
+        newFilter().doFilter(request, response, (servletRequest, servletResponse) -> {
+            cachedRequest.set(servletRequest instanceof CachedBodyHttpServletRequest);
+            inputStreamBody.set(servletRequest.getInputStream().readAllBytes());
+        });
+
+        assertThat(response.getStatus()).isEqualTo(HttpStatus.OK.value());
+        assertThat(cachedRequest).hasValue(true);
+        assertThat(inputStreamBody.get()).isEqualTo(requestBody.getBytes(StandardCharsets.UTF_8));
+    }
+
+    @Test
     void doesNotCacheNonWebhookRequestBodies() throws Exception {
         String path = "/orders";
         byte[] requestBody = "regular body".getBytes(StandardCharsets.UTF_8);
@@ -224,6 +275,7 @@ class AbuseRateLimitFilterTest {
                 1,
                 1,
                 1,
+                64,
                 64
         );
     }
