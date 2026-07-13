@@ -143,7 +143,7 @@ Fake provider examples:
 
 ## Audit And Reconciliation
 
-Sensitive workflows write audit events with actor, action, resource, internal request id, validated external correlation id, IP address, user agent, timestamp, previous hash, and event hash. The audit verification endpoint recalculates the hash chain in bounded pages and reports the first broken event if tampering is detected. Verification can still take time on very large chains, but it does not load every audit event into one in-memory list.
+Sensitive workflows write audit events with actor, action, resource, internal request id, validated external correlation id, IP address, user agent, timestamp, previous hash, and event hash. Audit writes intentionally serialize on one singleton chain-state row so the project keeps one tamper-evident linear hash chain; sharded audit chains would be a separate architecture decision. The audit verification endpoint recalculates the hash chain in bounded pages and reports the first broken event if tampering is detected. Verification can still take time on very large chains, but it does not load every audit event into one in-memory list.
 
 The reconciliation report checks:
 

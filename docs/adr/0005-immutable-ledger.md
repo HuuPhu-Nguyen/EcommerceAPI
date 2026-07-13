@@ -14,12 +14,15 @@ Use an immutable double-entry-style ledger.
 
 Payments and refunds create ledger transactions with balanced ledger entries. Ledger entries are append-only. Corrections must use reversing transactions rather than updates or deletes.
 
+Audit events use a single tamper-evident linear hash chain. Writes intentionally serialize on the singleton `audit_hash_chain_state` row lock and use that row's `latest_hash` as the next event's `previous_hash`. This avoids a per-write audit table count while keeping one ordered chain. Sharded audit chains are deferred as a separate architecture decision because they trade write throughput for more complex verification semantics.
+
 ## Consequences
 
 - Money movement has a durable audit trail.
 - Reconciliation can detect missing, orphaned, or unbalanced records.
 - Tests can prove every transaction balances per currency.
 - Application code and database design must prevent mutation paths for posted ledger entries.
+- Audit writes have intentionally serialized throughput for one chain-state row.
 
 ## Alternatives Considered
 
