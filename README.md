@@ -252,7 +252,7 @@ docker run --rm -p 8080:8080 `
     ecommerce-api:local
 ```
 
-The Docker image builds the Spring Boot jar with Maven and runs it as a non-root `ecommerce` user. Flyway migrations run on application startup because `spring.flyway.enabled=true`; the production profile uses `spring.jpa.hibernate.ddl-auto=validate`, so schema drift fails fast instead of mutating production tables.
+The Docker image builds the Spring Boot jar with Maven and runs it as a non-root `ecommerce` user. The image defaults to `SPRING_PROFILES_ACTIVE=prod`, `APP_ENVIRONMENT=prod`, and `APP_CONTAINERIZED=true`; overriding the container to use the `local` profile is intentionally rejected at startup. Flyway migrations run on application startup because `spring.flyway.enabled=true`; the production profile uses `spring.jpa.hibernate.ddl-auto=validate`, so schema drift fails fast instead of mutating production tables.
 
 Graceful shutdown is enabled with `server.shutdown=graceful`. Tune `SHUTDOWN_TIMEOUT` for the platform termination window so in-flight requests and lifecycle beans have time to drain.
 

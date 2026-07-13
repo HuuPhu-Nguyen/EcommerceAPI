@@ -26,4 +26,7 @@ USER ecommerce
 EXPOSE 8080
 
 ENV JAVA_OPTS=""
+ENV SPRING_PROFILES_ACTIVE=prod
+ENV APP_ENVIRONMENT=prod
+ENV APP_CONTAINERIZED=true
 ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS -jar /app/app.jar"]
