@@ -1,5 +1,6 @@
 package com.phu.ecommerceapi.Product;
 
+import com.phu.ecommerceapi.catalog.application.CartProductSnapshot;
 import com.phu.ecommerceapi.catalog.application.ProductCatalogItem;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -29,6 +30,20 @@ public interface ProductRepo extends JpaRepository<ProductModel, Long> {
     Page<ProductModel> findByActiveTrue(Pageable pageable);
 
     Page<ProductModel> findByActiveTrueAndNameContainingIgnoreCase(String name, Pageable pageable);
+
+    @Query("""
+            select new com.phu.ecommerceapi.catalog.application.CartProductSnapshot(
+                product.productId,
+                product.name,
+                product.price,
+                product.currency,
+                product.active
+            )
+            from ProductModel product
+            where product.productId = :productId
+              and product.active = true
+            """)
+    Optional<CartProductSnapshot> findActiveCartProductById(@Param("productId") long productId);
 
     @Query("""
             select new com.phu.ecommerceapi.catalog.application.ProductCatalogItem(

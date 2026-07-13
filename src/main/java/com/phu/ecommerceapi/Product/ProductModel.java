@@ -2,7 +2,6 @@ package com.phu.ecommerceapi.Product;
 
 import com.phu.ecommerceapi.cart.infrastructure.CartItemModel;
 import com.phu.ecommerceapi.shared.domain.Money;
-import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -11,9 +10,9 @@ import jakarta.persistence.Id;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
+import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
-import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
 
@@ -23,10 +22,9 @@ import java.util.List;
 import java.util.Locale;
 
 @Entity
-@Data
 @Builder
 @AllArgsConstructor
-@NoArgsConstructor
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
 @EqualsAndHashCode(onlyExplicitlyIncluded = true)
 public class ProductModel {
 
@@ -50,8 +48,37 @@ public class ProductModel {
     @Builder.Default
     private boolean active = true;
 
-    @OneToMany(mappedBy = "productModel",cascade = CascadeType.ALL)
+    @OneToMany(mappedBy = "productModel")
     private List<CartItemModel> cartItems;
+
+    public static ProductModel reference(long productId, String name, Money price, boolean active) {
+        ProductModel product = new ProductModel();
+        product.productId = productId;
+        product.name = name;
+        product.setPrice(price);
+        product.active = active;
+        return product;
+    }
+
+    public long getProductId() {
+        return productId;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public void setName(String name) {
+        this.name = name;
+    }
+
+    public BigDecimal getPrice() {
+        return price;
+    }
+
+    public String getCurrency() {
+        return currency;
+    }
 
     public Money priceMoney() {
         return Money.of(price == null ? BigDecimal.ZERO : price, currencyOrDefault());
@@ -70,6 +97,22 @@ public class ProductModel {
     public void setCurrency(String currency) {
         this.currency = normalizeCurrency(currency);
         this.price = Money.of(price == null ? BigDecimal.ZERO : price, this.currency).amount();
+    }
+
+    public int getStock() {
+        return stock;
+    }
+
+    public void setStock(int stock) {
+        this.stock = stock;
+    }
+
+    public boolean isActive() {
+        return active;
+    }
+
+    public void setActive(boolean active) {
+        this.active = active;
     }
 
     @PrePersist

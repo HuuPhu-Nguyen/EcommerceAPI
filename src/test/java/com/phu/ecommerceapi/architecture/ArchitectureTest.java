@@ -17,13 +17,18 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Stream;
 
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.methods;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
+import static org.assertj.core.api.Assertions.assertThat;
 
 class ArchitectureTest {
 
@@ -143,6 +148,44 @@ class ArchitectureTest {
                 .dependOnClassesThat()
                 .resideInAnyPackage("com.stripe..")
                 .check(CLASSES);
+    }
+
+    @Test
+    void applicationPackagesMustNotDependOnLegacyJpaPackages() {
+        noClasses()
+                .that()
+                .resideInAnyPackage("..application..")
+                .should()
+                .dependOnClassesThat()
+                .resideInAnyPackage("..User..", "..Product..", "..CartItem..")
+                .check(CLASSES);
+
+        noClasses()
+                .that()
+                .resideInAnyPackage("..application..")
+                .should()
+                .dependOnClassesThat()
+                .haveFullyQualifiedName("com.phu.ecommerceapi.cart.infrastructure.CartItemModel")
+                .check(CLASSES);
+    }
+
+    @Test
+    void jpaEntitySourcesMustNotUseLombokData() throws IOException {
+        Path sourceRoot = Path.of("src/main/java");
+        List<String> violations;
+        try (Stream<Path> files = Files.walk(sourceRoot)) {
+            violations = files
+                    .filter(path -> path.toString().endsWith(".java"))
+                    .filter(ArchitectureTest::isJpaEntitySourceWithLombokData)
+                    .map(sourceRoot::relativize)
+                    .map(Path::toString)
+                    .sorted()
+                    .toList();
+        }
+
+        assertThat(violations)
+                .as("JPA entity source files using Lombok @Data")
+                .isEmpty();
     }
 
     @Test
@@ -266,5 +309,14 @@ class ArchitectureTest {
         String targetName = call.getTarget().getName();
         return ownerName.equals("com.phu.ecommerceapi.identity.application.CurrentUser")
                 && (targetName.equals("username") || targetName.equals("email"));
+    }
+
+    private static boolean isJpaEntitySourceWithLombokData(Path path) {
+        try {
+            String source = Files.readString(path);
+            return source.contains("@Entity") && source.contains("@Data");
+        } catch (IOException exception) {
+            throw new IllegalStateException("Could not read source file " + path, exception);
+        }
     }
 }

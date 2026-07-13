@@ -1,10 +1,10 @@
 package com.phu.ecommerceapi.cart.application;
 
-import com.phu.ecommerceapi.Product.ProductRepo;
 import com.phu.ecommerceapi.User.UserModel;
-import com.phu.ecommerceapi.User.UserRepo;
 import com.phu.ecommerceapi.cart.infrastructure.CartModel;
 import com.phu.ecommerceapi.cart.infrastructure.CartRepo;
+import com.phu.ecommerceapi.catalog.application.CartProductLookupPort;
+import com.phu.ecommerceapi.customer.application.CustomerIdentityLookupPort;
 import com.phu.ecommerceapi.identity.application.CurrentUser;
 import com.phu.ecommerceapi.inventory.application.InventoryReservationService;
 import com.phu.ecommerceapi.order.infrastructure.CustomerOrderRepository;
@@ -29,10 +29,10 @@ class CartServiceAuthorizationTest {
     private CartRepo cartRepo;
 
     @Mock
-    private ProductRepo productRepo;
+    private CartProductLookupPort cartProductLookupPort;
 
     @Mock
-    private UserRepo userRepo;
+    private CustomerIdentityLookupPort customerIdentityLookupPort;
 
     @Mock
     private InventoryReservationService inventoryReservationService;
@@ -44,7 +44,13 @@ class CartServiceAuthorizationTest {
 
     @BeforeEach
     void setUp() {
-        cartService = new CartService(cartRepo, productRepo, userRepo, inventoryReservationService, orderRepository);
+        cartService = new CartService(
+                cartRepo,
+                cartProductLookupPort,
+                customerIdentityLookupPort,
+                inventoryReservationService,
+                orderRepository
+        );
     }
 
     @Test

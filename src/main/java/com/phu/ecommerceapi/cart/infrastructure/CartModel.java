@@ -2,6 +2,9 @@ package com.phu.ecommerceapi.cart.infrastructure;
 
 import com.phu.ecommerceapi.Product.ProductModel;
 import com.phu.ecommerceapi.User.UserModel;
+import com.phu.ecommerceapi.cart.application.CartItemSnapshot;
+import com.phu.ecommerceapi.catalog.application.CartProductSnapshot;
+import com.phu.ecommerceapi.customer.application.CustomerIdentity;
 import com.phu.ecommerceapi.shared.api.NotFoundException;
 import com.phu.ecommerceapi.shared.domain.Money;
 import jakarta.persistence.CascadeType;
@@ -60,6 +63,11 @@ public class CartModel {
         this.owner = Objects.requireNonNull(owner, "cart owner is required");
     }
 
+    public CartModel(CustomerIdentity owner) {
+        Objects.requireNonNull(owner, "cart owner is required");
+        this.owner = UserModel.reference(owner.id(), owner.identitySubject());
+    }
+
     public long getId() {
         return id;
     }
@@ -88,6 +96,10 @@ public class CartModel {
         return owner;
     }
 
+    public boolean belongsToIdentitySubject(String identitySubject) {
+        return owner != null && Objects.equals(owner.getIdentitySubject(), identitySubject);
+    }
+
     public boolean isEmpty() {
         return items.isEmpty();
     }
@@ -98,22 +110,22 @@ public class CartModel {
                 .orElse(0);
     }
 
-    public void addItem(ProductModel product, int quantity) {
+    public void addItem(CartProductSnapshot product, int quantity) {
         if (items.isEmpty()) {
-            currency = product.priceMoney().currency().getCurrencyCode();
+            currency = product.price().currency().getCurrencyCode();
         }
-        Optional<CartItemModel> existingItem = findItem(product.getProductId());
+        Optional<CartItemModel> existingItem = findItem(product.id());
         if (existingItem.isPresent()) {
             CartItemModel item = existingItem.get();
             item.setQuantity(item.getQuantity() + quantity);
         } else {
-            items.add(CartItemModel.create(this, product, quantity));
+            items.add(CartItemModel.create(this, productReference(product), quantity));
         }
         recalculateTotal();
     }
 
-    public void updateItemQuantity(ProductModel product, int quantity) {
-        CartItemModel item = findItem(product.getProductId())
+    public void updateItemQuantity(CartProductSnapshot product, int quantity) {
+        CartItemModel item = findItem(product.id())
                 .orElseThrow(() -> new NotFoundException("Cart item not found"));
         item.setQuantity(quantity);
         recalculateTotal();
@@ -129,6 +141,16 @@ public class CartModel {
     public void clear() {
         items.clear();
         recalculateTotal();
+    }
+
+    public List<CartItemSnapshot> itemSnapshots() {
+        return items.stream()
+                .map(CartItemModel::snapshot)
+                .toList();
+    }
+
+    private ProductModel productReference(CartProductSnapshot product) {
+        return ProductModel.reference(product.id(), product.name(), product.price(), product.active());
     }
 
     private Optional<CartItemModel> findItem(long productId) {

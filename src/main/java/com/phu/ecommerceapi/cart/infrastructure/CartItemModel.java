@@ -1,6 +1,7 @@
 package com.phu.ecommerceapi.cart.infrastructure;
 
 import com.phu.ecommerceapi.Product.ProductModel;
+import com.phu.ecommerceapi.cart.application.CartItemSnapshot;
 import com.phu.ecommerceapi.shared.domain.Money;
 import com.phu.ecommerceapi.shared.domain.Quantity;
 import jakarta.persistence.Column;
@@ -70,6 +71,18 @@ public class CartItemModel {
 
     public long getProductId() {
         return productModel.getProductId();
+    }
+
+    public CartItemSnapshot snapshot() {
+        Money unitPrice = productModel.priceMoney();
+        return new CartItemSnapshot(
+                productModel.getProductId(),
+                productModel.getName(),
+                quantity,
+                unitPrice,
+                lineTotalMoney(),
+                productModel.isActive()
+        );
     }
 
     public Money lineTotalMoney() {

@@ -1,12 +1,11 @@
 package com.phu.ecommerceapi.cart.application;
 
-import com.phu.ecommerceapi.Product.ProductModel;
-import com.phu.ecommerceapi.Product.ProductRepo;
-import com.phu.ecommerceapi.User.UserModel;
-import com.phu.ecommerceapi.User.UserRepo;
-import com.phu.ecommerceapi.cart.infrastructure.CartItemModel;
 import com.phu.ecommerceapi.cart.infrastructure.CartModel;
 import com.phu.ecommerceapi.cart.infrastructure.CartRepo;
+import com.phu.ecommerceapi.catalog.application.CartProductLookupPort;
+import com.phu.ecommerceapi.catalog.application.CartProductSnapshot;
+import com.phu.ecommerceapi.customer.application.CustomerIdentity;
+import com.phu.ecommerceapi.customer.application.CustomerIdentityLookupPort;
 import com.phu.ecommerceapi.identity.application.CurrentUser;
 import com.phu.ecommerceapi.inventory.application.InventoryReservationService;
 import com.phu.ecommerceapi.inventory.application.InventorySnapshot;
@@ -27,28 +26,28 @@ import java.util.List;
 public class CartService {
 
     private final CartRepo cartRepo;
-    private final ProductRepo productRepo;
-    private final UserRepo userRepo;
+    private final CartProductLookupPort cartProductLookupPort;
+    private final CustomerIdentityLookupPort customerIdentityLookupPort;
     private final InventoryReservationService inventoryReservationService;
     private final CustomerOrderRepository orderRepository;
 
     public CartService(
             CartRepo cartRepo,
-            ProductRepo productRepo,
-            UserRepo userRepo,
+            CartProductLookupPort cartProductLookupPort,
+            CustomerIdentityLookupPort customerIdentityLookupPort,
             InventoryReservationService inventoryReservationService,
             CustomerOrderRepository orderRepository
     ) {
         this.cartRepo = cartRepo;
-        this.productRepo = productRepo;
-        this.userRepo = userRepo;
+        this.cartProductLookupPort = cartProductLookupPort;
+        this.customerIdentityLookupPort = customerIdentityLookupPort;
         this.inventoryReservationService = inventoryReservationService;
         this.orderRepository = orderRepository;
     }
 
     @Transactional
     public CartResponse createCart(CurrentUser currentUser) {
-        UserModel owner = resolveOwner(currentUser);
+        CustomerIdentity owner = resolveOwner(currentUser);
         CartModel cart = new CartModel(owner);
         return toResponse(cartRepo.save(cart));
     }
@@ -67,7 +66,7 @@ public class CartService {
     public CartResponse addItem(long cartId, long productId, int quantity, CurrentUser currentUser) {
         Quantity requestedQuantity = Quantity.of(quantity);
         CartModel cart = getOwnedMutableCart(cartId, currentUser);
-        ProductModel product = getActiveProduct(productId);
+        CartProductSnapshot product = getActiveProduct(productId);
 
         int requestedTotalQuantity = cart.quantityForProduct(productId) + requestedQuantity.value();
         assertInventoryCanSupport(productId, requestedTotalQuantity);
@@ -80,7 +79,7 @@ public class CartService {
     public CartResponse updateItemQuantity(long cartId, long productId, int quantity, CurrentUser currentUser) {
         Quantity requestedQuantity = Quantity.of(quantity);
         CartModel cart = getOwnedMutableCart(cartId, currentUser);
-        ProductModel product = getActiveProduct(productId);
+        CartProductSnapshot product = getActiveProduct(productId);
 
         assertInventoryCanSupport(productId, requestedQuantity.value());
 
@@ -116,8 +115,8 @@ public class CartService {
         }
     }
 
-    private ProductModel getActiveProduct(long productId) {
-        return productRepo.findByProductIdAndActiveTrue(productId)
+    private CartProductSnapshot getActiveProduct(long productId) {
+        return cartProductLookupPort.findActiveForCart(productId)
                 .orElseThrow(() -> new NotFoundException("Product not found"));
     }
 
@@ -128,32 +127,25 @@ public class CartService {
         }
     }
 
-    private UserModel resolveOwner(CurrentUser currentUser) {
+    private CustomerIdentity resolveOwner(CurrentUser currentUser) {
         if (currentUser == null) {
             throw new AccessDeniedException("Authenticated customer is required");
         }
 
-        UserModel owner = userRepo.findByIdentitySubject(currentUser.subject());
-        if (owner == null) {
-            throw new NotFoundException("Customer profile not found");
-        }
-        return owner;
+        return customerIdentityLookupPort.findByIdentitySubject(currentUser.subject())
+                .orElseThrow(() -> new NotFoundException("Customer profile not found"));
     }
 
     private void assertCartOwner(CartModel cart, CurrentUser currentUser) {
-        if (currentUser == null || cart.getOwner() == null || !belongsToCurrentUser(cart.getOwner(), currentUser)) {
+        if (currentUser == null || !cart.belongsToIdentitySubject(currentUser.subject())) {
             throw new AccessDeniedException("Cart does not belong to current user");
         }
     }
 
-    private boolean belongsToCurrentUser(UserModel owner, CurrentUser currentUser) {
-        return currentUser.hasSubject(owner.getIdentitySubject());
-    }
-
     private CartResponse toResponse(CartModel cart) {
-        List<CartItemResponse> items = cart.getItems()
+        List<CartItemResponse> items = cart.itemSnapshots()
                 .stream()
-                .sorted(Comparator.comparingLong(CartItemModel::getProductId))
+                .sorted(Comparator.comparingLong(CartItemSnapshot::productId))
                 .map(this::toItemResponse)
                 .toList();
 
@@ -161,18 +153,14 @@ public class CartService {
         return new CartResponse(cart.getId(), total.amount(), total.currency().getCurrencyCode(), items);
     }
 
-    private CartItemResponse toItemResponse(CartItemModel item) {
-        ProductModel product = item.getProductModel();
-        Money unitPrice = product.priceMoney();
-        Money lineTotal = item.lineTotalMoney();
-
+    private CartItemResponse toItemResponse(CartItemSnapshot item) {
         return new CartItemResponse(
-                product.getProductId(),
-                product.getName(),
-                item.getQuantity(),
-                unitPrice.amount(),
-                unitPrice.currency().getCurrencyCode(),
-                lineTotal.amount()
+                item.productId(),
+                item.productName(),
+                item.quantity(),
+                item.unitPrice().amount(),
+                item.unitPrice().currency().getCurrencyCode(),
+                item.lineTotal().amount()
         );
     }
 }

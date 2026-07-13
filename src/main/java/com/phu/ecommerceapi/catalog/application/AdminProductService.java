@@ -1,7 +1,5 @@
 package com.phu.ecommerceapi.catalog.application;
 
-import com.phu.ecommerceapi.Product.ProductModel;
-import com.phu.ecommerceapi.Product.ProductRepo;
 import com.phu.ecommerceapi.audit.application.AuditEventCommand;
 import com.phu.ecommerceapi.audit.application.AuditEventRecorder;
 import com.phu.ecommerceapi.identity.application.CurrentUser;
@@ -16,88 +14,71 @@ public class AdminProductService {
 
     private static final String RESOURCE_TYPE = "PRODUCT";
 
-    private final ProductRepo productRepo;
+    private final AdminProductCatalogPort adminProductCatalogPort;
     private final AuditEventRecorder auditEventRecorder;
     private final InventoryReservationService inventoryReservationService;
 
     public AdminProductService(
-            ProductRepo productRepo,
+            AdminProductCatalogPort adminProductCatalogPort,
             AuditEventRecorder auditEventRecorder,
             InventoryReservationService inventoryReservationService
     ) {
-        this.productRepo = productRepo;
+        this.adminProductCatalogPort = adminProductCatalogPort;
         this.auditEventRecorder = auditEventRecorder;
         this.inventoryReservationService = inventoryReservationService;
     }
 
     @Transactional
     public ProductAdminResponse create(AdminProductCommand command, CurrentUser actor) {
-        ProductModel product = ProductModel.builder()
-                .name(command.name())
-                .price(command.price().amount())
-                .currency(command.price().currency().getCurrencyCode())
-                .stock(command.stock())
-                .active(command.activeOrDefault(true))
-                .build();
-
-        ProductModel savedProduct = productRepo.save(product);
+        ProductAdminSnapshot savedProduct = adminProductCatalogPort.create(command);
         InventorySnapshot inventory = inventoryReservationService.initializeInventory(
-                savedProduct.getProductId(),
+                savedProduct.id(),
                 command.stock()
         );
-        savedProduct.setStock(inventory.availableQuantity());
         recordAudit(actor, "PRODUCT_CREATED", savedProduct);
         return toResponse(savedProduct, inventory);
     }
 
     @Transactional
     public ProductAdminResponse update(long productId, AdminProductCommand command, CurrentUser actor) {
-        ProductModel product = productRepo.findByIdForUpdate(productId)
+        ProductAdminSnapshot savedProduct = adminProductCatalogPort.update(productId, command)
                 .orElseThrow(() -> new NotFoundException("Product not found"));
 
-        product.setName(command.name());
-        product.setPrice(command.price());
-        product.setActive(command.activeOrDefault(product.isActive()));
-
         InventorySnapshot inventory = inventoryReservationService.setAvailableQuantity(
-                product.getProductId(),
+                savedProduct.id(),
                 command.stock()
         );
-        product.setStock(inventory.availableQuantity());
-        ProductModel savedProduct = productRepo.save(product);
         recordAudit(actor, "PRODUCT_UPDATED", savedProduct);
         return toResponse(savedProduct, inventory);
     }
 
     @Transactional
     public ProductAdminResponse deactivate(long productId, CurrentUser actor) {
-        ProductModel product = productRepo.findById(productId)
+        ProductAdminSnapshot savedProduct = adminProductCatalogPort.deactivate(productId)
                 .orElseThrow(() -> new NotFoundException("Product not found"));
 
-        product.setActive(false);
-        ProductModel savedProduct = productRepo.save(product);
         recordAudit(actor, "PRODUCT_DEACTIVATED", savedProduct);
-        return toResponse(savedProduct, inventoryReservationService.getInventory(savedProduct.getProductId()));
+        return toResponse(savedProduct, inventoryReservationService.getInventory(savedProduct.id()));
     }
 
-    private void recordAudit(CurrentUser actor, String action, ProductModel product) {
+    private void recordAudit(CurrentUser actor, String action, ProductAdminSnapshot product) {
         auditEventRecorder.record(new AuditEventCommand(
                 actor.subject(),
                 action,
                 RESOURCE_TYPE,
-                Long.toString(product.getProductId()),
-                "name=%s;active=%s".formatted(product.getName(), product.isActive())
+                Long.toString(product.id()),
+                "name=%s;active=%s".formatted(product.name(), product.active())
         ));
     }
 
-    private ProductAdminResponse toResponse(ProductModel product, InventorySnapshot inventory) {
+    private ProductAdminResponse toResponse(ProductAdminSnapshot product, InventorySnapshot inventory) {
         return new ProductAdminResponse(
-                product.getProductId(),
-                product.getName(),
-                product.getPrice(),
-                product.getCurrency(),
+                product.id(),
+                product.name(),
+                product.price(),
+                product.currency(),
                 inventory.availableQuantity(),
-                product.isActive()
+                product.active()
         );
     }
 }

@@ -22,6 +22,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -153,6 +154,31 @@ class CartUseCaseTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items.length()").value(0))
                 .andExpect(jsonPath("$.total").value(0.00));
+    }
+
+    @Test
+    void productDeactivationDoesNotDeleteExistingCartItems() throws Exception {
+        user("customer@example.com");
+        ProductModel product = product("Deactivated Later", 5);
+        long cartId = createCart("customer@example.com");
+
+        mockMvc.perform(post("/cart/{cartId}/items", cartId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "productId": %d,
+                                  "quantity": 1
+                                }
+                                """.formatted(product.getProductId()))
+                        .with(customerJwt("customer@example.com")))
+                .andExpect(status().isOk());
+
+        ProductModel savedProduct = productRepo.findById(product.getProductId()).orElseThrow();
+        savedProduct.setActive(false);
+        productRepo.saveAndFlush(savedProduct);
+
+        assertThat(cartRepo.findWithItemsById(cartId).orElseThrow().getItems())
+                .hasSize(1);
     }
 
     private long createCart(String username) throws Exception {

@@ -1,10 +1,8 @@
 package com.phu.ecommerceapi.checkout.application;
 
-import com.phu.ecommerceapi.Product.ProductModel;
-import com.phu.ecommerceapi.User.UserModel;
 import com.phu.ecommerceapi.audit.application.AuditEventCommand;
 import com.phu.ecommerceapi.audit.application.AuditEventRecorder;
-import com.phu.ecommerceapi.cart.infrastructure.CartItemModel;
+import com.phu.ecommerceapi.cart.application.CartItemSnapshot;
 import com.phu.ecommerceapi.cart.infrastructure.CartModel;
 import com.phu.ecommerceapi.cart.infrastructure.CartRepo;
 import com.phu.ecommerceapi.identity.application.CurrentUser;
@@ -71,15 +69,12 @@ public class CheckoutService {
             requireAvailablePaymentProvider(cart.getTotal(), cart.getCurrency());
 
             CustomerOrderRecord order = CustomerOrderRecord.pendingPayment(
-                    cart.getOwner(),
-                    cart.getId(),
-                    cart.getCurrency()
+                    cart
             );
-            for (CartItemModel item : cart.getItems()) {
-                ProductModel product = item.getProductModel();
-                inventoryReservationService.reserve(item.getProductId(), item.getQuantity());
-                order.addItem(product, item.getQuantity(), product.priceMoney());
+            for (CartItemSnapshot item : cart.itemSnapshots()) {
+                inventoryReservationService.reserve(item.productId(), item.quantity());
             }
+            order.addItemsFromCart(cart);
 
             CustomerOrderRecord savedOrder = orderRepository.save(order);
             cart.clear();
@@ -97,25 +92,20 @@ public class CheckoutService {
     }
 
     private void validateCartItemsForCheckout(CartModel cart) {
-        for (CartItemModel item : cart.getItems()) {
-            ProductModel product = item.getProductModel();
-            if (product == null || !product.isActive()) {
+        for (CartItemSnapshot item : cart.itemSnapshots()) {
+            if (!item.active()) {
                 throw new ConflictException("Product is no longer available for checkout");
             }
-            if (!product.priceMoney().currency().getCurrencyCode().equals(cart.getCurrency())) {
+            if (!item.unitPrice().currency().getCurrencyCode().equals(cart.getCurrency())) {
                 throw new ConflictException("Cart contains mixed currencies");
             }
         }
     }
 
     private void assertCartOwner(CartModel cart, CurrentUser currentUser) {
-        if (currentUser == null || cart.getOwner() == null || !belongsToCurrentUser(cart.getOwner(), currentUser)) {
+        if (currentUser == null || !cart.belongsToIdentitySubject(currentUser.subject())) {
             throw new AccessDeniedException("Cart does not belong to current user");
         }
-    }
-
-    private boolean belongsToCurrentUser(UserModel owner, CurrentUser currentUser) {
-        return currentUser.hasSubject(owner.getIdentitySubject());
     }
 
     private List<String> requireAvailablePaymentProvider(BigDecimal amount, String currency) {
@@ -158,7 +148,7 @@ public class CheckoutService {
         return new CheckoutResponse(
                 order.getId(),
                 order.getCartId(),
-                order.getCustomer().getId(),
+                order.getCustomerId(),
                 order.getStatus(),
                 order.getTotalAmount(),
                 order.getCurrency(),

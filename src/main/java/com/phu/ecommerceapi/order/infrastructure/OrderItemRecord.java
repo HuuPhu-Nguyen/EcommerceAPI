@@ -48,14 +48,24 @@ public class OrderItemRecord {
     }
 
     private OrderItemRecord(CustomerOrderRecord order, ProductModel product, int quantity, Money unitPrice) {
+        this(order, product.getProductId(), product.getName(), quantity, unitPrice);
+    }
+
+    private OrderItemRecord(
+            CustomerOrderRecord order,
+            long productId,
+            String productName,
+            int quantity,
+            Money unitPrice
+    ) {
         if (quantity <= 0) {
             throw new IllegalArgumentException("Order item quantity must be positive");
         }
         this.order = Objects.requireNonNull(order, "order is required");
-        this.product = Objects.requireNonNull(product, "product is required");
-        this.productName = Objects.requireNonNull(product.getName(), "product name is required");
+        this.productName = Objects.requireNonNull(productName, "product name is required");
         this.quantity = quantity;
         Money requiredUnitPrice = Objects.requireNonNull(unitPrice, "unit price is required");
+        this.product = ProductModel.reference(productId, productName, requiredUnitPrice, true);
         this.unitPriceAmount = requiredUnitPrice.amount();
         this.lineTotalAmount = requiredUnitPrice.multiply(Quantity.of(quantity)).amount();
     }
@@ -67,6 +77,16 @@ public class OrderItemRecord {
             Money unitPrice
     ) {
         return new OrderItemRecord(order, product, quantity, unitPrice);
+    }
+
+    public static OrderItemRecord create(
+            CustomerOrderRecord order,
+            long productId,
+            String productName,
+            int quantity,
+            Money unitPrice
+    ) {
+        return new OrderItemRecord(order, productId, productName, quantity, unitPrice);
     }
 
     public long getId() {

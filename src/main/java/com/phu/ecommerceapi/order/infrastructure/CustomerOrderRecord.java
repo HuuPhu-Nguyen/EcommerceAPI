@@ -2,6 +2,8 @@ package com.phu.ecommerceapi.order.infrastructure;
 
 import com.phu.ecommerceapi.Product.ProductModel;
 import com.phu.ecommerceapi.User.UserModel;
+import com.phu.ecommerceapi.cart.infrastructure.CartItemModel;
+import com.phu.ecommerceapi.cart.infrastructure.CartModel;
 import com.phu.ecommerceapi.order.domain.OrderStateMachine;
 import com.phu.ecommerceapi.order.domain.OrderStatus;
 import com.phu.ecommerceapi.shared.domain.Money;
@@ -80,13 +82,28 @@ public class CustomerOrderRecord {
         return new CustomerOrderRecord(customer, cartId, currency);
     }
 
+    public static CustomerOrderRecord pendingPayment(CartModel cart) {
+        return new CustomerOrderRecord(cart.getOwner(), cart.getId(), cart.getCurrency());
+    }
+
     public void addItem(ProductModel product, int quantity, Money unitPrice) {
+        addItem(product.getProductId(), product.getName(), quantity, unitPrice);
+    }
+
+    public void addItemsFromCart(CartModel cart) {
+        for (CartItemModel item : cart.getItems()) {
+            ProductModel product = item.getProductModel();
+            addItem(product, item.getQuantity(), product.priceMoney());
+        }
+    }
+
+    public void addItem(long productId, String productName, int quantity, Money unitPrice) {
         Money requiredUnitPrice = Objects.requireNonNull(unitPrice, "unit price is required");
         if (!requiredUnitPrice.currency().getCurrencyCode().equals(currency)) {
             throw new IllegalArgumentException("Order item currency mismatch");
         }
         Money lineTotal = requiredUnitPrice.multiply(Quantity.of(quantity));
-        OrderItemRecord item = OrderItemRecord.create(this, product, quantity, unitPrice);
+        OrderItemRecord item = OrderItemRecord.create(this, productId, productName, quantity, unitPrice);
         items.add(item);
         totalAmount = Money.of(totalAmount, currency)
                 .add(lineTotal)
@@ -119,6 +136,10 @@ public class CustomerOrderRecord {
 
     public UserModel getCustomer() {
         return customer;
+    }
+
+    public long getCustomerId() {
+        return customer.getId();
     }
 
     public long getCartId() {
