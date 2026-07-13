@@ -2,9 +2,11 @@ package com.phu.ecommerceapi.payment.api;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.phu.ecommerceapi.config.FakeProviderEnabledCondition;
 import com.phu.ecommerceapi.payment.application.FakeProviderWebhookUseCase;
 import com.phu.ecommerceapi.payment.application.ProviderWebhookCommand;
 import com.phu.ecommerceapi.payment.application.ProviderWebhookResult;
+import org.springframework.context.annotation.Conditional;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -13,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
+@Conditional(FakeProviderEnabledCondition.class)
 @RequestMapping("/payments/provider-webhooks/fake")
 public class FakeProviderWebhookController {
 

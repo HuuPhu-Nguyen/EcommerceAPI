@@ -200,7 +200,7 @@ $env:PAYMENT_PROVIDER_ENABLED = "fake"
 .\mvnw.cmd spring-boot:run "-Dspring-boot.run.profiles=local"
 ```
 
-Use this mode for the main demo, local development, and CI. The fake provider supports USD and EUR, is deterministic, supports success/failure/timeout paths, and keeps tests independent from external accounts.
+Use this mode for the main demo, local development, and CI. The fake provider supports USD and EUR, is deterministic, supports success/failure/timeout paths, and keeps tests independent from external accounts. The fake webhook route is registered only when `fake` is included in `PAYMENT_PROVIDER_ENABLED`; production examples keep `PAYMENT_PROVIDER_ENABLED=stripe`, so `/payments/provider-webhooks/fake` is not exposed.
 
 To review Stripe sandbox behavior, enable both providers and keep `fake` as the active default:
 

@@ -3,10 +3,12 @@ package com.phu.ecommerceapi.payment.application;
 import com.phu.ecommerceapi.audit.application.AuditEventCommand;
 import com.phu.ecommerceapi.audit.application.AuditEventRecorder;
 import com.phu.ecommerceapi.config.AppProperties;
+import com.phu.ecommerceapi.config.FakeProviderEnabledCondition;
 import com.phu.ecommerceapi.payment.domain.PaymentStatus;
 import com.phu.ecommerceapi.payment.domain.ProviderWebhookProcessingStatus;
 import com.phu.ecommerceapi.payment.domain.RefundStatus;
 import com.phu.ecommerceapi.shared.observability.BusinessMetrics;
+import org.springframework.context.annotation.Conditional;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,6 +21,7 @@ import java.util.HexFormat;
 import java.util.Optional;
 
 @Service
+@Conditional(FakeProviderEnabledCondition.class)
 public class FakeProviderWebhookUseCase implements ProviderWebhookHandler {
 
     private static final String PROVIDER_CODE = "fake";
