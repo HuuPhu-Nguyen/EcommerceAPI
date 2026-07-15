@@ -281,6 +281,8 @@ rg -n "password" src/main/java/com/phu/ecommerceapi/User src/main/resources/demo
 
 ### P1-01: Make rate limiting production-safe
 
+Status: Completed on 2026-07-15.
+
 Problem: `AbuseRateLimitFilter` uses in-memory counters. The threat model already states this is single-instance only.
 
 Files to change:

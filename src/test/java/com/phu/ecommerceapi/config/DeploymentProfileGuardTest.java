@@ -53,8 +53,62 @@ class DeploymentProfileGuardTest {
         environment.setProperty("app.environment", "prod");
         environment.setProperty("app.security.oauth2.allowed-authorized-parties", "ecommerce-web");
         environment.setProperty("app.audit.signature-secret", "prod-audit-signature-secret");
+        environment.setProperty("app.security.rate-limit.backend", "gateway");
 
         new DeploymentProfileGuard(environment).afterPropertiesSet();
+    }
+
+    @Test
+    void prodProfileRejectsMissingRateLimitBackend() {
+        MockEnvironment environment = new MockEnvironment();
+        environment.setActiveProfiles("prod");
+        environment.setProperty("app.environment", "prod");
+        environment.setProperty("app.deployment.containerized", "true");
+        environment.setProperty("app.security.oauth2.allowed-authorized-parties", "ecommerce-web");
+        environment.setProperty("app.audit.signature-secret", "prod-audit-signature-secret");
+
+        assertThatThrownBy(() -> new DeploymentProfileGuard(environment).afterPropertiesSet())
+                .isInstanceOf(ApplicationContextException.class)
+                .hasMessageContaining("RATE_LIMIT_BACKEND is required in prod");
+    }
+
+    @Test
+    void prodProfileRejectsBlankRateLimitBackend() {
+        MockEnvironment environment = environmentWithRuntimeDefaults();
+        environment.setActiveProfiles("prod");
+        environment.setProperty("app.environment", "prod");
+        environment.setProperty("app.security.oauth2.allowed-authorized-parties", "ecommerce-web");
+        environment.setProperty("app.audit.signature-secret", "prod-audit-signature-secret");
+        environment.setProperty("app.security.rate-limit.backend", " ");
+
+        assertThatThrownBy(() -> new DeploymentProfileGuard(environment).afterPropertiesSet())
+                .isInstanceOf(ApplicationContextException.class)
+                .hasMessageContaining("RATE_LIMIT_BACKEND is required in prod");
+    }
+
+    @Test
+    void prodProfileRejectsInMemoryRateLimitBackend() {
+        MockEnvironment environment = environmentWithRuntimeDefaults();
+        environment.setActiveProfiles("prod");
+        environment.setProperty("app.environment", "prod");
+        environment.setProperty("app.security.oauth2.allowed-authorized-parties", "ecommerce-web");
+        environment.setProperty("app.audit.signature-secret", "prod-audit-signature-secret");
+        environment.setProperty("app.security.rate-limit.backend", "in-memory");
+
+        assertThatThrownBy(() -> new DeploymentProfileGuard(environment).afterPropertiesSet())
+                .isInstanceOf(ApplicationContextException.class)
+                .hasMessageContaining("RATE_LIMIT_BACKEND cannot be in-memory in prod");
+    }
+
+    @Test
+    void unsupportedRateLimitBackendIsRejected() {
+        MockEnvironment environment = environmentWithRuntimeDefaults();
+        environment.setActiveProfiles("local");
+        environment.setProperty("app.security.rate-limit.backend", "filesystem");
+
+        assertThatThrownBy(() -> new DeploymentProfileGuard(environment).afterPropertiesSet())
+                .isInstanceOf(ApplicationContextException.class)
+                .hasMessageContaining("RATE_LIMIT_BACKEND must be one of in-memory,gateway,redis");
     }
 
     @Test
@@ -62,6 +116,7 @@ class DeploymentProfileGuardTest {
         MockEnvironment environment = environmentWithRuntimeDefaults();
         environment.setActiveProfiles("prod");
         environment.setProperty("app.environment", "prod");
+        environment.setProperty("app.security.rate-limit.backend", "gateway");
 
         assertThatThrownBy(() -> new DeploymentProfileGuard(environment).afterPropertiesSet())
                 .isInstanceOf(ApplicationContextException.class)
@@ -73,6 +128,7 @@ class DeploymentProfileGuardTest {
         MockEnvironment environment = environmentWithRuntimeDefaults();
         environment.setActiveProfiles("prod");
         environment.setProperty("app.environment", "prod");
+        environment.setProperty("app.security.rate-limit.backend", "gateway");
         environment.setProperty("app.security.oauth2.allowed-authorized-parties", " ");
         environment.setProperty("app.audit.signature-secret", "prod-audit-signature-secret");
 
@@ -86,6 +142,7 @@ class DeploymentProfileGuardTest {
         MockEnvironment environment = environmentWithRuntimeDefaults();
         environment.setActiveProfiles("prod");
         environment.setProperty("app.environment", "prod");
+        environment.setProperty("app.security.rate-limit.backend", "gateway");
         environment.setProperty("app.security.oauth2.allowed-authorized-parties", "ecommerce-web");
 
         assertThatThrownBy(() -> new DeploymentProfileGuard(environment).afterPropertiesSet())
@@ -98,6 +155,7 @@ class DeploymentProfileGuardTest {
         MockEnvironment environment = environmentWithRuntimeDefaults();
         environment.setActiveProfiles("prod");
         environment.setProperty("app.environment", "prod");
+        environment.setProperty("app.security.rate-limit.backend", "gateway");
         environment.setProperty("app.security.oauth2.allowed-authorized-parties", "ecommerce-web");
         environment.setProperty("app.audit.signature-secret", " ");
 
@@ -149,6 +207,7 @@ class DeploymentProfileGuardTest {
         MockEnvironment environment = new MockEnvironment();
         environment.setProperty("app.environment", "local");
         environment.setProperty("app.deployment.containerized", "false");
+        environment.setProperty("app.security.rate-limit.backend", "in-memory");
         return environment;
     }
 }

@@ -21,8 +21,11 @@ public class DeploymentProfileGuard implements InitializingBean {
     private static final String OAUTH_ALLOWED_AUTHORIZED_PARTIES_PROPERTY =
             "app.security.oauth2.allowed-authorized-parties";
     private static final String AUDIT_SIGNATURE_SECRET_PROPERTY = "app.audit.signature-secret";
+    private static final String RATE_LIMIT_BACKEND_PROPERTY = "app.security.rate-limit.backend";
+    private static final String IN_MEMORY_RATE_LIMIT_BACKEND = "in-memory";
     private static final Set<String> SUPPORTED_PROFILES = Set.of("local", "test", "prod");
     private static final Set<String> LOCAL_ENVIRONMENTS = Set.of("local", "test");
+    private static final Set<String> RATE_LIMIT_BACKENDS = Set.of(IN_MEMORY_RATE_LIMIT_BACKEND, "gateway", "redis");
 
     private final Environment environment;
 
@@ -50,6 +53,7 @@ public class DeploymentProfileGuard implements InitializingBean {
         }
 
         if (activeProfiles.contains(PROD_PROFILE)) {
+            requireProdRateLimitBackend();
             requireProdProperty(
                     OAUTH_ALLOWED_AUTHORIZED_PARTIES_PROPERTY,
                     "OAUTH2_ALLOWED_AUTHORIZED_PARTIES is required in prod"
@@ -58,6 +62,8 @@ public class DeploymentProfileGuard implements InitializingBean {
                     AUDIT_SIGNATURE_SECRET_PROPERTY,
                     "AUDIT_SIGNATURE_SECRET is required in prod"
             );
+        } else {
+            validateConfiguredRateLimitBackend();
         }
 
         if (!activeProfiles.contains(LOCAL_PROFILE)) {
@@ -95,6 +101,35 @@ public class DeploymentProfileGuard implements InitializingBean {
         }
         if (value == null || value.isBlank()) {
             throw invalidProfileConfiguration(failureMessage);
+        }
+    }
+
+    private void requireProdRateLimitBackend() {
+        String backend = configuredRateLimitBackend("RATE_LIMIT_BACKEND is required in prod");
+        if (backend.isBlank()) {
+            throw invalidProfileConfiguration("RATE_LIMIT_BACKEND is required in prod");
+        }
+        validateRateLimitBackend(backend);
+        if (IN_MEMORY_RATE_LIMIT_BACKEND.equals(backend)) {
+            throw invalidProfileConfiguration("RATE_LIMIT_BACKEND cannot be in-memory in prod");
+        }
+    }
+
+    private void validateConfiguredRateLimitBackend() {
+        validateRateLimitBackend(configuredRateLimitBackend("RATE_LIMIT_BACKEND must be one of in-memory,gateway,redis"));
+    }
+
+    private String configuredRateLimitBackend(String unresolvedPlaceholderMessage) {
+        try {
+            return normalize(environment.getProperty(RATE_LIMIT_BACKEND_PROPERTY, ""));
+        } catch (IllegalArgumentException exception) {
+            throw invalidProfileConfiguration(unresolvedPlaceholderMessage);
+        }
+    }
+
+    private void validateRateLimitBackend(String backend) {
+        if (backend.isBlank() || !RATE_LIMIT_BACKENDS.contains(backend)) {
+            throw invalidProfileConfiguration("RATE_LIMIT_BACKEND must be one of in-memory,gateway,redis");
         }
     }
 

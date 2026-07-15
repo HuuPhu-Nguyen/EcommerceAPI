@@ -1,6 +1,9 @@
 package com.phu.ecommerceapi.shared.api;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.phu.ecommerceapi.shared.ratelimit.GatewayRateLimitBackend;
+import com.phu.ecommerceapi.shared.ratelimit.InMemoryRateLimitBackend;
+import com.phu.ecommerceapi.shared.ratelimit.RateLimitBackend;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.mock.web.MockFilterChain;
@@ -23,13 +26,12 @@ class AbuseRateLimitFilterTest {
 
     private final AbuseRateLimitFilter filter = new AbuseRateLimitFilter(
             new ObjectMapper(),
-            Clock.fixed(Instant.parse("2026-07-11T00:00:00Z"), ZoneOffset.UTC),
+            inMemoryBackend(Clock.fixed(Instant.parse("2026-07-11T00:00:00Z"), ZoneOffset.UTC), 100),
             true,
             60,
             1,
             1,
             1,
-            100,
             64,
             64
     );
@@ -307,6 +309,28 @@ class AbuseRateLimitFilterTest {
         assertAllowed("GET", "/products");
     }
 
+    @Test
+    void gatewayBackendSkipsAppLevelCountingButKeepsBodyLimits() throws Exception {
+        AbuseRateLimitFilter gatewayFilter = newFilter(new GatewayRateLimitBackend());
+        String path = "/payments";
+
+        assertAllowed(gatewayFilter, "POST", path);
+        assertAllowed(gatewayFilter, "POST", path);
+
+        MockHttpServletRequest oversizedRequest = requestWithContentLength("POST", path, 65, body(65));
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        AtomicBoolean controllerReached = new AtomicBoolean(false);
+
+        gatewayFilter.doFilter(
+                oversizedRequest,
+                response,
+                (servletRequest, servletResponse) -> controllerReached.set(true)
+        );
+
+        assertPayloadTooLarge(response, path);
+        assertThat(controllerReached).isFalse();
+    }
+
     private void assertAllowed(String method, String path) throws Exception {
         assertAllowed(filter, method, path);
     }
@@ -389,18 +413,25 @@ class AbuseRateLimitFilterTest {
     }
 
     private AbuseRateLimitFilter newFilter(Clock clock, int maxCounterKeys) {
+        return newFilter(inMemoryBackend(clock, maxCounterKeys));
+    }
+
+    private AbuseRateLimitFilter newFilter(RateLimitBackend rateLimitBackend) {
         return new AbuseRateLimitFilter(
                 new ObjectMapper(),
-                clock,
+                rateLimitBackend,
                 true,
                 60,
                 1,
                 1,
                 1,
-                maxCounterKeys,
                 64,
                 64
         );
+    }
+
+    private RateLimitBackend inMemoryBackend(Clock clock, int maxCounterKeys) {
+        return new InMemoryRateLimitBackend(clock, maxCounterKeys);
     }
 
     private byte[] body(int size) {

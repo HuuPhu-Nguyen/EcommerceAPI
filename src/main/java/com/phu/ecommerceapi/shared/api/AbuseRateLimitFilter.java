@@ -1,6 +1,7 @@
 package com.phu.ecommerceapi.shared.api;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.phu.ecommerceapi.shared.ratelimit.RateLimitBackend;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.ServletInputStream;
@@ -19,10 +20,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.net.URI;
-import java.time.Clock;
 import java.util.Locale;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE + 10)
@@ -34,54 +32,34 @@ public class AbuseRateLimitFilter extends OncePerRequestFilter {
     private static final String PROFILE_GROUP = "customer-profile";
 
     private final ObjectMapper objectMapper;
-    private final Clock clock;
+    private final RateLimitBackend rateLimitBackend;
     private final boolean enabled;
     private final long windowSeconds;
     private final int sensitiveRequestLimit;
     private final int webhookRequestLimit;
     private final int profileRequestLimit;
-    private final int maxCounterKeys;
     private final int webhookMaxBodyBytes;
     private final int jsonApiMaxBodyBytes;
-    private final Map<String, WindowCounter> counters = new ConcurrentHashMap<>();
-    private final Object counterMaintenanceMonitor = new Object();
 
     @Autowired
     public AbuseRateLimitFilter(
             ObjectMapper objectMapper,
+            RateLimitBackend rateLimitBackend,
             @Value("${app.security.rate-limit.enabled:true}") boolean enabled,
             @Value("${app.security.rate-limit.window-seconds:60}") long windowSeconds,
             @Value("${app.security.rate-limit.sensitive-requests-per-window:30}") int sensitiveRequestLimit,
             @Value("${app.security.rate-limit.webhook-requests-per-window:120}") int webhookRequestLimit,
             @Value("${app.security.rate-limit.profile-requests-per-window:60}") int profileRequestLimit,
-            @Value("${app.security.rate-limit.max-keys:10000}") int maxCounterKeys,
             @Value("${app.security.webhook.max-body-bytes:65536}") long webhookMaxBodyBytes,
             @Value("${app.security.request.max-json-body-bytes:32768}") long jsonApiMaxBodyBytes
     ) {
-        this(objectMapper, Clock.systemUTC(), enabled, windowSeconds, sensitiveRequestLimit,
-                webhookRequestLimit, profileRequestLimit, maxCounterKeys, webhookMaxBodyBytes, jsonApiMaxBodyBytes);
-    }
-
-    AbuseRateLimitFilter(
-            ObjectMapper objectMapper,
-            Clock clock,
-            boolean enabled,
-            long windowSeconds,
-            int sensitiveRequestLimit,
-            int webhookRequestLimit,
-            int profileRequestLimit,
-            int maxCounterKeys,
-            long webhookMaxBodyBytes,
-            long jsonApiMaxBodyBytes
-    ) {
         this.objectMapper = objectMapper;
-        this.clock = clock;
+        this.rateLimitBackend = rateLimitBackend;
         this.enabled = enabled;
         this.windowSeconds = Math.max(1, windowSeconds);
         this.sensitiveRequestLimit = Math.max(1, sensitiveRequestLimit);
         this.webhookRequestLimit = Math.max(1, webhookRequestLimit);
         this.profileRequestLimit = Math.max(1, profileRequestLimit);
-        this.maxCounterKeys = Math.max(1, maxCounterKeys);
         this.webhookMaxBodyBytes = normalizedMaxBodyBytes(webhookMaxBodyBytes, "webhook max body bytes");
         this.jsonApiMaxBodyBytes = normalizedMaxBodyBytes(jsonApiMaxBodyBytes, "JSON API max body bytes");
     }
@@ -108,50 +86,7 @@ public class AbuseRateLimitFilter extends OncePerRequestFilter {
     }
 
     private boolean allow(RateLimitRule rule, String clientKey) {
-        long now = clock.instant().getEpochSecond();
-        WindowCounter counter = counterFor(clientKey, now);
-        if (counter == null) {
-            return false;
-        }
-        synchronized (counter) {
-            if (now - counter.windowStartedAt >= windowSeconds) {
-                counter.windowStartedAt = now;
-                counter.count = 0;
-            }
-            counter.lastSeenAt = now;
-            if (counter.count >= rule.limit()) {
-                return false;
-            }
-            counter.count++;
-            return true;
-        }
-    }
-
-    private WindowCounter counterFor(String clientKey, long now) {
-        WindowCounter existingCounter = counters.get(clientKey);
-        if (existingCounter != null) {
-            return existingCounter;
-        }
-
-        synchronized (counterMaintenanceMonitor) {
-            existingCounter = counters.get(clientKey);
-            if (existingCounter != null) {
-                return existingCounter;
-            }
-
-            evictExpiredCounters(now);
-            if (counters.size() >= maxCounterKeys) {
-                return null;
-            }
-
-            WindowCounter newCounter = new WindowCounter(now);
-            counters.put(clientKey, newCounter);
-            return newCounter;
-        }
-    }
-
-    private void evictExpiredCounters(long now) {
-        counters.entrySet().removeIf(entry -> now - entry.getValue().lastSeenAt >= windowSeconds);
+        return rateLimitBackend.allow(clientKey, rule.limit(), windowSeconds);
     }
 
     private RateLimitRule ruleFor(HttpServletRequest request, String path) {
@@ -344,16 +279,5 @@ public class AbuseRateLimitFilter extends OncePerRequestFilter {
     }
 
     private record RateLimitRule(String group, int limit) {
-    }
-
-    private static final class WindowCounter {
-        private long windowStartedAt;
-        private long lastSeenAt;
-        private int count;
-
-        private WindowCounter(long windowStartedAt) {
-            this.windowStartedAt = windowStartedAt;
-            this.lastSeenAt = windowStartedAt;
-        }
     }
 }
