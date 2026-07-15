@@ -238,7 +238,10 @@ public class FakeProviderWebhookUseCase implements ProviderWebhookHandler {
 
     private boolean isValidSecret(String webhookSecret) {
         String expectedSecret = appProperties.fakeProvider().webhookSecret();
-        return webhookSecret != null && webhookSecret.equals(expectedSecret);
+        if (webhookSecret == null || expectedSecret == null || expectedSecret.isBlank()) {
+            return false;
+        }
+        return MessageDigest.isEqual(secretDigest(webhookSecret), secretDigest(expectedSecret));
     }
 
     private ProviderWebhookResult invalidSecretResponse(ProviderWebhookCommand command) {
@@ -259,6 +262,15 @@ public class FakeProviderWebhookUseCase implements ProviderWebhookHandler {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             byte[] bytes = digest.digest(requestBody.getBytes(StandardCharsets.UTF_8));
             return HexFormat.of().formatHex(bytes);
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 is not available", exception);
+        }
+    }
+
+    private byte[] secretDigest(String secret) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            return digest.digest(secret.getBytes(StandardCharsets.UTF_8));
         } catch (NoSuchAlgorithmException exception) {
             throw new IllegalStateException("SHA-256 is not available", exception);
         }

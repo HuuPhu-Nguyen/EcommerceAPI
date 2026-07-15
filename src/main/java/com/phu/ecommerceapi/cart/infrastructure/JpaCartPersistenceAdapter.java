@@ -32,12 +32,17 @@ public class JpaCartPersistenceAdapter implements CartPersistencePort {
 
     @Override
     public <T> Optional<T> updateWithItemsForMutation(long cartId, Function<MutableCart, T> mutation) {
-        return updateCart(cartRepo.findForUpdateWithItemsById(cartId), mutation);
+        return updateCart(findLockedWithItems(cartId), mutation);
     }
 
     @Override
     public <T> Optional<T> updateWithItemsForCheckout(long cartId, Function<MutableCart, T> mutation) {
-        return updateCart(cartRepo.findForCheckoutById(cartId), mutation);
+        return updateCart(findLockedWithItems(cartId), mutation);
+    }
+
+    private Optional<CartModel> findLockedWithItems(long cartId) {
+        return cartRepo.lockById(cartId)
+                .flatMap(ignored -> cartRepo.findWithItemsById(cartId));
     }
 
     private <T> Optional<T> updateCart(Optional<CartModel> foundCart, Function<MutableCart, T> mutation) {

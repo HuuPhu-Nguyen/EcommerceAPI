@@ -137,14 +137,14 @@ public interface RefundRecordRepository extends JpaRepository<RefundRecord, UUID
             @Param("providerRefundId") String providerRefundId
     );
 
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("""
-            select refund
-            from RefundRecord refund
-            join fetch refund.payment payment
-            join fetch payment.order customerOrder
-            join fetch customerOrder.customer
-            where refund.id = :refundId
-            """)
-    Optional<RefundRecord> findForUpdateById(@Param("refundId") UUID refundId);
+    @Query(
+            value = """
+                    select id
+                    from refund_record
+                    where id = :refundId
+                    for update
+                    """,
+            nativeQuery = true
+    )
+    Optional<UUID> lockById(@Param("refundId") UUID refundId);
 }

@@ -62,7 +62,9 @@ public class JpaPaymentAttemptPersistenceAdapter implements PaymentAttemptPersis
             String providerCode,
             String providerIdempotencyKey
     ) {
-        CustomerOrderRecord order = orderRepository.findForPaymentById(orderId)
+        orderRepository.lockById(orderId)
+                .orElseThrow(() -> new NotFoundException("Order not found"));
+        CustomerOrderRecord order = orderRepository.findWithCustomerById(orderId)
                 .orElseThrow(() -> new NotFoundException("Order not found"));
         assertOrderOwner(order, customerId);
         assertPayable(order);
@@ -161,7 +163,9 @@ public class JpaPaymentAttemptPersistenceAdapter implements PaymentAttemptPersis
     }
 
     private PaymentRecord findForUpdate(UUID paymentId) {
-        return paymentRepository.findForUpdateById(paymentId)
+        paymentRepository.lockById(paymentId)
+                .orElseThrow(() -> new NotFoundException("Payment not found"));
+        return paymentRepository.findWithOrderById(paymentId)
                 .orElseThrow(() -> new NotFoundException("Payment not found"));
     }
 

@@ -50,7 +50,9 @@ public class JpaRefundAttemptPersistenceAdapter implements RefundAttemptPersiste
             String idempotencyKey,
             String reason
     ) {
-        PaymentRecord payment = paymentRepository.findForUpdateById(paymentId)
+        paymentRepository.lockById(paymentId)
+                .orElseThrow(() -> new NotFoundException("Payment not found"));
+        PaymentRecord payment = paymentRepository.findWithOrderById(paymentId)
                 .orElseThrow(() -> new NotFoundException("Payment not found"));
         assertRefundable(payment, customerId);
 
@@ -155,7 +157,9 @@ public class JpaRefundAttemptPersistenceAdapter implements RefundAttemptPersiste
     }
 
     private RefundRecord findForUpdate(UUID refundId) {
-        return refundRepository.findForUpdateById(refundId)
+        refundRepository.lockById(refundId)
+                .orElseThrow(() -> new NotFoundException("Refund not found"));
+        return refundRepository.findWithPaymentById(refundId)
                 .orElseThrow(() -> new NotFoundException("Refund not found"));
     }
 

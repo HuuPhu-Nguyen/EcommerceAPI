@@ -1,8 +1,6 @@
 package com.phu.ecommerceapi.order.infrastructure;
 
-import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -21,12 +19,14 @@ public interface CustomerOrderRepository extends JpaRepository<CustomerOrderReco
             """)
     Optional<CustomerOrderRecord> findWithCustomerById(@Param("orderId") UUID orderId);
 
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("""
-            select customerOrder
-            from CustomerOrderRecord customerOrder
-            join fetch customerOrder.customer
-            where customerOrder.id = :orderId
-            """)
-    Optional<CustomerOrderRecord> findForPaymentById(@Param("orderId") UUID orderId);
+    @Query(
+            value = """
+                    select id
+                    from customer_order
+                    where id = :orderId
+                    for update
+                    """,
+            nativeQuery = true
+    )
+    Optional<UUID> lockById(@Param("orderId") UUID orderId);
 }

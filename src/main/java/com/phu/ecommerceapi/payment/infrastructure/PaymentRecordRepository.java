@@ -147,13 +147,14 @@ public interface PaymentRecordRepository extends JpaRepository<PaymentRecord, UU
             @Param("providerPaymentId") String providerPaymentId
     );
 
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("""
-            select payment
-            from PaymentRecord payment
-            join fetch payment.order customerOrder
-            join fetch customerOrder.customer
-            where payment.id = :paymentId
-            """)
-    Optional<PaymentRecord> findForUpdateById(@Param("paymentId") UUID paymentId);
+    @Query(
+            value = """
+                    select id
+                    from payment_record
+                    where id = :paymentId
+                    for update
+                    """,
+            nativeQuery = true
+    )
+    Optional<UUID> lockById(@Param("paymentId") UUID paymentId);
 }
