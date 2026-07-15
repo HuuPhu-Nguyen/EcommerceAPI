@@ -70,7 +70,7 @@ Relevant ADRs:
 
 ## Security Model
 
-Authentication uses standard Spring Security OAuth2 Resource Server JWT validation. Local development uses Keycloak from Docker Compose with a preloaded `ecommerce` realm. Tokens must be issued by the configured issuer, include the configured API audience, and, when configured, come from an allowed authorized party such as the local `ecommerce-web` client.
+Authentication uses standard Spring Security OAuth2 Resource Server JWT validation. Local development uses Keycloak from Docker Compose with a preloaded `ecommerce` realm. Tokens must be issued by the configured issuer, include the configured API audience, and come from an allowed authorized party such as the local `ecommerce-web` client. Production startup requires `OAUTH2_ALLOWED_AUTHORIZED_PARTIES` so JWT `azp` validation cannot be silently disabled.
 
 The detailed threat model is in [docs/threat-model.md](docs/threat-model.md).
 

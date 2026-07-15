@@ -61,6 +61,8 @@ Verification commands:
 
 ### P0-02: Require authorized-party binding for production JWT validation
 
+Status: Completed on 2026-07-15.
+
 Problem: production config currently allows `app.security.oauth2.allowed-authorized-parties` to default to blank. When blank, `OAuth2AudienceAndAuthorizedPartyValidator` does not enforce the JWT `azp` claim.
 
 Files to change:

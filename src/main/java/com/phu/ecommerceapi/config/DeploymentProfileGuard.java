@@ -15,8 +15,11 @@ import java.util.stream.Collectors;
 public class DeploymentProfileGuard implements InitializingBean {
 
     private static final String LOCAL_PROFILE = "local";
+    private static final String PROD_PROFILE = "prod";
     private static final String CONTAINERIZED_PROPERTY = "app.deployment.containerized";
     private static final String APP_ENVIRONMENT_PROPERTY = "app.environment";
+    private static final String OAUTH_ALLOWED_AUTHORIZED_PARTIES_PROPERTY =
+            "app.security.oauth2.allowed-authorized-parties";
     private static final Set<String> SUPPORTED_PROFILES = Set.of("local", "test", "prod");
     private static final Set<String> LOCAL_ENVIRONMENTS = Set.of("local", "test");
 
@@ -45,6 +48,13 @@ public class DeploymentProfileGuard implements InitializingBean {
             );
         }
 
+        if (activeProfiles.contains(PROD_PROFILE)) {
+            requireProdProperty(
+                    OAUTH_ALLOWED_AUTHORIZED_PARTIES_PROPERTY,
+                    "OAUTH2_ALLOWED_AUTHORIZED_PARTIES is required in prod"
+            );
+        }
+
         if (!activeProfiles.contains(LOCAL_PROFILE)) {
             return;
         }
@@ -69,6 +79,18 @@ public class DeploymentProfileGuard implements InitializingBean {
 
     private boolean isContainerized() {
         return Boolean.parseBoolean(environment.getProperty(CONTAINERIZED_PROPERTY, "false"));
+    }
+
+    private void requireProdProperty(String propertyName, String failureMessage) {
+        String value;
+        try {
+            value = environment.getProperty(propertyName, "");
+        } catch (IllegalArgumentException exception) {
+            throw invalidProfileConfiguration(failureMessage);
+        }
+        if (value == null || value.isBlank()) {
+            throw invalidProfileConfiguration(failureMessage);
+        }
     }
 
     private ApplicationContextException invalidDeployment(String reason) {

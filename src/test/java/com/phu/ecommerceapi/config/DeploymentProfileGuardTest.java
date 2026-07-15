@@ -51,8 +51,32 @@ class DeploymentProfileGuardTest {
         environment.setActiveProfiles("prod");
         environment.setProperty("app.deployment.containerized", "true");
         environment.setProperty("app.environment", "prod");
+        environment.setProperty("app.security.oauth2.allowed-authorized-parties", "ecommerce-web");
 
         new DeploymentProfileGuard(environment).afterPropertiesSet();
+    }
+
+    @Test
+    void prodProfileRejectsMissingAuthorizedParties() {
+        MockEnvironment environment = environmentWithRuntimeDefaults();
+        environment.setActiveProfiles("prod");
+        environment.setProperty("app.environment", "prod");
+
+        assertThatThrownBy(() -> new DeploymentProfileGuard(environment).afterPropertiesSet())
+                .isInstanceOf(ApplicationContextException.class)
+                .hasMessageContaining("OAUTH2_ALLOWED_AUTHORIZED_PARTIES is required in prod");
+    }
+
+    @Test
+    void prodProfileRejectsBlankAuthorizedParties() {
+        MockEnvironment environment = environmentWithRuntimeDefaults();
+        environment.setActiveProfiles("prod");
+        environment.setProperty("app.environment", "prod");
+        environment.setProperty("app.security.oauth2.allowed-authorized-parties", " ");
+
+        assertThatThrownBy(() -> new DeploymentProfileGuard(environment).afterPropertiesSet())
+                .isInstanceOf(ApplicationContextException.class)
+                .hasMessageContaining("OAUTH2_ALLOWED_AUTHORIZED_PARTIES is required in prod");
     }
 
     @Test
