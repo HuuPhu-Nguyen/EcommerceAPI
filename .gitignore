@@ -1,6 +1,7 @@
 HELP.md
 target/
 agent/
+docs/polish-queue.md
 .env
 .env.*
 !.env.example
