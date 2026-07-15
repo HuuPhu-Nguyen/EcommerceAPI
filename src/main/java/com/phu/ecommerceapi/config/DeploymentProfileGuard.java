@@ -17,7 +17,8 @@ public class DeploymentProfileGuard implements InitializingBean {
     private static final String LOCAL_PROFILE = "local";
     private static final String CONTAINERIZED_PROPERTY = "app.deployment.containerized";
     private static final String APP_ENVIRONMENT_PROPERTY = "app.environment";
-    private static final Set<String> LOCAL_ENVIRONMENTS = Set.of("", "local", "test");
+    private static final Set<String> SUPPORTED_PROFILES = Set.of("local", "test", "prod");
+    private static final Set<String> LOCAL_ENVIRONMENTS = Set.of("local", "test");
 
     private final Environment environment;
 
@@ -27,8 +28,24 @@ public class DeploymentProfileGuard implements InitializingBean {
 
     @Override
     public void afterPropertiesSet() {
-        Set<String> effectiveProfiles = effectiveProfiles();
-        if (!effectiveProfiles.contains(LOCAL_PROFILE)) {
+        Set<String> activeProfiles = activeProfiles();
+        if (activeProfiles.isEmpty()) {
+            throw invalidProfileConfiguration(
+                    "SPRING_PROFILES_ACTIVE must be explicitly set to one of local,test,prod"
+            );
+        }
+
+        Set<String> unsupportedProfiles = activeProfiles.stream()
+                .filter(profile -> !SUPPORTED_PROFILES.contains(profile))
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        if (!unsupportedProfiles.isEmpty()) {
+            throw invalidProfileConfiguration(
+                    "Unsupported Spring profile(s): " + String.join(",", unsupportedProfiles)
+                            + ". SPRING_PROFILES_ACTIVE must be explicitly set to one of local,test,prod"
+            );
+        }
+
+        if (!activeProfiles.contains(LOCAL_PROFILE)) {
             return;
         }
 
@@ -42,12 +59,8 @@ public class DeploymentProfileGuard implements InitializingBean {
         }
     }
 
-    private Set<String> effectiveProfiles() {
+    private Set<String> activeProfiles() {
         String[] profiles = environment.getActiveProfiles();
-        if (profiles.length == 0) {
-            profiles = environment.getDefaultProfiles();
-        }
-
         return Arrays.stream(profiles)
                 .map(DeploymentProfileGuard::normalize)
                 .filter(profile -> !profile.isBlank())
@@ -64,6 +77,10 @@ public class DeploymentProfileGuard implements InitializingBean {
                         + reason
                         + ". Use SPRING_PROFILES_ACTIVE=prod for Docker or production deployments."
         );
+    }
+
+    private ApplicationContextException invalidProfileConfiguration(String reason) {
+        return new ApplicationContextException(reason);
     }
 
     private static String normalize(String value) {

@@ -14,8 +14,28 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class DeploymentProfileGuardTest {
 
     @Test
+    void missingActiveProfileIsRejected() {
+        MockEnvironment environment = environmentWithRuntimeDefaults();
+
+        assertThatThrownBy(() -> new DeploymentProfileGuard(environment).afterPropertiesSet())
+                .isInstanceOf(ApplicationContextException.class)
+                .hasMessageContaining("SPRING_PROFILES_ACTIVE must be explicitly set");
+    }
+
+    @Test
+    void unsupportedActiveProfileIsRejected() {
+        MockEnvironment environment = environmentWithRuntimeDefaults();
+        environment.setActiveProfiles("staging");
+
+        assertThatThrownBy(() -> new DeploymentProfileGuard(environment).afterPropertiesSet())
+                .isInstanceOf(ApplicationContextException.class)
+                .hasMessageContaining("Unsupported Spring profile(s): staging")
+                .hasMessageContaining("SPRING_PROFILES_ACTIVE must be explicitly set");
+    }
+
+    @Test
     void containerizedRuntimeRejectsActiveLocalProfile() {
-        MockEnvironment environment = environmentWithLocalDefaults();
+        MockEnvironment environment = environmentWithRuntimeDefaults();
         environment.setActiveProfiles("local");
         environment.setProperty("app.deployment.containerized", "true");
 
@@ -26,19 +46,8 @@ class DeploymentProfileGuardTest {
     }
 
     @Test
-    void containerizedRuntimeRejectsDefaultLocalProfile() {
-        MockEnvironment environment = environmentWithLocalDefaults();
-        environment.setProperty("app.deployment.containerized", "true");
-
-        assertThatThrownBy(() -> new DeploymentProfileGuard(environment).afterPropertiesSet())
-                .isInstanceOf(ApplicationContextException.class)
-                .hasMessageContaining("local Spring profile")
-                .hasMessageContaining("containerized runtime marker");
-    }
-
-    @Test
     void containerizedRuntimeAllowsProdProfile() throws Exception {
-        MockEnvironment environment = environmentWithLocalDefaults();
+        MockEnvironment environment = environmentWithRuntimeDefaults();
         environment.setActiveProfiles("prod");
         environment.setProperty("app.deployment.containerized", "true");
         environment.setProperty("app.environment", "prod");
@@ -48,7 +57,7 @@ class DeploymentProfileGuardTest {
 
     @Test
     void deploymentEnvironmentRejectsLocalProfile() {
-        MockEnvironment environment = environmentWithLocalDefaults();
+        MockEnvironment environment = environmentWithRuntimeDefaults();
         environment.setActiveProfiles("local");
         environment.setProperty("app.environment", "prod");
 
@@ -60,8 +69,17 @@ class DeploymentProfileGuardTest {
 
     @Test
     void localDevelopmentProfileIsAllowedWithoutDeploymentMarkers() throws Exception {
-        MockEnvironment environment = environmentWithLocalDefaults();
+        MockEnvironment environment = environmentWithRuntimeDefaults();
         environment.setActiveProfiles("local");
+
+        new DeploymentProfileGuard(environment).afterPropertiesSet();
+    }
+
+    @Test
+    void testProfileIsAllowedWithoutDeploymentMarkers() throws Exception {
+        MockEnvironment environment = environmentWithRuntimeDefaults();
+        environment.setActiveProfiles("test");
+        environment.setProperty("app.environment", "test");
 
         new DeploymentProfileGuard(environment).afterPropertiesSet();
     }
@@ -76,9 +94,8 @@ class DeploymentProfileGuardTest {
                 .contains("ENV APP_CONTAINERIZED=true");
     }
 
-    private MockEnvironment environmentWithLocalDefaults() {
+    private MockEnvironment environmentWithRuntimeDefaults() {
         MockEnvironment environment = new MockEnvironment();
-        environment.setDefaultProfiles("local");
         environment.setProperty("app.environment", "local");
         environment.setProperty("app.deployment.containerized", "false");
         return environment;

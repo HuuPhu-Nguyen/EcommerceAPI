@@ -177,7 +177,8 @@ docker compose up -d postgres keycloak
 Run the API in a second terminal:
 
 ```powershell
-.\mvnw.cmd spring-boot:run "-Dspring-boot.run.profiles=local"
+$env:SPRING_PROFILES_ACTIVE = "local"
+.\mvnw.cmd spring-boot:run
 ```
 
 Local URLs:
@@ -195,9 +196,10 @@ The local profile loads safe demo data from `demo-data.sql`, including one custo
 The default local setup is fake-only and does not require Stripe secrets:
 
 ```powershell
+$env:SPRING_PROFILES_ACTIVE = "local"
 $env:PAYMENT_PROVIDER_ACTIVE = "fake"
 $env:PAYMENT_PROVIDER_ENABLED = "fake"
-.\mvnw.cmd spring-boot:run "-Dspring-boot.run.profiles=local"
+.\mvnw.cmd spring-boot:run
 ```
 
 Use this mode for the main demo, local development, and CI. The fake provider supports USD and EUR, is deterministic, supports success/failure/timeout paths, and keeps tests independent from external accounts. The fake webhook route is registered only when `fake` is included in `PAYMENT_PROVIDER_ENABLED`; production examples keep `PAYMENT_PROVIDER_ENABLED=stripe`, so `/payments/provider-webhooks/fake` is not exposed.
@@ -205,13 +207,14 @@ Use this mode for the main demo, local development, and CI. The fake provider su
 To review Stripe sandbox behavior, enable both providers and keep `fake` as the active default:
 
 ```powershell
+$env:SPRING_PROFILES_ACTIVE = "local"
 $env:PAYMENT_PROVIDER_ACTIVE = "fake"
 $env:PAYMENT_PROVIDER_ENABLED = "fake,stripe"
 $env:STRIPE_SECRET_KEY = "sk_test_replace_me"
 $env:STRIPE_WEBHOOK_SECRET = "whsec_replace_me"
 $env:STRIPE_CONNECT_TIMEOUT_MS = "2000"
 $env:STRIPE_READ_TIMEOUT_MS = "5000"
-.\mvnw.cmd spring-boot:run "-Dspring-boot.run.profiles=local"
+.\mvnw.cmd spring-boot:run
 ```
 
 When more than one provider is enabled, payment requests should include `"provider": "fake"` or `"provider": "stripe"`. Refunds do not choose a provider; they route through the provider that captured the original payment.
