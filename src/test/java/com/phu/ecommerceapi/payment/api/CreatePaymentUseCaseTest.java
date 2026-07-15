@@ -43,6 +43,7 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 
+import static com.phu.ecommerceapi.audit.AuditEventTestCleaner.clearAuditEvents;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -93,7 +94,7 @@ class CreatePaymentUseCaseTest {
     @BeforeEach
     void resetData() {
         truncateLedger();
-        auditEventRepository.deleteAll();
+        clearAuditEvents(jdbcTemplate);
         idempotencyRepository.deleteAll();
         paymentRepository.deleteAll();
         orderRepository.deleteAll();

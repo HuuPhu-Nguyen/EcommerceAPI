@@ -40,6 +40,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
+import static com.phu.ecommerceapi.audit.AuditEventTestCleaner.clearAuditEvents;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -89,7 +90,7 @@ class CheckoutUseCaseTest {
 
     @BeforeEach
     void resetData() {
-        auditEventRepository.deleteAll();
+        clearAuditEvents(jdbcTemplate);
         orderRepository.deleteAll();
         cartRepo.deleteAll();
         inventoryRepository.deleteAll();

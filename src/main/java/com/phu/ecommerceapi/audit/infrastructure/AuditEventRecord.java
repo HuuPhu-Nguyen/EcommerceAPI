@@ -51,7 +51,7 @@ public class AuditEventRecord {
     @Column(length = 64)
     private String previousHash;
 
-    @Column(length = 64)
+    @Column(nullable = false, length = 64)
     private String eventHash;
 
     protected AuditEventRecord() {

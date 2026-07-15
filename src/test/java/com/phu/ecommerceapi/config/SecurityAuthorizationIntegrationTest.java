@@ -2,7 +2,6 @@ package com.phu.ecommerceapi.config;
 
 import com.phu.ecommerceapi.User.UserModel;
 import com.phu.ecommerceapi.User.UserRepo;
-import com.phu.ecommerceapi.audit.infrastructure.AuditEventRepository;
 import com.phu.ecommerceapi.cart.infrastructure.CartModel;
 import com.phu.ecommerceapi.cart.infrastructure.CartRepo;
 import com.phu.ecommerceapi.inventory.infrastructure.InventoryRepository;
@@ -13,11 +12,13 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
+import static com.phu.ecommerceapi.audit.AuditEventTestCleaner.clearAuditEvents;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -44,11 +45,11 @@ class SecurityAuthorizationIntegrationTest {
     private CartRepo cartRepo;
 
     @Autowired
-    private AuditEventRepository auditEventRepository;
+    private JdbcTemplate jdbcTemplate;
 
     @AfterEach
     void cleanUpData() {
-        auditEventRepository.deleteAll();
+        clearAuditEvents(jdbcTemplate);
         cartRepo.deleteAll();
         inventoryRepository.deleteAll();
         productRepo.deleteAll();

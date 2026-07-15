@@ -62,6 +62,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
+import static com.phu.ecommerceapi.audit.AuditEventTestCleaner.clearAuditEvents;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.when;
@@ -128,7 +129,7 @@ class ProviderWebhookHandlingTest {
         reset(stripeProviderReadPort);
         truncateLedger();
         webhookEventRepository.deleteAll();
-        auditEventRepository.deleteAll();
+        clearAuditEvents(jdbcTemplate);
         idempotencyRepository.deleteAll();
         refundRepository.deleteAll();
         paymentRepository.deleteAll();

@@ -2,7 +2,6 @@ package com.phu.ecommerceapi.audit.api;
 
 import com.phu.ecommerceapi.audit.application.AuditEventCommand;
 import com.phu.ecommerceapi.audit.application.AuditEventRecorder;
-import com.phu.ecommerceapi.audit.application.AuditHashChainBackfillService;
 import com.phu.ecommerceapi.audit.application.AuditHashVerificationResult;
 import com.phu.ecommerceapi.audit.application.AuditHashVerificationService;
 import com.phu.ecommerceapi.audit.infrastructure.AuditEventRecord;
@@ -13,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -23,7 +23,9 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import java.time.OffsetDateTime;
 import java.util.List;
 
+import static com.phu.ecommerceapi.audit.AuditEventTestCleaner.clearAuditEvents;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -44,9 +46,6 @@ class AuditHashVerificationTest {
     private AuditHashVerificationService verificationService;
 
     @Autowired
-    private AuditHashChainBackfillService backfillService;
-
-    @Autowired
     private AuditEventRepository auditEventRepository;
 
     @Autowired
@@ -63,8 +62,7 @@ class AuditHashVerificationTest {
     }
 
     private void clearAuditData() {
-        auditEventRepository.deleteAll();
-        jdbcTemplate.update("UPDATE audit_hash_chain_state SET latest_hash = NULL WHERE id = 1");
+        clearAuditEvents(jdbcTemplate);
     }
 
     @Test
@@ -85,27 +83,41 @@ class AuditHashVerificationTest {
     }
 
     @Test
-    void modifiedAuditRecordBreaksVerification() {
+    void directAuditEventUpdateIsRejectedByDatabase() {
         auditEventRecorder.record(command("PAYMENT_SUCCEEDED", "PAYMENT", "payment-2", "amount=20.00 USD"));
         Long eventId = eventsByIdAsc().get(0).getId();
 
-        jdbcTemplate.update(
-                "UPDATE audit_event SET details = ? WHERE id = ?",
-                "amount=999.00 USD",
-                eventId
-        );
+        assertThatThrownBy(() -> jdbcTemplate.update(
+                        "UPDATE audit_event SET details = ? WHERE id = ?",
+                        "amount=999.00 USD",
+                        eventId
+                ))
+                .isInstanceOf(DataAccessException.class)
+                .hasMessageContaining("audit events are append-only");
 
         AuditHashVerificationResult result = verificationService.verify();
 
-        assertThat(result.verified()).isFalse();
+        assertThat(result.verified()).isTrue();
         assertThat(result.checkedEvents()).isEqualTo(1);
-        assertThat(result.brokenEventId()).isEqualTo(eventId);
-        assertThat(result.message()).isEqualTo("Audit event hash mismatch");
+        assertThat(auditEventRepository.findById(eventId).orElseThrow().getDetails())
+                .isEqualTo("amount=20.00 USD");
     }
 
     @Test
-    void legacyAuditRowsAreSealedWhenChainStateIsEmpty() {
-        jdbcTemplate.update("""
+    void directAuditEventDeleteIsRejectedByDatabase() {
+        auditEventRecorder.record(command("PAYMENT_SUCCEEDED", "PAYMENT", "payment-legacy", "amount=20.00 USD"));
+        Long eventId = eventsByIdAsc().get(0).getId();
+
+        assertThatThrownBy(() -> jdbcTemplate.update("DELETE FROM audit_event WHERE id = ?", eventId))
+                .isInstanceOf(DataAccessException.class)
+                .hasMessageContaining("audit events are append-only");
+
+        assertThat(auditEventRepository.findById(eventId)).isPresent();
+    }
+
+    @Test
+    void unhashedAuditRowsAreRejectedByDatabase() {
+        assertThatThrownBy(() -> jdbcTemplate.update("""
                         INSERT INTO audit_event (
                             actor_subject,
                             action,
@@ -119,32 +131,18 @@ class AuditHashVerificationTest {
                         )
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
-                "legacy-actor",
-                "LEGACY_EVENT",
-                "PAYMENT",
-                "legacy-payment",
-                "amount=20.00 USD",
-                "legacy-request",
-                "127.0.0.1",
-                "legacy-agent",
-                OffsetDateTime.parse("2026-07-06T08:00:00Z")
-        );
-
-        backfillService.initializeLegacyChain();
-
-        List<AuditEventRecord> events = eventsByIdAsc();
-        AuditHashVerificationResult result = verificationService.verify();
-        String latestHash = jdbcTemplate.queryForObject(
-                "SELECT latest_hash FROM audit_hash_chain_state WHERE id = 1",
-                String.class
-        );
-
-        assertThat(events).hasSize(1);
-        assertThat(events.get(0).getPreviousHash()).isNull();
-        assertThat(events.get(0).getEventHash()).hasSize(64);
-        assertThat(result.verified()).isTrue();
-        assertThat(result.latestHash()).isEqualTo(events.get(0).getEventHash());
-        assertThat(latestHash).isEqualTo(events.get(0).getEventHash());
+                        "legacy-actor",
+                        "LEGACY_EVENT",
+                        "PAYMENT",
+                        "legacy-payment",
+                        "amount=20.00 USD",
+                        "legacy-request",
+                        "127.0.0.1",
+                        "legacy-agent",
+                        OffsetDateTime.parse("2026-07-06T08:00:00Z")
+                ))
+                .isInstanceOf(DataAccessException.class)
+                .hasMessageContaining("event_hash");
     }
 
     @Test

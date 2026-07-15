@@ -2,7 +2,6 @@ package com.phu.ecommerceapi.catalog.application;
 
 import com.phu.ecommerceapi.Product.ProductModel;
 import com.phu.ecommerceapi.Product.ProductRepo;
-import com.phu.ecommerceapi.audit.infrastructure.AuditEventRepository;
 import com.phu.ecommerceapi.identity.application.CurrentUser;
 import com.phu.ecommerceapi.inventory.application.InventoryReservationService;
 import com.phu.ecommerceapi.inventory.infrastructure.InventoryRecord;
@@ -13,6 +12,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 
 import java.math.BigDecimal;
@@ -25,6 +25,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
+import static com.phu.ecommerceapi.audit.AuditEventTestCleaner.clearAuditEvents;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest
@@ -47,7 +48,7 @@ class AdminInventoryStockUpdateConcurrencyTest {
     private InventoryRepository inventoryRepository;
 
     @Autowired
-    private AuditEventRepository auditEventRepository;
+    private JdbcTemplate jdbcTemplate;
 
     @Autowired
     private OutboxEventRepository outboxEventRepository;
@@ -55,7 +56,7 @@ class AdminInventoryStockUpdateConcurrencyTest {
     @BeforeEach
     void resetData() {
         outboxEventRepository.deleteAll();
-        auditEventRepository.deleteAll();
+        clearAuditEvents(jdbcTemplate);
         inventoryRepository.deleteAll();
         productRepo.deleteAll();
     }

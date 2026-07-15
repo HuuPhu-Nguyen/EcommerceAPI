@@ -100,6 +100,8 @@ Verification commands:
 
 ### P0-03: Harden audit events against database tampering
 
+Status: Completed on 2026-07-15.
+
 Problem: audit events have a hash chain, but audit rows can still be updated or deleted at the database level. Ledger rows have append-only triggers; audit rows do not.
 
 Files to change:

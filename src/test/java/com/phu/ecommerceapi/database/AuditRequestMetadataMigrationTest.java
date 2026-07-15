@@ -11,6 +11,7 @@ import java.time.OffsetDateTime;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class AuditRequestMetadataMigrationTest {
 
@@ -48,7 +49,34 @@ class AuditRequestMetadataMigrationTest {
         }
     }
 
+    @Test
+    void appendOnlyMigrationRejectsUnhashedAuditRows() {
+        try (PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")) {
+            postgres.start();
+            JdbcTemplate jdbcTemplate = jdbcTemplate(postgres);
+
+            flyway(postgres)
+                    .target("23")
+                    .load()
+                    .migrate();
+
+            insertLegacyAuditEvent(jdbcTemplate, null);
+
+            assertThatThrownBy(() -> flyway(postgres)
+                    .load()
+                    .migrate())
+                    .hasMessageContaining("Cannot make audit_event append-only while unhashed audit events exist");
+        }
+    }
+
     private Long insertLegacyAuditEvent(JdbcTemplate jdbcTemplate) {
+        return insertLegacyAuditEvent(
+                jdbcTemplate,
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        );
+    }
+
+    private Long insertLegacyAuditEvent(JdbcTemplate jdbcTemplate, String eventHash) {
         return jdbcTemplate.queryForObject(
                 """
                         INSERT INTO audit_event (
@@ -78,7 +106,7 @@ class AuditRequestMetadataMigrationTest {
                 "migration-test",
                 OffsetDateTime.now(),
                 null,
-                null
+                eventHash
         );
     }
 
