@@ -141,6 +141,8 @@ Verification commands:
 
 ### P0-04: Add an external-key audit seal
 
+Status: Completed on 2026-07-15.
+
 Problem: plain SHA-256 hashes can be recomputed by anyone with database write access. Banking-grade audit evidence needs a secret or external trust anchor not stored in the same database.
 
 Files to change:

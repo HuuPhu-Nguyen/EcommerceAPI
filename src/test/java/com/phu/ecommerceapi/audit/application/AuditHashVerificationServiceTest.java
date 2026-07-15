@@ -11,7 +11,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class AuditHashVerificationServiceTest {
 
-    private final AuditHashService hashService = new AuditHashService();
+    private static final String SIGNATURE_SECRET = "test-audit-signature-secret";
+
+    private final AuditHashService hashService = new AuditHashService(SIGNATURE_SECRET);
 
     @Test
     void verifyRequestsEveryPageInOrder() {
@@ -62,6 +64,41 @@ class AuditHashVerificationServiceTest {
         assertThat(persistencePort.requestedAfterIds).containsExactly(0L, 2L, 3L);
     }
 
+    @Test
+    void verifyStopsWhenSignatureDoesNotMatchEventHash() {
+        FakeAuditEventPersistencePort persistencePort = new FakeAuditEventPersistencePort();
+        List<AuditEventView> events = sealedChain(1, 2);
+        AuditEventView brokenEvent = event(
+                2,
+                events.get(1).previousHash(),
+                events.get(1).eventHash(),
+                "0".repeat(64)
+        );
+        persistencePort.events = List.of(events.get(0), brokenEvent);
+        AuditHashVerificationService service = service(persistencePort, 2);
+
+        AuditHashVerificationResult result = service.verify();
+
+        assertThat(result.verified()).isFalse();
+        assertThat(result.checkedEvents()).isEqualTo(2);
+        assertThat(result.brokenEventId()).isEqualTo(2);
+        assertThat(result.message()).isEqualTo("Audit event signature mismatch");
+    }
+
+    @Test
+    void verifyAllowsLegacyEventsWithNullSignature() {
+        FakeAuditEventPersistencePort persistencePort = new FakeAuditEventPersistencePort();
+        persistencePort.events = sealedChain(1, 2).stream()
+                .map(event -> event(event.id(), event.previousHash(), event.eventHash(), null))
+                .toList();
+        AuditHashVerificationService service = service(persistencePort, 2);
+
+        AuditHashVerificationResult result = service.verify();
+
+        assertThat(result.verified()).isTrue();
+        assertThat(result.checkedEvents()).isEqualTo(2);
+    }
+
     private AuditHashVerificationService service(FakeAuditEventPersistencePort persistencePort, int batchSize) {
         return new AuditHashVerificationService(
                 persistencePort,
@@ -83,6 +120,15 @@ class AuditHashVerificationServiceTest {
     }
 
     private AuditEventView event(long id, String previousHash, String eventHash) {
+        return event(
+                id,
+                previousHash,
+                eventHash,
+                eventHash == null ? null : hashService.sign(eventHash)
+        );
+    }
+
+    private AuditEventView event(long id, String previousHash, String eventHash, String eventSignature) {
         return new AuditEventView(
                 id,
                 "audit-actor",
@@ -96,7 +142,8 @@ class AuditHashVerificationServiceTest {
                 "test-agent",
                 Instant.parse("2026-07-06T08:00:00Z").plusSeconds(id),
                 previousHash,
-                eventHash
+                eventHash,
+                eventSignature
         );
     }
 

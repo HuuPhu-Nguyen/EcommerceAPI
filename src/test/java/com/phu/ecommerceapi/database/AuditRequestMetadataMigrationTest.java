@@ -69,6 +69,39 @@ class AuditRequestMetadataMigrationTest {
         }
     }
 
+    @Test
+    void signatureMigrationAllowsExistingUnsignedRowsButRejectsNewUnsignedRows() {
+        try (PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")) {
+            postgres.start();
+            JdbcTemplate jdbcTemplate = jdbcTemplate(postgres);
+
+            flyway(postgres)
+                    .target("24")
+                    .load()
+                    .migrate();
+
+            Long auditEventId = insertLegacyAuditEvent(jdbcTemplate);
+
+            flyway(postgres)
+                    .load()
+                    .migrate();
+
+            Map<String, Object> auditEvent = jdbcTemplate.queryForMap(
+                    """
+                            SELECT event_signature
+                            FROM audit_event
+                            WHERE id = ?
+                            """,
+                    auditEventId
+            );
+
+            assertThat(auditEvent).containsEntry("event_signature", null);
+            assertThat(columnNames(jdbcTemplate)).contains("event_signature");
+            assertThatThrownBy(() -> insertLegacyAuditEvent(jdbcTemplate))
+                    .hasMessageContaining("audit event signature is required");
+        }
+    }
+
     private Long insertLegacyAuditEvent(JdbcTemplate jdbcTemplate) {
         return insertLegacyAuditEvent(
                 jdbcTemplate,

@@ -20,6 +20,7 @@ public class DeploymentProfileGuard implements InitializingBean {
     private static final String APP_ENVIRONMENT_PROPERTY = "app.environment";
     private static final String OAUTH_ALLOWED_AUTHORIZED_PARTIES_PROPERTY =
             "app.security.oauth2.allowed-authorized-parties";
+    private static final String AUDIT_SIGNATURE_SECRET_PROPERTY = "app.audit.signature-secret";
     private static final Set<String> SUPPORTED_PROFILES = Set.of("local", "test", "prod");
     private static final Set<String> LOCAL_ENVIRONMENTS = Set.of("local", "test");
 
@@ -52,6 +53,10 @@ public class DeploymentProfileGuard implements InitializingBean {
             requireProdProperty(
                     OAUTH_ALLOWED_AUTHORIZED_PARTIES_PROPERTY,
                     "OAUTH2_ALLOWED_AUTHORIZED_PARTIES is required in prod"
+            );
+            requireProdProperty(
+                    AUDIT_SIGNATURE_SECRET_PROPERTY,
+                    "AUDIT_SIGNATURE_SECRET is required in prod"
             );
         }
 

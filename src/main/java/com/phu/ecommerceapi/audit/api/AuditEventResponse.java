@@ -15,6 +15,7 @@ public record AuditEventResponse(
         String userAgent,
         Instant createdAt,
         String previousHash,
-        String eventHash
+        String eventHash,
+        String eventSignature
 ) {
 }

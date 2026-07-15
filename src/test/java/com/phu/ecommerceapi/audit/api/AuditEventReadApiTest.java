@@ -77,6 +77,7 @@ class AuditEventReadApiTest {
         assertThat(event.getExternalCorrelationId()).isEqualTo("audit-request-1");
         assertThat(event.getIpAddress()).isEqualTo("198.51.100.20");
         assertThat(event.getUserAgent()).isEqualTo("AuditTest/1.0");
+        assertThat(event.getEventSignature()).hasSize(64);
     }
 
     @Test
@@ -105,7 +106,8 @@ class AuditEventReadApiTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].requestId").value("internal-request-1"))
                 .andExpect(jsonPath("$[0].externalCorrelationId").value("external-correlation-1"))
-                .andExpect(jsonPath("$[0].ipAddress").value("198.51.100.20"));
+                .andExpect(jsonPath("$[0].ipAddress").value("198.51.100.20"))
+                .andExpect(jsonPath("$[0].eventSignature").isNotEmpty());
     }
 
     @Test

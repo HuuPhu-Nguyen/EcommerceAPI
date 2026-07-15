@@ -15,7 +15,8 @@ public record AuditEventView(
         String userAgent,
         Instant createdAt,
         String previousHash,
-        String eventHash
+        String eventHash,
+        String eventSignature
 ) {
 
     public AuditHashPayload toHashPayload(String previousHash) {

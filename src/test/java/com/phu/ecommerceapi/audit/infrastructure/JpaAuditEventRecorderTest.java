@@ -26,6 +26,10 @@ class JpaAuditEventRecorderTest {
             "1111111111111111111111111111111111111111111111111111111111111111";
     private static final String SECOND_EVENT_HASH =
             "2222222222222222222222222222222222222222222222222222222222222222";
+    private static final String FIRST_EVENT_SIGNATURE =
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    private static final String SECOND_EVENT_SIGNATURE =
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 
     private final AuditEventRepository auditEventRepository = mock(AuditEventRepository.class);
     private final AuditHashChainStateRepository chainStateRepository = mock(AuditHashChainStateRepository.class);
@@ -43,12 +47,14 @@ class JpaAuditEventRecorderTest {
         AuditHashChainStateRecord chainState = new AuditHashChainStateRecord();
         when(chainStateRepository.findForUpdateById((short) 1)).thenReturn(Optional.of(chainState));
         when(auditHashService.hash(any(AuditHashPayload.class))).thenReturn(FIRST_EVENT_HASH);
+        when(auditHashService.sign(FIRST_EVENT_HASH)).thenReturn(FIRST_EVENT_SIGNATURE);
 
         recorder.record(command("PAYMENT_SUCCEEDED", "payment-1"));
 
         AuditEventRecord savedEvent = savedEvent();
         assertThat(savedEvent.getPreviousHash()).isNull();
         assertThat(savedEvent.getEventHash()).isEqualTo(FIRST_EVENT_HASH);
+        assertThat(savedEvent.getEventSignature()).isEqualTo(FIRST_EVENT_SIGNATURE);
         assertThat(chainState.getLatestHash()).isEqualTo(FIRST_EVENT_HASH);
         verify(auditEventRepository, never()).count();
     }
@@ -59,12 +65,14 @@ class JpaAuditEventRecorderTest {
         chainState.markLatestHash(FIRST_EVENT_HASH, Instant.parse("2026-07-13T00:00:00Z"));
         when(chainStateRepository.findForUpdateById((short) 1)).thenReturn(Optional.of(chainState));
         when(auditHashService.hash(any(AuditHashPayload.class))).thenReturn(SECOND_EVENT_HASH);
+        when(auditHashService.sign(SECOND_EVENT_HASH)).thenReturn(SECOND_EVENT_SIGNATURE);
 
         recorder.record(command("REFUND_SUCCEEDED", "refund-1"));
 
         AuditEventRecord savedEvent = savedEvent();
         assertThat(savedEvent.getPreviousHash()).isEqualTo(FIRST_EVENT_HASH);
         assertThat(savedEvent.getEventHash()).isEqualTo(SECOND_EVENT_HASH);
+        assertThat(savedEvent.getEventSignature()).isEqualTo(SECOND_EVENT_SIGNATURE);
         assertThat(chainState.getLatestHash()).isEqualTo(SECOND_EVENT_HASH);
         verify(auditEventRepository, never()).count();
     }

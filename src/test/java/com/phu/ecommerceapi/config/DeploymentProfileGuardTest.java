@@ -52,6 +52,7 @@ class DeploymentProfileGuardTest {
         environment.setProperty("app.deployment.containerized", "true");
         environment.setProperty("app.environment", "prod");
         environment.setProperty("app.security.oauth2.allowed-authorized-parties", "ecommerce-web");
+        environment.setProperty("app.audit.signature-secret", "prod-audit-signature-secret");
 
         new DeploymentProfileGuard(environment).afterPropertiesSet();
     }
@@ -73,10 +74,36 @@ class DeploymentProfileGuardTest {
         environment.setActiveProfiles("prod");
         environment.setProperty("app.environment", "prod");
         environment.setProperty("app.security.oauth2.allowed-authorized-parties", " ");
+        environment.setProperty("app.audit.signature-secret", "prod-audit-signature-secret");
 
         assertThatThrownBy(() -> new DeploymentProfileGuard(environment).afterPropertiesSet())
                 .isInstanceOf(ApplicationContextException.class)
                 .hasMessageContaining("OAUTH2_ALLOWED_AUTHORIZED_PARTIES is required in prod");
+    }
+
+    @Test
+    void prodProfileRejectsMissingAuditSignatureSecret() {
+        MockEnvironment environment = environmentWithRuntimeDefaults();
+        environment.setActiveProfiles("prod");
+        environment.setProperty("app.environment", "prod");
+        environment.setProperty("app.security.oauth2.allowed-authorized-parties", "ecommerce-web");
+
+        assertThatThrownBy(() -> new DeploymentProfileGuard(environment).afterPropertiesSet())
+                .isInstanceOf(ApplicationContextException.class)
+                .hasMessageContaining("AUDIT_SIGNATURE_SECRET is required in prod");
+    }
+
+    @Test
+    void prodProfileRejectsBlankAuditSignatureSecret() {
+        MockEnvironment environment = environmentWithRuntimeDefaults();
+        environment.setActiveProfiles("prod");
+        environment.setProperty("app.environment", "prod");
+        environment.setProperty("app.security.oauth2.allowed-authorized-parties", "ecommerce-web");
+        environment.setProperty("app.audit.signature-secret", " ");
+
+        assertThatThrownBy(() -> new DeploymentProfileGuard(environment).afterPropertiesSet())
+                .isInstanceOf(ApplicationContextException.class)
+                .hasMessageContaining("AUDIT_SIGNATURE_SECRET is required in prod");
     }
 
     @Test

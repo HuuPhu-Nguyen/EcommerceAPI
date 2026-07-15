@@ -54,6 +54,9 @@ public class AuditEventRecord {
     @Column(nullable = false, length = 64)
     private String eventHash;
 
+    @Column(length = 64)
+    private String eventSignature;
+
     protected AuditEventRecord() {
     }
 
@@ -117,6 +120,11 @@ public class AuditEventRecord {
         this.eventHash = eventHash;
     }
 
+    public void applySeal(String previousHash, String eventHash, String eventSignature) {
+        applyHash(previousHash, eventHash);
+        this.eventSignature = eventSignature;
+    }
+
     public Long getId() {
         return id;
     }
@@ -167,5 +175,9 @@ public class AuditEventRecord {
 
     public String getEventHash() {
         return eventHash;
+    }
+
+    public String getEventSignature() {
+        return eventSignature;
     }
 }

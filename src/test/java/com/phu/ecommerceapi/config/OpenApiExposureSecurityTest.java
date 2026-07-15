@@ -80,6 +80,7 @@ class OpenApiExposureSecurityTest {
                         "OAUTH2_REQUIRED_AUDIENCE=ecommerce-api",
                         "OAUTH2_RESOURCE_CLIENT_ID=ecommerce-api",
                         "OAUTH2_ALLOWED_AUTHORIZED_PARTIES=ecommerce-web",
+                        "AUDIT_SIGNATURE_SECRET=prod-audit-signature-secret",
                         "OAUTH2_ISSUER_URI=http://localhost/realms/test"
                 )
                 .run(context -> {

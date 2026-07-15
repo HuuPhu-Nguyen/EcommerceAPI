@@ -44,7 +44,8 @@ public class JpaAuditEventRecorder implements AuditEventRecorder {
             // This singleton row lock is the intentional serialization point for the linear audit hash chain.
             String previousHash = chainState.getLatestHash();
             String eventHash = auditHashService.hash(event.toHashPayload(previousHash));
-            event.applyHash(previousHash, eventHash);
+            String eventSignature = auditHashService.sign(eventHash);
+            event.applySeal(previousHash, eventHash, eventSignature);
             auditEventRepository.save(event);
             chainState.markLatestHash(eventHash, now);
             businessMetrics.auditWrite(action(command), "success");

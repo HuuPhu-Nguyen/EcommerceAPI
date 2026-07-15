@@ -11,7 +11,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class AuditHashChainBackfillServiceTest {
 
-    private final AuditHashService hashService = new AuditHashService();
+    private final AuditHashService hashService = new AuditHashService("test-audit-signature-secret");
 
     @Test
     void backfillAppliesHashesInIdOrderAcrossPages() {
@@ -54,6 +54,7 @@ class AuditHashChainBackfillServiceTest {
                 "127.0.0.1",
                 "test-agent",
                 Instant.parse("2026-07-06T08:00:00Z").plusSeconds(id),
+                null,
                 null,
                 null
         );

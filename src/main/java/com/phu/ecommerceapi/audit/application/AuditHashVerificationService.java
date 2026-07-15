@@ -62,6 +62,21 @@ public class AuditHashVerificationService {
                             "Audit event hash mismatch"
                     );
                 }
+                if (event.eventSignature() != null && event.eventSignature().isBlank()) {
+                    return AuditHashVerificationResult.broken(
+                            checkedEvents,
+                            event.id(),
+                            "Audit event signature is blank"
+                    );
+                }
+                if (event.eventSignature() != null
+                        && !auditHashService.signatureMatches(event.eventHash(), event.eventSignature())) {
+                    return AuditHashVerificationResult.broken(
+                            checkedEvents,
+                            event.id(),
+                            "Audit event signature mismatch"
+                    );
+                }
                 expectedPreviousHash = event.eventHash();
             }
             afterIdExclusive = events.getLast().id();

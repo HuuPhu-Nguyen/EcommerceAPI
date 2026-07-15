@@ -45,7 +45,8 @@ public class AuditEventQueryService {
                 event.userAgent(),
                 event.createdAt(),
                 event.previousHash(),
-                event.eventHash()
+                event.eventHash(),
+                event.eventSignature()
         );
     }
 

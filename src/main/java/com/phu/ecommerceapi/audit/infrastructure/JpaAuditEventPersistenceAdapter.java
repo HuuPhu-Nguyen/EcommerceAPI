@@ -79,7 +79,8 @@ public class JpaAuditEventPersistenceAdapter implements AuditEventPersistencePor
                 event.getUserAgent(),
                 event.getCreatedAt(),
                 event.getPreviousHash(),
-                event.getEventHash()
+                event.getEventHash(),
+                event.getEventSignature()
         );
     }
 }

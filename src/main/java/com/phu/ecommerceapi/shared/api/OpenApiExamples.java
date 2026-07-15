@@ -180,7 +180,8 @@ public final class OpenApiExamples {
                 "userAgent": "curl/8.0",
                 "createdAt": "2026-07-07T15:30:02Z",
                 "previousHash": "5d41402abc4b2a76b9719d911017c592",
-                "eventHash": "7d793037a0760186574b0282f2f435e7"
+                "eventHash": "7d793037a0760186574b0282f2f435e7",
+                "eventSignature": "13f54fd31c6aeb6c5dcf4f0d9e0843dbb0de8df1e5c888e13d477ff4c6a72936"
               }
             ]
             """;
