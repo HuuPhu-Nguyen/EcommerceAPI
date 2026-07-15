@@ -22,14 +22,12 @@ public interface UserRepo extends JpaRepository<UserModel, Long> {
                         username,
                         email,
                         first_name,
-                        last_name,
-                        password
+                        last_name
                     )
                     VALUES (
                         :identitySubject,
                         :username,
                         :email,
-                        NULL,
                         NULL,
                         NULL
                     )

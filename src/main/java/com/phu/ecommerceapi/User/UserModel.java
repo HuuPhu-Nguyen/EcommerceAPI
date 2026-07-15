@@ -22,7 +22,6 @@ public class UserModel {
     private long id;
     private String identitySubject;
     private String username;
-    private String password;
     private String firstName;
     private String lastName;
     private String email;
@@ -49,10 +48,6 @@ public class UserModel {
 
     public String getUsername() {
         return username;
-    }
-
-    public String getPassword() {
-        return password;
     }
 
     public String getFirstName() {

@@ -164,7 +164,6 @@ class CustomerProfileBoundaryTest {
         assertThat(user).isNotNull();
         assertThat(user.getUsername()).isEqualTo("new-customer@example.com");
         assertThat(user.getEmail()).isEqualTo("new-customer@example.com");
-        assertThat(user.getPassword()).isNull();
         assertThat(user.getFirstName()).isNull();
         assertThat(user.getLastName()).isNull();
     }
@@ -221,7 +220,6 @@ class CustomerProfileBoundaryTest {
         UserModel user = UserModel.builder()
                 .username(USERNAME)
                 .identitySubject("identity-subject-1")
-                .password("encoded-password")
                 .firstName("Profile")
                 .lastName("Customer")
                 .email(USERNAME)
@@ -236,7 +234,6 @@ class CustomerProfileBoundaryTest {
             userRepo.save(UserModel.builder()
                     .username("profile-customer-%03d@example.com".formatted(index))
                     .identitySubject("identity-subject-%03d".formatted(index))
-                    .password("encoded-password")
                     .firstName("Profile")
                     .lastName("Customer")
                     .email("profile-customer-%03d@example.com".formatted(index))

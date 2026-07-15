@@ -240,6 +240,8 @@ Verification commands:
 
 ### P0-06: Remove unused password storage from the customer model
 
+Status: Completed on 2026-07-15.
+
 Problem: authentication is delegated to OAuth2/Keycloak, but `UserModel` and the initial schema still contain a `password` field/column.
 
 Files to change:
