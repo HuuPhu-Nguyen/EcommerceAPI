@@ -11,8 +11,10 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -55,7 +57,7 @@ class ProductCatalogBoundaryTest {
         mockMvc.perform(get("/products")
                         .param("page", "0")
                         .param("size", "10")
-                        .with(jwt()))
+                        .with(productReadJwt()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content.length()").value(1))
                 .andExpect(jsonPath("$.content[0].name").value("Active Keyboard"))
@@ -77,7 +79,7 @@ class ProductCatalogBoundaryTest {
                         .param("search", "phone")
                         .param("page", "0")
                         .param("size", "10")
-                        .with(jwt()))
+                        .with(productReadJwt()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content.length()").value(1))
                 .andExpect(jsonPath("$.content[0].name").value("Alpha Phone"))
@@ -92,7 +94,7 @@ class ProductCatalogBoundaryTest {
         mockMvc.perform(get("/products")
                         .param("page", "0")
                         .param("size", "1")
-                        .with(jwt()))
+                        .with(productReadJwt()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content.length()").value(1))
                 .andExpect(jsonPath("$.page").value(0))
@@ -106,7 +108,7 @@ class ProductCatalogBoundaryTest {
         ProductModel inactiveProduct = productRepo.save(product("Inactive Product", false));
 
         mockMvc.perform(get("/products/{id}", inactiveProduct.getProductId())
-                        .with(jwt()))
+                        .with(productReadJwt()))
                 .andExpect(status().isNotFound());
     }
 
@@ -120,9 +122,13 @@ class ProductCatalogBoundaryTest {
                 .build());
         inventoryRepository.save(new InventoryRecord(product.getProductId(), 2, 7));
 
-        mockMvc.perform(get("/products/{id}", product.getProductId()).with(jwt()))
+        mockMvc.perform(get("/products/{id}", product.getProductId()).with(productReadJwt()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.stock").value(2));
+    }
+
+    private RequestPostProcessor productReadJwt() {
+        return jwt().authorities(new SimpleGrantedAuthority("SCOPE_product:read"));
     }
 
     private ProductModel product(String name, boolean active) {

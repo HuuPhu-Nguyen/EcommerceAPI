@@ -4,6 +4,7 @@ import com.phu.ecommerceapi.User.UserModel;
 import com.phu.ecommerceapi.User.UserRepo;
 import com.phu.ecommerceapi.cart.infrastructure.CartModel;
 import com.phu.ecommerceapi.cart.infrastructure.CartRepo;
+import com.phu.ecommerceapi.inventory.application.StockEventBroadcaster;
 import com.phu.ecommerceapi.inventory.infrastructure.InventoryRepository;
 import com.phu.ecommerceapi.Product.ProductRepo;
 import org.junit.jupiter.api.AfterEach;
@@ -47,8 +48,12 @@ class SecurityAuthorizationIntegrationTest {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    @Autowired
+    private StockEventBroadcaster stockEventBroadcaster;
+
     @AfterEach
     void cleanUpData() {
+        stockEventBroadcaster.completeAll();
         clearAuditEvents(jdbcTemplate);
         cartRepo.deleteAll();
         inventoryRepository.deleteAll();
@@ -77,6 +82,12 @@ class SecurityAuthorizationIntegrationTest {
 
         mockMvc.perform(get("/ledger/transactions"))
                 .andExpect(status().isUnauthorized());
+
+        mockMvc.perform(get("/products"))
+                .andExpect(status().isUnauthorized());
+
+        mockMvc.perform(get("/products/{productId}/stock/stream", 1L))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -88,6 +99,14 @@ class SecurityAuthorizationIntegrationTest {
         mockMvc.perform(get("/customer/profile/me")
                         .with(jwtWith("profile-subject", scope("profile:read"))))
                 .andExpect(status().isForbidden());
+
+        mockMvc.perform(post("/customer/profile/me")
+                        .with(jwtWith("profile-subject", role("CUSTOMER"), scope("profile:read"))))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(post("/customer/profile/me")
+                        .with(jwtWith("profile-write-subject", role("CUSTOMER"), scope("profile:write"))))
+                .andExpect(status().isOk());
 
         mockMvc.perform(post("/cart")
                         .with(jwtWith("cart-subject", role("CUSTOMER"))))
@@ -149,8 +168,50 @@ class SecurityAuthorizationIntegrationTest {
                         .with(jwtWith("auditor-subject", role("AUDITOR"), scope("audit:read"))))
                 .andExpect(status().isOk());
 
+        mockMvc.perform(get("/reconciliation/report")
+                        .with(jwtWith("auditor-subject", role("AUDITOR"), scope("audit:read"))))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/reconciliation/runs")
+                        .with(jwtWith("auditor-subject", role("AUDITOR"), scope("audit:read"))))
+                .andExpect(status().isForbidden());
+
         mockMvc.perform(post("/reconciliation/runs")
                         .with(jwtWith("admin-subject", role("ADMIN"), scope("audit:read"))))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(post("/reconciliation/runs")
+                        .with(jwtWith("admin-subject", role("ADMIN"), scope("reconciliation:run"))))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void productReadEndpointsRequireProductReadScope() throws Exception {
+        mockMvc.perform(get("/products")
+                        .with(jwtWith("product-subject", role("CUSTOMER"))))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(get("/products")
+                        .with(jwtWith("product-subject", scope("product:write"))))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(get("/products")
+                        .with(jwtWith("product-subject", scope("product:read"))))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/products/{id}", -1)
+                        .with(jwtWith("product-subject", scope("product:write"))))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void stockStreamRequiresStockStreamScope() throws Exception {
+        mockMvc.perform(get("/products/{productId}/stock/stream", 1L)
+                        .with(jwtWith("stock-subject", scope("product:read"))))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(get("/products/{productId}/stock/stream", 1L)
+                        .with(jwtWith("stock-subject", scope("stock:stream"))))
                 .andExpect(status().isOk());
     }
 

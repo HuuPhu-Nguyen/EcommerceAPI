@@ -8,6 +8,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -41,8 +42,16 @@ class StockEventStreamControllerTest {
     }
 
     @Test
-    void authenticatedUserCanOpenStockStream() throws Exception {
-        mockMvc.perform(get("/products/{productId}/stock/stream", 10L).with(jwt()))
+    void authenticatedUserWithoutStockStreamScopeCannotOpenStockStream() throws Exception {
+        mockMvc.perform(get("/products/{productId}/stock/stream", 10L)
+                        .with(jwt().authorities(new SimpleGrantedAuthority("SCOPE_product:read"))))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void stockStreamScopeCanOpenStockStream() throws Exception {
+        mockMvc.perform(get("/products/{productId}/stock/stream", 10L)
+                        .with(jwt().authorities(new SimpleGrantedAuthority("SCOPE_stock:stream"))))
                 .andExpect(status().isOk())
                 .andExpect(request().asyncStarted())
                 .andExpect(header().string(HttpHeaders.CONTENT_TYPE, startsWith(MediaType.TEXT_EVENT_STREAM_VALUE)));

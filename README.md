@@ -286,15 +286,17 @@ function Get-DemoToken($username, $password) {
 }
 
 $customerToken = Get-DemoToken "customer@example.com" "customer-password"
+$adminToken = Get-DemoToken "admin@example.com" "admin-password"
 $auditorToken = Get-DemoToken "auditor@example.com" "auditor-password"
 
 $customerHeaders = @{ Authorization = "Bearer $customerToken" }
+$adminHeaders = @{ Authorization = "Bearer $adminToken" }
 $auditorHeaders = @{ Authorization = "Bearer $auditorToken" }
 
 $profile = Invoke-RestMethod -Method Post -Uri "$base/customer/profile/me" -Headers $customerHeaders
 $profile
 
-$products = Invoke-RestMethod -Method Get -Uri "$base/products"
+$products = Invoke-RestMethod -Method Get -Uri "$base/products" -Headers $customerHeaders
 $products.content
 
 $cart = Invoke-RestMethod -Method Post -Uri "$base/cart" -Headers $customerHeaders
@@ -353,7 +355,7 @@ $refund = Invoke-RestMethod `
 $ledger = Invoke-RestMethod -Method Get -Uri "$base/ledger/transactions?limit=10" -Headers $auditorHeaders
 $audit = Invoke-RestMethod -Method Get -Uri "$base/audit/events?limit=10" -Headers $auditorHeaders
 $auditVerification = Invoke-RestMethod -Method Get -Uri "$base/audit/events/verification" -Headers $auditorHeaders
-$reconciliation = Invoke-RestMethod -Method Post -Uri "$base/reconciliation/runs" -Headers $auditorHeaders
+$reconciliation = Invoke-RestMethod -Method Post -Uri "$base/reconciliation/runs" -Headers $adminHeaders
 
 $payment
 $paymentReplay

@@ -4,6 +4,12 @@ public final class SecurityExpressions {
 
     public static final String CUSTOMER_PROFILE_READ =
             "hasRole('CUSTOMER') and hasAuthority('SCOPE_profile:read')";
+    public static final String CUSTOMER_PROFILE_WRITE =
+            "hasRole('CUSTOMER') and hasAuthority('SCOPE_profile:write')";
+    public static final String PRODUCT_READ =
+            "hasAuthority('SCOPE_product:read')";
+    public static final String STOCK_STREAM =
+            "hasAuthority('SCOPE_stock:stream')";
     public static final String CUSTOMER_CART_READ =
             "hasRole('CUSTOMER') and hasAuthority('SCOPE_cart:read')";
     public static final String CUSTOMER_CART_WRITE =
@@ -24,6 +30,8 @@ public final class SecurityExpressions {
             "hasAnyRole('ADMIN', 'AUDITOR') and hasAuthority('SCOPE_ledger:read')";
     public static final String ADMIN_OR_AUDITOR_RECONCILIATION_READ =
             "hasAnyRole('ADMIN', 'AUDITOR') and hasAuthority('SCOPE_audit:read')";
+    public static final String ADMIN_RECONCILIATION_RUN =
+            "hasRole('ADMIN') and hasAuthority('SCOPE_reconciliation:run')";
 
     private SecurityExpressions() {
     }

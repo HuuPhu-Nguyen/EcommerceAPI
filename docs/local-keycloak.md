@@ -55,7 +55,7 @@ Invoke-RestMethod `
   -Headers @{ Authorization = "Bearer $accessToken" }
 ```
 
-Admin and auditor users can call review endpoints such as `/admin/customer-profiles`, `/ledger/transactions`, `/audit/events`, `/reconciliation/report`, and `/reconciliation/runs` when their token contains the matching role and scope.
+Admin and auditor users can call review endpoints such as `/admin/customer-profiles`, `/ledger/transactions`, `/audit/events`, and `/reconciliation/report` when their token contains the matching role and scope. Starting `/reconciliation/runs` requires an admin token with `reconciliation:run`.
 
 ## Token Validation Settings
 
@@ -72,12 +72,16 @@ Both are configured so the API validates the token issuer while avoiding a hard 
 The realm import also includes local API scopes used by method security:
 
 - `profile:read`
+- `profile:write`
+- `product:read`
 - `cart:read`
 - `cart:write`
 - `checkout:write`
 - `payment:create`
 - `payment:refund`
+- `stock:stream`
 - `audit:read`
 - `ledger:read`
 - `product:write`
+- `reconciliation:run`
 - `user:read`

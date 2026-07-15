@@ -136,6 +136,18 @@ class CustomerProfileBoundaryTest {
     }
 
     @Test
+    void profileProvisioningRejectsReadOnlyProfileScope() throws Exception {
+        mockMvc.perform(post("/customer/profile/me")
+                        .with(jwt()
+                                .jwt(jwt -> jwt.subject("read-only-profile-subject"))
+                                .authorities(
+                                        new SimpleGrantedAuthority("ROLE_CUSTOMER"),
+                                        new SimpleGrantedAuthority("SCOPE_profile:read")
+                                )))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
     void profileProvisioningCreatesSafeProfileFromAuthenticatedSubject() throws Exception {
         mockMvc.perform(post("/customer/profile/me")
                         .with(customerJwt("provision-subject-1", "new-customer@example.com")))
@@ -250,7 +262,8 @@ class CustomerProfileBoundaryTest {
                         .claim("email", username))
                 .authorities(
                         new SimpleGrantedAuthority("ROLE_CUSTOMER"),
-                        new SimpleGrantedAuthority("SCOPE_profile:read")
+                        new SimpleGrantedAuthority("SCOPE_profile:read"),
+                        new SimpleGrantedAuthority("SCOPE_profile:write")
                 );
     }
 }

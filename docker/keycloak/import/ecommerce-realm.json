@@ -72,14 +72,18 @@
         "acr",
         "profile",
         "profile:read",
+        "profile:write",
+        "product:read",
         "cart:read",
         "cart:write",
         "checkout:write",
         "payment:create",
         "payment:refund",
+        "stock:stream",
         "audit:read",
         "ledger:read",
         "product:write",
+        "reconciliation:run",
         "user:read",
         "roles",
         "email"
@@ -131,6 +135,22 @@
       }
     },
     {
+      "name": "profile:write",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "product:read",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
       "name": "cart:read",
       "protocol": "openid-connect",
       "attributes": {
@@ -171,6 +191,14 @@
       }
     },
     {
+      "name": "stock:stream",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
       "name": "audit:read",
       "protocol": "openid-connect",
       "attributes": {
@@ -188,6 +216,14 @@
     },
     {
       "name": "product:write",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "reconciliation:run",
       "protocol": "openid-connect",
       "attributes": {
         "include.in.token.scope": "true",

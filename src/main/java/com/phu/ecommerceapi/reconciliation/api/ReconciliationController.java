@@ -70,7 +70,7 @@ public class ReconciliationController {
     }
 
     @PostMapping("/runs")
-    @PreAuthorize(SecurityExpressions.ADMIN_OR_AUDITOR_RECONCILIATION_READ)
+    @PreAuthorize(SecurityExpressions.ADMIN_RECONCILIATION_RUN)
     @Operation(
             summary = "Start reconciliation run",
             description = "Runs bounded reconciliation synchronously for local and demo use, then stores and returns the report."
@@ -96,7 +96,7 @@ public class ReconciliationController {
             ),
             @ApiResponse(
                     responseCode = "403",
-                    description = "Admin or auditor role with audit read scope is required.",
+                    description = "Admin role with reconciliation run scope is required.",
                     content = @Content(
                             mediaType = MediaType.APPLICATION_JSON_VALUE,
                             schema = @Schema(implementation = ProblemDetail.class),

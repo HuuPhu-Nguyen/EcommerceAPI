@@ -82,7 +82,8 @@ class SecurityConfigTest {
 
     @Test
     void protectedEndpointAcceptsJwtAuthenticationAndReachesController() throws Exception {
-        mockMvc.perform(get("/products/{id}", -1).with(jwt()))
+        mockMvc.perform(get("/products/{id}", -1).with(jwt()
+                        .authorities(new SimpleGrantedAuthority("SCOPE_product:read"))))
                 .andExpect(status().isNotFound());
     }
 

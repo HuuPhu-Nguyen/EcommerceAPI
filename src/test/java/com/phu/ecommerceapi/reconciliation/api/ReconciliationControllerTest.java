@@ -73,7 +73,15 @@ class ReconciliationControllerTest {
     }
 
     @Test
-    void auditorCanStartReconciliationRun() throws Exception {
+    void auditorCannotStartReconciliationRun() throws Exception {
+        mockMvc.perform(post("/reconciliation/runs").with(auditorJwt()))
+                .andExpect(status().isForbidden());
+
+        verify(reconciliationService, never()).runReport();
+    }
+
+    @Test
+    void adminWithRunScopeCanStartReconciliationRun() throws Exception {
         ReconciliationReport report = new ReconciliationReport(
                 true,
                 Instant.parse("2026-07-06T08:00:00Z"),
@@ -86,7 +94,7 @@ class ReconciliationControllerTest {
         );
         when(reconciliationService.runReport()).thenReturn(report);
 
-        mockMvc.perform(post("/reconciliation/runs").with(auditorJwt()))
+        mockMvc.perform(post("/reconciliation/runs").with(adminRunJwt()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.healthy").value(true))
                 .andExpect(jsonPath("$.checkedPayments").value(1))
@@ -104,7 +112,7 @@ class ReconciliationControllerTest {
         String detail = "Reconciliation run is already active: runId=" + activeRunId;
         when(reconciliationService.runReport()).thenThrow(new ConflictException(detail));
 
-        mockMvc.perform(post("/reconciliation/runs").with(auditorJwt()))
+        mockMvc.perform(post("/reconciliation/runs").with(adminRunJwt()))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("CONFLICT"))
                 .andExpect(jsonPath("$.detail").value(detail));
@@ -126,6 +134,15 @@ class ReconciliationControllerTest {
                 .authorities(
                         new SimpleGrantedAuthority("ROLE_AUDITOR"),
                         new SimpleGrantedAuthority("SCOPE_audit:read")
+                );
+    }
+
+    private RequestPostProcessor adminRunJwt() {
+        return jwt()
+                .jwt(jwt -> jwt.subject("admin-subject"))
+                .authorities(
+                        new SimpleGrantedAuthority("ROLE_ADMIN"),
+                        new SimpleGrantedAuthority("SCOPE_reconciliation:run")
                 );
     }
 

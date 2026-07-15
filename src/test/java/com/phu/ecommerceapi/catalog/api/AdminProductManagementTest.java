@@ -182,7 +182,8 @@ class AdminProductManagementTest {
         assertThat(inventory.getReservedQuantity()).isEqualTo(2);
         assertThat(productRepo.findById(product.getProductId()).orElseThrow().getStock()).isEqualTo(9);
 
-        mockMvc.perform(get("/products/{id}", product.getProductId()).with(jwt()))
+        mockMvc.perform(get("/products/{id}", product.getProductId()).with(jwt()
+                        .authorities(new SimpleGrantedAuthority("SCOPE_product:read"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.stock").value(inventory.getAvailableQuantity()));
 

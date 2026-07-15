@@ -190,6 +190,8 @@ Verification commands:
 
 ### P0-05: Fix least-privilege authorization gaps
 
+Status: Completed on 2026-07-15.
+
 Problem: some write or operational endpoints use read scopes, and product/stock read endpoints rely on global authentication instead of explicit endpoint authorization.
 
 Files to change:

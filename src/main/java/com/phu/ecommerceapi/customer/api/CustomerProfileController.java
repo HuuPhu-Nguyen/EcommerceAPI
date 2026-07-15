@@ -31,7 +31,7 @@ public class CustomerProfileController {
     }
 
     @PostMapping("/customer/profile/me")
-    @PreAuthorize(SecurityExpressions.CUSTOMER_PROFILE_READ)
+    @PreAuthorize(SecurityExpressions.CUSTOMER_PROFILE_WRITE)
     public CustomerProfile provisionCurrentProfile(@AuthenticatedUser CurrentUser currentUser) {
         return customerProfileService.provisionCurrentProfile(currentUser);
     }
