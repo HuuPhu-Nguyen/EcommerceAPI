@@ -436,7 +436,7 @@ Accept: text/event-stream
 Authorization: Bearer <access-token>
 ```
 
-Stock events are written through the transactional outbox and then published to the in-memory SSE broadcaster. The processor claims due rows in one transaction, commits that claim, publishes outside the database transaction, and then marks the outbox row processed or failed in a second transaction. Abandoned `PROCESSING` rows time out and retry. Delivery is at least once, so any future non-advisory publisher must use the outbox event id as an idempotency key for external side effects.
+Stock events are written through the transactional outbox and then published to the in-memory SSE broadcaster. The processor claims due rows in one transaction, commits that claim, publishes outside the database transaction, and then marks the outbox row processed or failed in a second transaction. Abandoned `PROCESSING` rows time out and retry. SSE streams default to a five-minute timeout and are capped by `STOCK_STREAM_MAX_CONNECTIONS_PER_CLIENT` per product and authenticated subject, falling back to trusted client IP when no subject is available. Delivery is at least once, so any future non-advisory publisher must use the outbox event id as an idempotency key for external side effects.
 
 The stream is intentionally advisory. Checkout still revalidates and reserves stock atomically in PostgreSQL.
 
@@ -535,7 +535,7 @@ Important environment variables:
 - Stripe provider: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_API_VERSION`, `STRIPE_CONNECT_TIMEOUT_MS`, `STRIPE_READ_TIMEOUT_MS` when `stripe` is enabled
 - Payment idempotency recovery: `PAYMENT_IDEMPOTENCY_IN_PROGRESS_LEASE_SECONDS`
 - Abuse protection: `RATE_LIMIT_ENABLED`, `RATE_LIMIT_BACKEND`, `RATE_LIMIT_WINDOW_SECONDS`, `RATE_LIMIT_SENSITIVE_REQUESTS_PER_WINDOW`, `RATE_LIMIT_WEBHOOK_REQUESTS_PER_WINDOW`, `RATE_LIMIT_PROFILE_REQUESTS_PER_WINDOW`, `RATE_LIMIT_MAX_KEYS`, `REQUEST_MAX_JSON_BODY_BYTES`, `WEBHOOK_MAX_BODY_BYTES`
-- Operations: `APP_ENVIRONMENT`, `SHUTDOWN_TIMEOUT`, `LOG_STRUCTURED_FORMAT`, `OUTBOX_PROCESSING_ENABLED`, `AUDIT_HASH_VERIFICATION_BATCH_SIZE`, `RECONCILIATION_SCHEDULING_ENABLED`, `RECONCILIATION_BATCH_SIZE`, `RECONCILIATION_MAX_ISSUES_PER_RUN`
+- Operations: `APP_ENVIRONMENT`, `SHUTDOWN_TIMEOUT`, `LOG_STRUCTURED_FORMAT`, `OUTBOX_PROCESSING_ENABLED`, `AUDIT_HASH_VERIFICATION_BATCH_SIZE`, `RECONCILIATION_SCHEDULING_ENABLED`, `RECONCILIATION_BATCH_SIZE`, `RECONCILIATION_MAX_ISSUES_PER_RUN`, `STOCK_STREAM_MAX_CONNECTIONS_PER_CLIENT`, `STOCK_STREAM_TIMEOUT_SECONDS`
 
 No real card data, JWTs, private keys, or production secrets should be committed.
 

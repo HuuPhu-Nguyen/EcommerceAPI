@@ -329,6 +329,8 @@ Verification commands:
 
 ### P1-02: Harden stock SSE endpoint against connection abuse
 
+Status: Completed on 2026-07-15.
+
 Problem: `StockEventBroadcaster` keeps SSE connections in memory for 30 minutes and has no visible per-user/per-IP connection cap.
 
 Files to change:

@@ -2,6 +2,8 @@ package com.phu.ecommerceapi.inventory.api;
 
 import com.phu.ecommerceapi.inventory.application.StockEventBroadcaster;
 import com.phu.ecommerceapi.inventory.application.StockChangedSseEvent;
+import com.phu.ecommerceapi.identity.api.AuthenticatedUser;
+import com.phu.ecommerceapi.identity.application.CurrentUser;
 import com.phu.ecommerceapi.identity.application.SecurityExpressions;
 import com.phu.ecommerceapi.shared.api.OpenApiExamples;
 import io.swagger.v3.oas.annotations.Operation;
@@ -44,7 +46,10 @@ public class StockEventStreamController {
                     examples = @ExampleObject(value = OpenApiExamples.STOCK_EVENT_STREAM)
             )
     )
-    public SseEmitter streamStockChanges(@PathVariable long productId) {
-        return stockEventBroadcaster.subscribe(productId);
+    public SseEmitter streamStockChanges(
+            @PathVariable long productId,
+            @AuthenticatedUser CurrentUser currentUser
+    ) {
+        return stockEventBroadcaster.subscribe(productId, currentUser.subject());
     }
 }
