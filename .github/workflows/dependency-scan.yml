@@ -23,8 +23,30 @@ jobs:
           java-version: '21'
           cache: maven
 
+      - name: Cache OWASP Dependency-Check data
+        uses: actions/cache@v4
+        with:
+          path: ~/.dependency-check
+          key: dependency-check-${{ runner.os }}-${{ hashFiles('pom.xml') }}
+          restore-keys: |
+            dependency-check-${{ runner.os }}-
+
       - name: Run dependency scan
-        run: ./mvnw -B -ntp -Pdependency-scan -DskipTests "-Djacoco.skip=true" verify
+        id: dependency_check
+        continue-on-error: true
+        env:
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+        run: |
+          if [ -z "${NVD_API_KEY:-}" ]; then
+            mkdir -p target/dependency-check-report
+            printf '%s\n' \
+              'NVD_API_KEY is required for reproducible OWASP Dependency-Check runs.' \
+              'Configure the repository secret NVD_API_KEY, then re-run this workflow.' \
+              > target/dependency-check-report/NVD_API_KEY_REQUIRED.txt
+            echo "::error::NVD_API_KEY repository secret is required for reproducible OWASP Dependency-Check runs."
+            exit 1
+          fi
+          ./mvnw -B -ntp -Pdependency-scan -DskipTests "-Djacoco.skip=true" "-DnvdApiKey=${NVD_API_KEY}" verify
 
       - name: Upload dependency-check report
         if: always()
@@ -33,3 +55,7 @@ jobs:
           name: dependency-check-report
           path: target/dependency-check-report
           if-no-files-found: ignore
+
+      - name: Fail on dependency scan findings or scan failure
+        if: steps.dependency_check.outcome == 'failure'
+        run: exit 1

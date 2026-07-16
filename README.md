@@ -21,7 +21,7 @@ This is intentionally not a basic CRUD shop. The project uses an e-commerce chec
 - Reconciliation report for payments, refunds, ledger transactions, and orphan records.
 - Transactional outbox plus Server-Sent Events for advisory stock updates.
 - OpenAPI/Swagger documentation with realistic examples.
-- CI quality gates for compile, tests, architecture rules, Checkstyle, coverage, Docker build, secret scan, container scan, dependency review, and scheduled OWASP dependency scans.
+- Automation gates for compile, tests, architecture rules, Checkstyle, coverage, Docker build, secret scan, container scan, dependency review, and scheduled OWASP dependency scans.
 
 ## Architecture
 
@@ -517,7 +517,7 @@ Dependency safety:
 - Trivy scans the Docker image and uploads SARIF results.
 - Pull requests run GitHub dependency review and block high-severity vulnerable dependency changes.
 - Dependabot opens weekly Maven and GitHub Actions update PRs.
-- OWASP Dependency-Check runs in CI and on the weekly scheduled workflow, requires the `NVD_API_KEY` repository secret for reproducible NVD updates, uploads reports before failing the job, and fails on CVSS 7.0 or higher.
+- OWASP Dependency-Check runs in the dedicated scheduled/manual dependency scan workflow, requires the `NVD_API_KEY` repository secret for reproducible NVD updates, uploads reports before failing the job, and fails on CVSS 7.0 or higher.
 
 Local dependency scan:
 

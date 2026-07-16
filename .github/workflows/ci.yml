@@ -7,8 +7,6 @@ on:
   pull_request:
     branches:
       - main
-  schedule:
-    - cron: '0 9 * * 1'
   workflow_dispatch:
 
 permissions:
@@ -20,7 +18,6 @@ jobs:
   verify:
     name: Maven Verify
     runs-on: ubuntu-latest
-    if: github.event_name != 'schedule'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -56,57 +53,6 @@ jobs:
           path: target/site/jacoco
           if-no-files-found: ignore
 
-  dependency-scan:
-    name: OWASP Dependency Check
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '21'
-          cache: maven
-
-      - name: Cache OWASP Dependency-Check data
-        uses: actions/cache@v4
-        with:
-          path: ~/.dependency-check
-          key: dependency-check-${{ runner.os }}-${{ hashFiles('pom.xml') }}
-          restore-keys: |
-            dependency-check-${{ runner.os }}-
-
-      - name: Run OWASP Dependency-Check
-        id: dependency_check
-        continue-on-error: true
-        env:
-          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
-        run: |
-          if [ -z "${NVD_API_KEY:-}" ]; then
-            mkdir -p target/dependency-check-report
-            printf '%s\n' \
-              'NVD_API_KEY is required for reproducible OWASP Dependency-Check runs.' \
-              'Configure the repository secret NVD_API_KEY, then re-run this workflow.' \
-              > target/dependency-check-report/NVD_API_KEY_REQUIRED.txt
-            echo "::error::NVD_API_KEY repository secret is required for reproducible OWASP Dependency-Check runs."
-            exit 1
-          fi
-          ./mvnw -B -ntp -Pdependency-scan -DskipTests "-DnvdApiKey=${NVD_API_KEY}" verify
-
-      - name: Upload Dependency-Check reports
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: dependency-check-reports
-          path: target/dependency-check-report
-          if-no-files-found: ignore
-
-      - name: Fail on Dependency-Check findings or scan failure
-        if: steps.dependency_check.outcome == 'failure'
-        run: exit 1
-
   dependency-review:
     name: Dependency Review
     runs-on: ubuntu-latest
@@ -123,7 +69,6 @@ jobs:
   secret-scan:
     name: Gitleaks Secret Scan
     runs-on: ubuntu-latest
-    if: github.event_name != 'schedule'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -136,7 +81,6 @@ jobs:
   container-scan:
     name: Docker Build And Trivy Scan
     runs-on: ubuntu-latest
-    if: github.event_name != 'schedule'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
