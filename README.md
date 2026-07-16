@@ -21,7 +21,7 @@ This is intentionally not a basic CRUD shop. The project uses an e-commerce chec
 - Reconciliation report for payments, refunds, ledger transactions, and orphan records.
 - Transactional outbox plus Server-Sent Events for advisory stock updates.
 - OpenAPI/Swagger documentation with realistic examples.
-- Automation gates for compile, tests, architecture rules, Checkstyle, coverage, Docker build, secret scan, container scan, dependency review, and scheduled OWASP dependency scans.
+- Automation gates for compile, tests, architecture rules, Checkstyle, 80% line coverage, CodeQL SAST, CycloneDX SBOM generation, Docker build, secret scan, container scan, dependency review, and scheduled OWASP dependency scans.
 
 ## Architecture
 
@@ -507,12 +507,14 @@ The main quality gate:
 - Compiles with Java 21.
 - Runs unit, security, architecture, and Testcontainers-backed integration tests.
 - Enforces Checkstyle import/format hygiene.
-- Generates and checks JaCoCo coverage.
+- Generates and checks JaCoCo line coverage with an 80% minimum.
+- Generates a CycloneDX SBOM artifact.
 - Builds the production Docker image.
-- Uploads test and coverage reports.
+- Uploads test, coverage, and SBOM reports.
 
 Dependency safety:
 
+- CodeQL runs Java SAST on pushes and pull requests to `main`.
 - Gitleaks scans repository history for committed secrets.
 - Trivy scans the Docker image and uploads SARIF results.
 - Pull requests run GitHub dependency review and block high-severity vulnerable dependency changes.
