@@ -2,6 +2,8 @@
 
 This project uses Keycloak as the local OAuth2/OIDC issuer for the Spring Security resource server.
 
+This document is local/demo-only. The Compose service runs Keycloak with `start-dev`, imports a demo realm, and uses placeholder admin credentials so reviewers can exercise the API quickly. Do not copy this configuration into production; production identity infrastructure should be hardened, managed separately, and wired to the API through explicit OAuth2 environment variables.
+
 ## Start Services
 
 ```powershell
@@ -14,8 +16,8 @@ Keycloak is available at `http://localhost:8081`.
 
 Admin console:
 
-- Username: `admin`
-- Password: `admin`
+- Username: `admin` (local placeholder)
+- Password: `admin` (local placeholder)
 
 The imported realm is `ecommerce`.
 

@@ -1,3 +1,6 @@
+# Local/demo infrastructure only.
+# Do not use this Compose file as production deployment infrastructure:
+# it runs Keycloak in start-dev mode and uses placeholder local credentials.
 services:
   postgres:
     image: postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
@@ -21,6 +24,7 @@ services:
   keycloak:
     image: quay.io/keycloak/keycloak:26.6.4@sha256:0aae0de7fca85525f727d3354df17896092de8bb26ae4c12d89c77e5df8cbce4
     container_name: ecommerce-api-keycloak
+    # start-dev is intentionally local-only and must not be copied into production.
     command:
       - start-dev
       - --import-realm

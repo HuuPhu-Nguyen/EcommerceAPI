@@ -171,6 +171,8 @@ Prerequisites:
 
 Start infrastructure from a clean demo state:
 
+`compose.yaml` is local/demo infrastructure only. It starts PostgreSQL and Keycloak with placeholder credentials and Keycloak `start-dev` so reviewers can run the demo quickly. Do not use this Compose file for production deployment; production should run the built API image with platform-managed PostgreSQL, identity provider, networking, and secrets.
+
 ```powershell
 docker compose down -v
 docker compose up -d postgres keycloak
@@ -243,6 +245,8 @@ docker build -t ecommerce-api:local .
 ```
 
 Run the container with production configuration injected through environment variables or a secret manager. Do not bake secrets into the image or commit real `.env` files.
+
+Production deployment starts from the Docker image and explicit environment variables. It does not use `compose.yaml`, the local Keycloak `start-dev` service, or the demo database/admin passwords.
 
 ```powershell
 docker run --rm -p 8080:8080 `
@@ -554,7 +558,7 @@ The first OWASP scan may still need to bootstrap the vulnerability database, but
 
 ## Configuration
 
-Safe local defaults are documented in `.env.example`.
+Safe local defaults are documented in `.env.example`. That file is a placeholder template for local/demo use, not a production environment file. Replace every secret-like value through a secret manager or deployment platform before running the `prod` profile.
 
 Important environment variables:
 
