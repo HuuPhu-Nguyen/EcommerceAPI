@@ -7,6 +7,9 @@ import com.phu.ecommerceapi.cart.infrastructure.CartRepo;
 import com.phu.ecommerceapi.inventory.application.StockEventBroadcaster;
 import com.phu.ecommerceapi.inventory.infrastructure.InventoryRepository;
 import com.phu.ecommerceapi.Product.ProductRepo;
+import com.phu.ecommerceapi.reconciliation.infrastructure.ReconciliationIssueRecordRepository;
+import com.phu.ecommerceapi.reconciliation.infrastructure.ReconciliationRunRecord;
+import com.phu.ecommerceapi.reconciliation.infrastructure.ReconciliationRunRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,6 +21,9 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
+
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 
 import static com.phu.ecommerceapi.audit.AuditEventTestCleaner.clearAuditEvents;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
@@ -51,10 +57,18 @@ class SecurityAuthorizationIntegrationTest {
     @Autowired
     private StockEventBroadcaster stockEventBroadcaster;
 
+    @Autowired
+    private ReconciliationIssueRecordRepository reconciliationIssueRepository;
+
+    @Autowired
+    private ReconciliationRunRepository reconciliationRunRepository;
+
     @AfterEach
     void cleanUpData() {
         stockEventBroadcaster.completeAll();
         clearAuditEvents(jdbcTemplate);
+        reconciliationIssueRepository.deleteAll();
+        reconciliationRunRepository.deleteAll();
         cartRepo.deleteAll();
         inventoryRepository.deleteAll();
         productRepo.deleteAll();
@@ -168,6 +182,8 @@ class SecurityAuthorizationIntegrationTest {
                         .with(jwtWith("auditor-subject", role("AUDITOR"), scope("audit:read"))))
                 .andExpect(status().isOk());
 
+        saveCompletedReconciliationRun();
+
         mockMvc.perform(get("/reconciliation/report")
                         .with(jwtWith("auditor-subject", role("AUDITOR"), scope("audit:read"))))
                 .andExpect(status().isOk());
@@ -274,6 +290,14 @@ class SecurityAuthorizationIntegrationTest {
 
     private SimpleGrantedAuthority scope(String scope) {
         return new SimpleGrantedAuthority("SCOPE_" + scope);
+    }
+
+    private void saveCompletedReconciliationRun() {
+        Instant startedAt = Instant.now().minusSeconds(1).truncatedTo(ChronoUnit.MILLIS);
+        Instant completedAt = Instant.now().truncatedTo(ChronoUnit.MILLIS);
+        ReconciliationRunRecord run = ReconciliationRunRecord.running(startedAt);
+        run.complete(completedAt, true, 0, 0, 0, 0);
+        reconciliationRunRepository.save(run);
     }
 
     private String productJson(String name) {
