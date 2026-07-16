@@ -487,6 +487,28 @@ trivy image ecommerce-api:local
 
 The dependency scan needs a bootstrapped OWASP vulnerability database. The `gitleaks` and `trivy` commands require those CLIs locally; CI runs equivalent maintained GitHub Actions.
 
+## Pinned Container Images
+
+The Dockerfile and local Compose stack pin container images by digest instead of relying on mutable tags. The tag remains in each reference for readability, but Docker verifies the immutable `sha256` manifest digest.
+
+Refresh pinned digests only as an intentional maintenance change:
+
+```powershell
+docker buildx imagetools inspect eclipse-temurin:21-jdk-jammy
+docker buildx imagetools inspect eclipse-temurin:21-jre-jammy
+docker buildx imagetools inspect postgres:16-alpine
+docker buildx imagetools inspect quay.io/keycloak/keycloak:26.6.4
+```
+
+Update `Dockerfile` and `compose.yaml` with the new manifest digests, then run:
+
+```powershell
+docker build -t ecommerce-api:local .
+docker compose config
+```
+
+Digest updates must go through the normal CI path so the Docker build, Trivy image scan, and other security gates evaluate the refreshed images before they are trusted.
+
 Race-safety checklist covered by Phase 8 tests and the final review:
 
 - Concurrent payment attempts for one order result in one provider call.
