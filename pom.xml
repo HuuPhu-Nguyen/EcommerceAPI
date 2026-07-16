@@ -31,6 +31,7 @@
         <archunit.version>1.4.2</archunit.version>
         <checkstyle.version>10.26.1</checkstyle.version>
         <dependency-check-maven.version>12.1.0</dependency-check-maven.version>
+        <nvdApiKey></nvdApiKey>
         <jacoco-maven-plugin.version>0.8.13</jacoco-maven-plugin.version>
         <jacoco.minimum.line.coverage>0.20</jacoco.minimum.line.coverage>
         <lombok.version>1.18.38</lombok.version>
@@ -301,6 +302,30 @@
             <build>
                 <plugins>
                     <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-enforcer-plugin</artifactId>
+                        <version>${maven-enforcer-plugin.version}</version>
+                        <executions>
+                            <execution>
+                                <id>require-nvd-api-key-for-dependency-scan</id>
+                                <phase>validate</phase>
+                                <goals>
+                                    <goal>enforce</goal>
+                                </goals>
+                                <configuration>
+                                    <rules>
+                                        <requireProperty>
+                                            <property>nvdApiKey</property>
+                                            <regex>.+</regex>
+                                            <message>NVD_API_KEY is required for the dependency-scan profile. Pass -DnvdApiKey=&lt;key&gt; or set the GitHub Actions NVD_API_KEY secret.</message>
+                                            <regexMessage>NVD_API_KEY is required for reproducible OWASP Dependency-Check runs. Pass -DnvdApiKey=&lt;key&gt; or set the GitHub Actions NVD_API_KEY secret.</regexMessage>
+                                        </requireProperty>
+                                    </rules>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
                         <groupId>org.owasp</groupId>
                         <artifactId>dependency-check-maven</artifactId>
                         <version>${dependency-check-maven.version}</version>
@@ -308,6 +333,7 @@
                             <assemblyAnalyzerEnabled>false</assemblyAnalyzerEnabled>
                             <dataDirectory>${user.home}/.dependency-check</dataDirectory>
                             <failBuildOnCVSS>7.0</failBuildOnCVSS>
+                            <nvdApiKey>${nvdApiKey}</nvdApiKey>
                             <formats>
                                 <format>HTML</format>
                                 <format>JSON</format>

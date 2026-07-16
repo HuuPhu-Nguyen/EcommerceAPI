@@ -1,5 +1,6 @@
 package com.phu.ecommerceapi.config;
 
+import com.phu.ecommerceapi.shared.ratelimit.RateLimitBackendConfiguration;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -8,6 +9,7 @@ import org.springframework.boot.autoconfigure.security.oauth2.resource.OAuth2Res
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Import;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.core.env.Environment;
 import org.springframework.http.HttpMethod;
@@ -43,6 +45,7 @@ import java.util.Set;
         OAuth2ResourceServerSecurityProperties.class,
         OpenApiExposureProperties.class
 })
+@Import(RateLimitBackendConfiguration.class)
 public class SecurityConfig {
 
     private static final String[] OPEN_API_DOC_PATHS = {

@@ -165,7 +165,7 @@ Reconciliation runs are materialized. `POST /reconciliation/runs` starts a bound
 Prerequisites:
 
 - Java 21 or newer.
-- Docker Desktop.
+- Docker Desktop running. Testcontainers-backed tests require a reachable Docker daemon.
 - Git.
 - PowerShell examples below assume Windows; the same endpoints work from any HTTP client.
 
@@ -447,6 +447,8 @@ For multiple API instances, keep the outbox table and replace in-memory fan-out 
 Run the same gate CI uses:
 
 ```powershell
+docker version
+docker info
 .\mvnw.cmd verify
 ```
 
@@ -473,8 +475,11 @@ Focused examples:
 Full local verification for the Stripe/multi-provider phase:
 
 ```powershell
+docker version
+docker info
 .\mvnw.cmd -B -ntp verify
-.\mvnw.cmd -B -ntp -Pdependency-scan -DskipTests "-Djacoco.skip=true" verify
+if (-not $env:NVD_API_KEY) { throw "NVD_API_KEY is required for reproducible OWASP Dependency-Check runs." }
+.\mvnw.cmd -B -ntp -Pdependency-scan -DskipTests "-DnvdApiKey=$env:NVD_API_KEY" verify
 docker build -t ecommerce-api:local .
 gitleaks detect --source . --redact
 trivy image ecommerce-api:local
@@ -512,15 +517,16 @@ Dependency safety:
 - Trivy scans the Docker image and uploads SARIF results.
 - Pull requests run GitHub dependency review and block high-severity vulnerable dependency changes.
 - Dependabot opens weekly Maven and GitHub Actions update PRs.
-- A scheduled/manual OWASP Dependency-Check job generates HTML/JSON vulnerability reports and fails on CVSS 7.0 or higher.
+- OWASP Dependency-Check runs in CI and on the weekly scheduled workflow, requires the `NVD_API_KEY` repository secret for reproducible NVD updates, uploads reports before failing the job, and fails on CVSS 7.0 or higher.
 
 Local dependency scan:
 
 ```powershell
-.\mvnw.cmd -Pdependency-scan -DskipTests "-Djacoco.skip=true" verify
+if (-not $env:NVD_API_KEY) { throw "NVD_API_KEY is required for reproducible OWASP Dependency-Check runs." }
+.\mvnw.cmd -B -ntp -Pdependency-scan -DskipTests "-DnvdApiKey=$env:NVD_API_KEY" verify
 ```
 
-The first OWASP scan may take a while while its vulnerability database is bootstrapped.
+The first OWASP scan may still need to bootstrap the vulnerability database, but the build fails fast when the API key is missing instead of attempting an unauthenticated NVD update.
 
 ## Configuration
 

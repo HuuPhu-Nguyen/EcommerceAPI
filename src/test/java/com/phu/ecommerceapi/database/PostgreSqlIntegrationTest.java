@@ -38,7 +38,7 @@ class PostgreSqlIntegrationTest {
 
     @Test
     void flywayMigrationsCreateBankingCoreSchema() {
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("23");
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("26");
 
         assertThat(tableNames()).contains(
                 "user_model",
@@ -96,9 +96,10 @@ class PostgreSqlIntegrationTest {
         assertThat(indexNames("reconciliation_issue_record"))
                 .contains("idx_reconciliation_issue_record_run_id_id");
         assertThat(columnNames("audit_event"))
-                .contains("external_correlation_id");
+                .contains("external_correlation_id", "event_signature");
         assertThat(indexNames("audit_event"))
                 .contains("idx_audit_event_external_correlation_id");
+        assertThat(columnNames("user_model")).doesNotContain("password");
         assertThat(indexNames("user_model"))
                 .contains(
                         "ux_user_model_identity_subject",
