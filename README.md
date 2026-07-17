@@ -72,7 +72,7 @@ Relevant ADRs:
 
 Authentication uses standard Spring Security OAuth2 Resource Server JWT validation. Local development uses Keycloak from Docker Compose with a preloaded `ecommerce` realm. Tokens must be issued by the configured issuer, include the configured API audience, and come from an allowed authorized party such as the local `ecommerce-web` client. Production startup requires `OAUTH2_ALLOWED_AUTHORIZED_PARTIES` so JWT `azp` validation cannot be silently disabled.
 
-The detailed threat model is in [docs/threat-model.md](docs/threat-model.md).
+The detailed threat model is in [docs/threat-model.md](docs/threat-model.md). Required platform controls for a real production deployment are tracked in [docs/production-readiness-checklist.md](docs/production-readiness-checklist.md).
 
 Demo users:
 
@@ -247,6 +247,8 @@ docker build -t ecommerce-api:local .
 Run the container with production configuration injected through environment variables or a secret manager. Do not bake secrets into the image or commit real `.env` files.
 
 Production deployment starts from the Docker image and explicit environment variables. It does not use `compose.yaml`, the local Keycloak `start-dev` service, or the demo database/admin passwords.
+
+Before using the image in a real production environment, complete [the production readiness checklist](docs/production-readiness-checklist.md) for platform controls such as TLS termination, gateway/WAF rate limiting, SIEM integration, secret-manager wiring, database role separation, tested restores, incident response, key rotation, monitoring, and disaster recovery.
 
 ```powershell
 docker run --rm -p 8080:8080 `

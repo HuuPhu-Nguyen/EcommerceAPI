@@ -1,6 +1,6 @@
 # Final Portfolio Review
 
-Date: 2026-07-16
+Date: 2026-07-17
 
 Purpose: final readiness pass before sharing the project with a bank recruiter or using it in an interview.
 
@@ -10,7 +10,7 @@ The repository is ready to share as a banking-grade backend portfolio project, w
 
 The P0/P1 hardening queue is resolved: production profile selection fails closed, production JWT validation requires authorized-party binding, audit events are tamper-evident and externally sealed, least-privilege gaps were closed, unused password storage was removed, local rate limiting and SSE connection abuse controls were hardened, CI security gates are reproducible, CodeQL/SBOM/80% coverage gates are in place, and runtime container images are pinned by digest.
 
-The final review found no core portfolio blockers. The build gate passes, the security/race-condition pass found no high-risk defects, public docs point to the current API shape, and the main security/architecture risks are tested, hardened, or documented as deliberate tradeoffs. Remaining P2 work is documentation polish around local-only Compose/demo credentials and a production-readiness checklist; that does not change the core backend security and correctness result.
+The final review found no core portfolio blockers. The build gate passes, the security/race-condition pass found no high-risk defects, public docs point to the current API shape, and the main security/architecture risks are tested, hardened, or documented as deliberate tradeoffs. Production-only platform obligations are separated into the production readiness checklist and do not change the core backend security and correctness result.
 
 ## Checklist
 
@@ -25,7 +25,7 @@ The final review found no core portfolio blockers. The build gate passes, the se
 | No money path uses `double` or `float` | Pass | `rg "\b(double|float)\b" src\main\java src\test\java` found only architecture/test helpers and `OutboxMetrics` lag calculation. Money-sensitive packages are protected by architecture tests and use `Money`/`BigDecimal` with explicit currency. |
 | No obvious security shortcuts remain | Pass | OAuth2 Resource Server validation, role/scope checks, subject-based ownership, idempotency, audit hashing, constant-time fake-provider webhook secret checks, CodeQL, CycloneDX SBOM generation, pinned runtime image digests, and threat modeling are in place. Residual risks are documented in `docs/threat-model.md`. |
 | Race-condition pass | Pass | Cart mutation/checkout and payment/refund state transitions use transactional persistence methods with explicit root-row `for update` lock acquisition before graph fetching. Concurrency coverage includes inventory reservation, payment multi-attempt, checkout, refund, ledger, outbox, and admin stock-update flows. |
-| Repository looks intentional | Pass | README, ADRs, OpenAPI documentation, CI quality gates, threat model, local Keycloak docs, pinned-image refresh guidance, and final review evidence are present. |
+| Repository looks intentional | Pass | README, ADRs, OpenAPI documentation, CI quality gates, threat model, production readiness checklist, local Keycloak docs, pinned-image refresh guidance, and final review evidence are present. |
 
 ## Known Tradeoffs
 
@@ -34,7 +34,7 @@ The final review found no core portfolio blockers. The build gate passes, the se
 - SSE stock updates use in-memory fan-out. The README documents Redis Pub/Sub or Kafka as the multi-instance upgrade path.
 - The README clean demo command resets Docker volumes so Keycloak imports the current realm. That is appropriate for a clean demo but should be run intentionally.
 - Rate limiting is enforced in-process for the local/demo profile. A production multi-node deployment should put the same policy at the gateway/WAF layer or back it with a shared store such as Redis.
-- `compose.yaml` is local/demo infrastructure. It uses local service credentials and Keycloak `start-dev` for repeatable demos; production would need managed secrets, hardened identity infrastructure, deployment-specific network policy, and operational runbooks.
+- `compose.yaml` is local/demo infrastructure. It uses local service credentials and Keycloak `start-dev` for repeatable demos; production would need managed secrets, hardened identity infrastructure, deployment-specific network policy, operational runbooks, and completed evidence in `docs/production-readiness-checklist.md`.
 
 ## Verification Commands
 

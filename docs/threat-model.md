@@ -13,7 +13,7 @@ This threat model covers the banking-grade MVP slice:
 Out of scope for this portfolio version:
 
 - Real card processing and PCI storage. The API stores no raw card data.
-- Production network segmentation, WAF rules, SIEM integration, and cloud IAM.
+- Production platform controls such as network segmentation, WAF rules, SIEM integration, cloud IAM, backup operations, and disaster recovery. These are tracked as required deployment evidence in the [production readiness checklist](production-readiness-checklist.md).
 - Live regulated payment operations. Stripe support is sandbox-oriented for portfolio review.
 
 ## Assets
@@ -68,7 +68,7 @@ Out of scope for this portfolio version:
 - The in-memory SSE broadcaster has per-client connection caps but remains single-instance only. Multi-instance production deployment should use Redis Pub/Sub, Kafka, or another shared fan-out mechanism behind the existing outbox.
 - Customer profiles are provisioned from authenticated OAuth2 subjects; anonymous local password registration is not exposed, and the API stores no local password hashes.
 - Database append-only guarantees for ledger and audit records and HMAC-sealed audit hashes are demonstrated by migrations/tests, but production hardening should also restrict application database permissions and anchor audit evidence outside the primary database.
-- Token lifetime, refresh-token policy, TLS termination, centralized rate limiting, and abuse monitoring belong in deployment/platform configuration.
+- Token lifetime, refresh-token policy, TLS termination, centralized rate limiting, and abuse monitoring belong in deployment/platform configuration and must be evidenced through the [production readiness checklist](production-readiness-checklist.md).
 
 ## Reviewer Checklist
 
