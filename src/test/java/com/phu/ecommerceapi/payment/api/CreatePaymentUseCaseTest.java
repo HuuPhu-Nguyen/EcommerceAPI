@@ -539,7 +539,6 @@ class CreatePaymentUseCaseTest {
                 .name(name)
                 .price(new java.math.BigDecimal(price))
                 .currency(currency)
-                .stock(availableQuantity)
                 .active(true)
                 .build());
         inventoryRepository.save(new InventoryRecord(product.getProductId(), availableQuantity, 0));

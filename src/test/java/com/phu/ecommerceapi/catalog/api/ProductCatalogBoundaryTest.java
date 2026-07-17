@@ -51,8 +51,8 @@ class ProductCatalogBoundaryTest {
 
     @Test
     void catalogListReturnsPagedDtoWithoutPersistenceInternals() throws Exception {
-        productRepo.save(product("Active Keyboard", true));
-        productRepo.save(product("Inactive Monitor", false));
+        saveProductWithInventory("Active Keyboard", true, 5);
+        saveProductWithInventory("Inactive Monitor", false, 5);
 
         mockMvc.perform(get("/products")
                         .param("page", "0")
@@ -71,9 +71,9 @@ class ProductCatalogBoundaryTest {
 
     @Test
     void catalogSearchFiltersActiveProductsByName() throws Exception {
-        productRepo.save(product("Alpha Phone", true));
-        productRepo.save(product("Beta Chair", true));
-        productRepo.save(product("Inactive Phone Case", false));
+        saveProductWithInventory("Alpha Phone", true, 5);
+        saveProductWithInventory("Beta Chair", true, 5);
+        saveProductWithInventory("Inactive Phone Case", false, 5);
 
         mockMvc.perform(get("/products")
                         .param("search", "phone")
@@ -88,8 +88,8 @@ class ProductCatalogBoundaryTest {
 
     @Test
     void catalogPaginationReturnsMetadata() throws Exception {
-        productRepo.save(product("A Product", true));
-        productRepo.save(product("B Product", true));
+        saveProductWithInventory("A Product", true, 5);
+        saveProductWithInventory("B Product", true, 5);
 
         mockMvc.perform(get("/products")
                         .param("page", "0")
@@ -105,7 +105,7 @@ class ProductCatalogBoundaryTest {
 
     @Test
     void inactiveProductDetailIsHidden() throws Exception {
-        ProductModel inactiveProduct = productRepo.save(product("Inactive Product", false));
+        ProductModel inactiveProduct = saveProductWithInventory("Inactive Product", false, 5);
 
         mockMvc.perform(get("/products/{id}", inactiveProduct.getProductId())
                         .with(productReadJwt()))
@@ -117,7 +117,6 @@ class ProductCatalogBoundaryTest {
         ProductModel product = productRepo.save(ProductModel.builder()
                 .name("Inventory Backed Product")
                 .price(new java.math.BigDecimal("10.00"))
-                .stock(99)
                 .active(true)
                 .build());
         inventoryRepository.save(new InventoryRecord(product.getProductId(), 2, 7));
@@ -125,6 +124,14 @@ class ProductCatalogBoundaryTest {
         mockMvc.perform(get("/products/{id}", product.getProductId()).with(productReadJwt()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.stock").value(2));
+    }
+
+    @Test
+    void activeProductWithoutInventoryIsHiddenFromCatalog() throws Exception {
+        ProductModel product = productRepo.save(product("Missing Inventory Product", true));
+
+        mockMvc.perform(get("/products/{id}", product.getProductId()).with(productReadJwt()))
+                .andExpect(status().isNotFound());
     }
 
     private RequestPostProcessor productReadJwt() {
@@ -135,8 +142,13 @@ class ProductCatalogBoundaryTest {
         return ProductModel.builder()
                 .name(name)
                 .price(new java.math.BigDecimal("10.00"))
-                .stock(5)
                 .active(active)
                 .build();
+    }
+
+    private ProductModel saveProductWithInventory(String name, boolean active, int availableQuantity) {
+        ProductModel product = productRepo.save(product(name, active));
+        inventoryRepository.save(new InventoryRecord(product.getProductId(), availableQuantity, 0));
+        return product;
     }
 }

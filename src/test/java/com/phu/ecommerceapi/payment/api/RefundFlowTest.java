@@ -481,7 +481,6 @@ class RefundFlowTest {
         ProductModel product = productRepo.save(ProductModel.builder()
                 .name(name)
                 .price(new java.math.BigDecimal("10.00"))
-                .stock(availableQuantity)
                 .active(true)
                 .build());
         inventoryRepository.save(new InventoryRecord(product.getProductId(), availableQuantity, 0));

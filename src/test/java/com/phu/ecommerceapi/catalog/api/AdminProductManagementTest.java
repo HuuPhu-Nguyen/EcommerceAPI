@@ -98,7 +98,15 @@ class AdminProductManagementTest {
                 .andExpect(jsonPath("$.currency").value("USD"))
                 .andExpect(jsonPath("$.active").value(true));
 
-        assertThat(productRepo.findAll()).hasSize(1);
+        var products = productRepo.findAll();
+        assertThat(products).hasSize(1);
+        ProductModel product = products.getFirst();
+        assertThat(inventoryRepository.findById(product.getProductId()))
+                .get()
+                .satisfies(inventory -> {
+                    assertThat(inventory.getAvailableQuantity()).isEqualTo(8);
+                    assertThat(inventory.getReservedQuantity()).isZero();
+                });
         assertThat(auditEventRepository.findAll())
                 .singleElement()
                 .satisfies(event -> {
@@ -126,9 +134,9 @@ class AdminProductManagementTest {
         ProductModel product = productRepo.save(ProductModel.builder()
                 .name("Original Product")
                 .price(new java.math.BigDecimal("10.00"))
-                .stock(3)
                 .active(true)
                 .build());
+        inventoryRepository.save(new InventoryRecord(product.getProductId(), 3, 0));
 
         mockMvc.perform(put("/admin/products/{productId}", product.getProductId())
                         .contentType(MediaType.APPLICATION_JSON)
@@ -146,7 +154,6 @@ class AdminProductManagementTest {
 
         ProductModel savedProduct = productRepo.findById(product.getProductId()).orElseThrow();
         assertThat(savedProduct.getName()).isEqualTo("Updated Product");
-        assertThat(savedProduct.getStock()).isEqualTo(11);
         assertThat(savedProduct.isActive()).isFalse();
         assertThat(inventoryRepository.findById(product.getProductId()))
                 .get()
@@ -164,7 +171,6 @@ class AdminProductManagementTest {
         ProductModel product = productRepo.save(ProductModel.builder()
                 .name("Reserved Product")
                 .price(new java.math.BigDecimal("10.00"))
-                .stock(4)
                 .active(true)
                 .build());
         inventoryRepository.save(new InventoryRecord(product.getProductId(), 4, 2));
@@ -180,7 +186,6 @@ class AdminProductManagementTest {
         InventoryRecord inventory = inventoryRepository.findById(product.getProductId()).orElseThrow();
         assertThat(inventory.getAvailableQuantity()).isEqualTo(9);
         assertThat(inventory.getReservedQuantity()).isEqualTo(2);
-        assertThat(productRepo.findById(product.getProductId()).orElseThrow().getStock()).isEqualTo(9);
 
         mockMvc.perform(get("/products/{id}", product.getProductId()).with(jwt()
                         .authorities(new SimpleGrantedAuthority("SCOPE_product:read"))))

@@ -51,10 +51,10 @@ public interface ProductRepo extends JpaRepository<ProductModel, Long> {
                 product.name,
                 product.price,
                 product.currency,
-                coalesce(inventory.availableQuantity, product.stock)
+                inventory.availableQuantity
             )
             from ProductModel product
-            left join InventoryRecord inventory on inventory.productId = product.productId
+            join InventoryRecord inventory on inventory.productId = product.productId
             where product.productId = :productId
               and product.active = true
             """)
@@ -67,15 +67,16 @@ public interface ProductRepo extends JpaRepository<ProductModel, Long> {
                         product.name,
                         product.price,
                         product.currency,
-                        coalesce(inventory.availableQuantity, product.stock)
+                        inventory.availableQuantity
                     )
                     from ProductModel product
-                    left join InventoryRecord inventory on inventory.productId = product.productId
+                    join InventoryRecord inventory on inventory.productId = product.productId
                     where product.active = true
                     """,
             countQuery = """
                     select count(product)
                     from ProductModel product
+                    join InventoryRecord inventory on inventory.productId = product.productId
                     where product.active = true
                     """
     )
@@ -88,16 +89,17 @@ public interface ProductRepo extends JpaRepository<ProductModel, Long> {
                         product.name,
                         product.price,
                         product.currency,
-                        coalesce(inventory.availableQuantity, product.stock)
+                        inventory.availableQuantity
                     )
                     from ProductModel product
-                    left join InventoryRecord inventory on inventory.productId = product.productId
+                    join InventoryRecord inventory on inventory.productId = product.productId
                     where product.active = true
                       and lower(product.name) like lower(concat('%', :name, '%'))
                     """,
             countQuery = """
                     select count(product)
                     from ProductModel product
+                    join InventoryRecord inventory on inventory.productId = product.productId
                     where product.active = true
                       and lower(product.name) like lower(concat('%', :name, '%'))
                     """

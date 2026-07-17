@@ -111,7 +111,6 @@ class AdminInventoryStockUpdateConcurrencyTest {
         ProductModel product = productRepo.save(ProductModel.builder()
                 .name("Race Product")
                 .price(new BigDecimal("10.00"))
-                .stock(availableQuantity)
                 .active(true)
                 .build());
         inventoryRepository.save(new InventoryRecord(product.getProductId(), availableQuantity, reservedQuantity));

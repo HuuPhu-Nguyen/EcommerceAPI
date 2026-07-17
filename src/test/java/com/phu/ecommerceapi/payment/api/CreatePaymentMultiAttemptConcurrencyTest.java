@@ -717,7 +717,6 @@ class CreatePaymentMultiAttemptConcurrencyTest {
                 .name(name)
                 .price(new BigDecimal("10.00"))
                 .currency("USD")
-                .stock(availableQuantity)
                 .active(true)
                 .build());
         inventoryRepository.save(new InventoryRecord(product.getProductId(), availableQuantity, 0));

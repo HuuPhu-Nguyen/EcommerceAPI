@@ -43,8 +43,6 @@ public class ProductModel {
     @Column(nullable = false, length = 3)
     private String currency = "USD";
 
-    private int stock;
-
     @Builder.Default
     private boolean active = true;
 
@@ -97,14 +95,6 @@ public class ProductModel {
     public void setCurrency(String currency) {
         this.currency = normalizeCurrency(currency);
         this.price = Money.of(price == null ? BigDecimal.ZERO : price, this.currency).amount();
-    }
-
-    public int getStock() {
-        return stock;
-    }
-
-    public void setStock(int stock) {
-        this.stock = stock;
     }
 
     public boolean isActive() {

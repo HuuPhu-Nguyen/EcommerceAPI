@@ -38,7 +38,7 @@ class PostgreSqlIntegrationTest {
 
     @Test
     void flywayMigrationsCreateBankingCoreSchema() {
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("26");
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("27");
 
         assertThat(tableNames()).contains(
                 "user_model",
@@ -59,8 +59,8 @@ class PostgreSqlIntegrationTest {
         );
 
         assertThat(columnDataType("product_model", "price")).isEqualTo("numeric");
-        assertThat(columnDataType("product_model", "stock")).isEqualTo("integer");
         assertThat(columnDataType("product_model", "currency")).isEqualTo("character varying");
+        assertThat(columnNames("product_model")).doesNotContain("stock");
         assertThat(columnNames("payment_record"))
                 .contains("provider_code", "provider_idempotency_key");
         assertThat(columnNames("refund_record"))
@@ -115,12 +115,11 @@ class PostgreSqlIntegrationTest {
         Throwable thrown = catchThrowable(() -> transactionTemplate.executeWithoutResult(status -> {
             jdbcTemplate.update(
                     """
-                            INSERT INTO product_model (name, price, stock, active, currency)
-                            VALUES (?, ?, ?, ?, ?)
+                            INSERT INTO product_model (name, price, active, currency)
+                            VALUES (?, ?, ?, ?)
                             """,
                     ROLLBACK_PRODUCT_NAME,
                     new BigDecimal("19.99"),
-                    3,
                     true,
                     "USD"
             );

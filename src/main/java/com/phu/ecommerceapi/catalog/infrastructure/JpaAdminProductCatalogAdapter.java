@@ -22,7 +22,6 @@ public class JpaAdminProductCatalogAdapter implements AdminProductCatalogPort {
                 .name(command.name())
                 .price(command.price().amount())
                 .currency(command.price().currency().getCurrencyCode())
-                .stock(command.stock())
                 .active(command.activeOrDefault(true))
                 .build();
 
@@ -35,7 +34,6 @@ public class JpaAdminProductCatalogAdapter implements AdminProductCatalogPort {
                 .map(product -> {
                     product.setName(command.name());
                     product.setPrice(command.price());
-                    product.setStock(command.stock());
                     product.setActive(command.activeOrDefault(product.isActive()));
                     return toSnapshot(product);
                 });

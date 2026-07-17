@@ -41,7 +41,6 @@ class CustomerOrderRecordStateTest {
                 .name("Foreign currency item")
                 .price(new BigDecimal("10.00"))
                 .currency("EUR")
-                .stock(1)
                 .build();
 
         assertThatThrownBy(() -> order.addItem(product, 1, Money.of("10.00", "EUR")))

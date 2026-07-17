@@ -31,17 +31,15 @@ INSERT INTO product_model (
     product_id,
     name,
     price,
-    stock,
     active,
     currency
 )
 VALUES
-    (501, 'Hardware Security Key', 74.99, 12, true, 'USD'),
-    (502, 'Encrypted Backup Drive', 129.50, 8, true, 'USD')
+    (501, 'Hardware Security Key', 74.99, true, 'USD'),
+    (502, 'Encrypted Backup Drive', 129.50, true, 'USD')
 ON CONFLICT (product_id) DO UPDATE
 SET name = EXCLUDED.name,
     price = EXCLUDED.price,
-    stock = EXCLUDED.stock,
     active = EXCLUDED.active,
     currency = EXCLUDED.currency;
 
