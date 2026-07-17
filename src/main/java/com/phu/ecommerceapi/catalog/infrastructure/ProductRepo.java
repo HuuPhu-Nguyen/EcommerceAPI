@@ -1,4 +1,4 @@
-package com.phu.ecommerceapi.Product;
+package com.phu.ecommerceapi.catalog.infrastructure;
 
 import com.phu.ecommerceapi.catalog.application.CartProductSnapshot;
 import com.phu.ecommerceapi.catalog.application.ProductCatalogItem;

@@ -1,7 +1,7 @@
 package com.phu.ecommerceapi.cart.infrastructure;
 
-import com.phu.ecommerceapi.Product.ProductModel;
-import com.phu.ecommerceapi.User.UserModel;
+import com.phu.ecommerceapi.catalog.infrastructure.ProductModel;
+import com.phu.ecommerceapi.customer.infrastructure.UserModel;
 import com.phu.ecommerceapi.cart.application.CartItemSnapshot;
 import com.phu.ecommerceapi.catalog.application.CartProductSnapshot;
 import com.phu.ecommerceapi.customer.application.CustomerIdentity;

@@ -1,10 +1,10 @@
 package com.phu.ecommerceapi.cart.api;
 
 import com.jayway.jsonpath.JsonPath;
-import com.phu.ecommerceapi.Product.ProductModel;
-import com.phu.ecommerceapi.Product.ProductRepo;
-import com.phu.ecommerceapi.User.UserModel;
-import com.phu.ecommerceapi.User.UserRepo;
+import com.phu.ecommerceapi.catalog.infrastructure.ProductModel;
+import com.phu.ecommerceapi.catalog.infrastructure.ProductRepo;
+import com.phu.ecommerceapi.customer.infrastructure.UserModel;
+import com.phu.ecommerceapi.customer.infrastructure.UserRepo;
 import com.phu.ecommerceapi.cart.infrastructure.CartRepo;
 import com.phu.ecommerceapi.inventory.infrastructure.InventoryRecord;
 import com.phu.ecommerceapi.inventory.infrastructure.InventoryRepository;

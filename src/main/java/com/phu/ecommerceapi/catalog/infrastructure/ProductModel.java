@@ -1,4 +1,4 @@
-package com.phu.ecommerceapi.Product;
+package com.phu.ecommerceapi.catalog.infrastructure;
 
 import com.phu.ecommerceapi.cart.infrastructure.CartItemModel;
 import com.phu.ecommerceapi.shared.domain.Money;

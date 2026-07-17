@@ -1,6 +1,6 @@
 package com.phu.ecommerceapi.cart.infrastructure;
 
-import com.phu.ecommerceapi.Product.ProductModel;
+import com.phu.ecommerceapi.catalog.infrastructure.ProductModel;
 import com.phu.ecommerceapi.cart.application.CartItemSnapshot;
 import com.phu.ecommerceapi.shared.domain.Money;
 import com.phu.ecommerceapi.shared.domain.Quantity;

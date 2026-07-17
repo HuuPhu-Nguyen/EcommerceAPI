@@ -1,6 +1,6 @@
 package com.phu.ecommerceapi.order.infrastructure;
 
-import com.phu.ecommerceapi.User.UserModel;
+import com.phu.ecommerceapi.customer.infrastructure.UserModel;
 import com.phu.ecommerceapi.cart.application.CartCheckoutStatusPort;
 import com.phu.ecommerceapi.cart.application.CartItemSnapshot;
 import com.phu.ecommerceapi.cart.application.CartSnapshot;

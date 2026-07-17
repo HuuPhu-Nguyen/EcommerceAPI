@@ -1,12 +1,12 @@
 package com.phu.ecommerceapi.config;
 
-import com.phu.ecommerceapi.User.UserModel;
-import com.phu.ecommerceapi.User.UserRepo;
+import com.phu.ecommerceapi.customer.infrastructure.UserModel;
+import com.phu.ecommerceapi.customer.infrastructure.UserRepo;
 import com.phu.ecommerceapi.cart.infrastructure.CartModel;
 import com.phu.ecommerceapi.cart.infrastructure.CartRepo;
 import com.phu.ecommerceapi.inventory.application.StockEventBroadcaster;
 import com.phu.ecommerceapi.inventory.infrastructure.InventoryRepository;
-import com.phu.ecommerceapi.Product.ProductRepo;
+import com.phu.ecommerceapi.catalog.infrastructure.ProductRepo;
 import com.phu.ecommerceapi.reconciliation.infrastructure.ReconciliationIssueRecordRepository;
 import com.phu.ecommerceapi.reconciliation.infrastructure.ReconciliationRunRecord;
 import com.phu.ecommerceapi.reconciliation.infrastructure.ReconciliationRunRepository;

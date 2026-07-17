@@ -1,7 +1,7 @@
 package com.phu.ecommerceapi.order.infrastructure;
 
-import com.phu.ecommerceapi.Product.ProductModel;
-import com.phu.ecommerceapi.User.UserModel;
+import com.phu.ecommerceapi.catalog.infrastructure.ProductModel;
+import com.phu.ecommerceapi.customer.infrastructure.UserModel;
 import com.phu.ecommerceapi.cart.infrastructure.CartItemModel;
 import com.phu.ecommerceapi.cart.infrastructure.CartModel;
 import com.phu.ecommerceapi.order.domain.OrderStateMachine;

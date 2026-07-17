@@ -1,4 +1,4 @@
-package com.phu.ecommerceapi.User;
+package com.phu.ecommerceapi.customer.infrastructure;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;

@@ -2,8 +2,8 @@ package com.phu.ecommerceapi.inventory.application;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.phu.ecommerceapi.Product.ProductModel;
-import com.phu.ecommerceapi.Product.ProductRepo;
+import com.phu.ecommerceapi.catalog.infrastructure.ProductModel;
+import com.phu.ecommerceapi.catalog.infrastructure.ProductRepo;
 import com.phu.ecommerceapi.inventory.infrastructure.InventoryRepository;
 import com.phu.ecommerceapi.outbox.application.OutboxEventProcessor;
 import com.phu.ecommerceapi.outbox.infrastructure.OutboxEventRepository;

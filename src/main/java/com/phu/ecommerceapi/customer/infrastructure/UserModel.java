@@ -1,4 +1,4 @@
-package com.phu.ecommerceapi.User;
+package com.phu.ecommerceapi.customer.infrastructure;
 
 import com.phu.ecommerceapi.cart.infrastructure.CartModel;
 import jakarta.persistence.Entity;

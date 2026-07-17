@@ -1,6 +1,6 @@
 package com.phu.ecommerceapi.order.infrastructure;
 
-import com.phu.ecommerceapi.Product.ProductModel;
+import com.phu.ecommerceapi.catalog.infrastructure.ProductModel;
 import com.phu.ecommerceapi.shared.domain.Money;
 import com.phu.ecommerceapi.shared.domain.Quantity;
 import jakarta.persistence.Column;

@@ -1,6 +1,5 @@
 package com.phu.ecommerceapi.catalog.infrastructure;
 
-import com.phu.ecommerceapi.Product.ProductRepo;
 import com.phu.ecommerceapi.catalog.application.CartProductLookupPort;
 import com.phu.ecommerceapi.catalog.application.CartProductSnapshot;
 import org.springframework.stereotype.Component;

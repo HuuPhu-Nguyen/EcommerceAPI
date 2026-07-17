@@ -1,7 +1,7 @@
 package com.phu.ecommerceapi.catalog.api;
 
-import com.phu.ecommerceapi.Product.ProductModel;
-import com.phu.ecommerceapi.Product.ProductRepo;
+import com.phu.ecommerceapi.catalog.infrastructure.ProductModel;
+import com.phu.ecommerceapi.catalog.infrastructure.ProductRepo;
 import com.phu.ecommerceapi.cart.infrastructure.CartRepo;
 import com.phu.ecommerceapi.inventory.infrastructure.InventoryRecord;
 import com.phu.ecommerceapi.inventory.infrastructure.InventoryRepository;

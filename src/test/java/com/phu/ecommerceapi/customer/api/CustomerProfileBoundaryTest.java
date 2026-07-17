@@ -1,7 +1,7 @@
 package com.phu.ecommerceapi.customer.api;
 
-import com.phu.ecommerceapi.User.UserModel;
-import com.phu.ecommerceapi.User.UserRepo;
+import com.phu.ecommerceapi.customer.infrastructure.UserModel;
+import com.phu.ecommerceapi.customer.infrastructure.UserRepo;
 import com.phu.ecommerceapi.cart.infrastructure.CartRepo;
 import com.phu.ecommerceapi.order.infrastructure.CustomerOrderRepository;
 import org.junit.jupiter.api.BeforeEach;

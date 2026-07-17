@@ -1,6 +1,6 @@
 package com.phu.ecommerceapi.audit.api;
 
-import com.phu.ecommerceapi.Product.ProductRepo;
+import com.phu.ecommerceapi.catalog.infrastructure.ProductRepo;
 import com.phu.ecommerceapi.audit.application.AuditEventCommand;
 import com.phu.ecommerceapi.audit.application.AuditEventRecorder;
 import com.phu.ecommerceapi.audit.infrastructure.AuditEventRecord;

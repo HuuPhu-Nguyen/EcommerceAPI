@@ -13,7 +13,6 @@ import com.tngtech.archunit.lang.ConditionEvents;
 import com.tngtech.archunit.lang.SimpleConditionEvent;
 import jakarta.persistence.Entity;
 import org.junit.jupiter.api.Test;
-import org.springframework.context.annotation.Configuration;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -90,17 +89,14 @@ class ArchitectureTest {
     }
 
     @Test
-    void legacyPrototypePackagesMustNotExposeSpringPublicBoundaries() {
-        noClasses()
-                .that()
-                .resideInAnyPackage("..User..", "..Product..", "..Security..", "..Stripe..", "..CartItem..")
-                .should()
-                .beAnnotatedWith(RestController.class)
-                .orShould()
-                .beAnnotatedWith(Controller.class)
-                .orShould()
-                .beAnnotatedWith(Configuration.class)
-                .check(CLASSES);
+    void projectPackageDirectoriesMustBeLowercase() throws IOException {
+        List<String> violations = new ArrayList<>();
+        collectUppercasePackageDirectories(Path.of("src/main/java/com/phu/ecommerceapi"), violations);
+        collectUppercasePackageDirectories(Path.of("src/test/java/com/phu/ecommerceapi"), violations);
+
+        assertThat(violations)
+                .as("project package directories with uppercase segments")
+                .isEmpty();
     }
 
     @Test
@@ -151,25 +147,6 @@ class ArchitectureTest {
     }
 
     @Test
-    void applicationPackagesMustNotDependOnLegacyJpaPackages() {
-        noClasses()
-                .that()
-                .resideInAnyPackage("..application..")
-                .should()
-                .dependOnClassesThat()
-                .resideInAnyPackage("..User..", "..Product..", "..CartItem..")
-                .check(CLASSES);
-
-        noClasses()
-                .that()
-                .resideInAnyPackage("..application..")
-                .should()
-                .dependOnClassesThat()
-                .haveFullyQualifiedName("com.phu.ecommerceapi.cart.infrastructure.CartItemModel")
-                .check(CLASSES);
-    }
-
-    @Test
     void jpaEntitySourcesMustNotUseLombokData() throws IOException {
         Path sourceRoot = Path.of("src/main/java");
         List<String> violations;
@@ -216,7 +193,6 @@ class ArchitectureTest {
         classes()
                 .that()
                 .resideInAnyPackage(
-                        "..Product..",
                         "..catalog..",
                         "..cart..",
                         "..checkout..",
@@ -324,5 +300,28 @@ class ArchitectureTest {
         } catch (IOException exception) {
             throw new IllegalStateException("Could not read source file " + path, exception);
         }
+    }
+
+    private static void collectUppercasePackageDirectories(Path packageRoot, List<String> violations)
+            throws IOException {
+        if (!Files.exists(packageRoot)) {
+            return;
+        }
+
+        try (Stream<Path> paths = Files.walk(packageRoot)) {
+            paths
+                    .filter(Files::isDirectory)
+                    .filter(path -> !path.equals(packageRoot))
+                    .filter(ArchitectureTest::startsWithUppercaseSegment)
+                    .map(packageRoot::relativize)
+                    .map(Path::toString)
+                    .sorted()
+                    .forEach(violations::add);
+        }
+    }
+
+    private static boolean startsWithUppercaseSegment(Path path) {
+        String directoryName = path.getFileName().toString();
+        return !directoryName.isBlank() && Character.isUpperCase(directoryName.charAt(0));
     }
 }

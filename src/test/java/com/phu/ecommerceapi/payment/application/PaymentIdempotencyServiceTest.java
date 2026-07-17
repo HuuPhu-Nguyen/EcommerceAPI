@@ -1,7 +1,7 @@
 package com.phu.ecommerceapi.payment.application;
 
-import com.phu.ecommerceapi.User.UserModel;
-import com.phu.ecommerceapi.User.UserRepo;
+import com.phu.ecommerceapi.customer.infrastructure.UserModel;
+import com.phu.ecommerceapi.customer.infrastructure.UserRepo;
 import com.phu.ecommerceapi.payment.infrastructure.PaymentIdempotencyRecord;
 import com.phu.ecommerceapi.payment.infrastructure.PaymentIdempotencyRecordRepository;
 import com.phu.ecommerceapi.shared.api.ConflictException;

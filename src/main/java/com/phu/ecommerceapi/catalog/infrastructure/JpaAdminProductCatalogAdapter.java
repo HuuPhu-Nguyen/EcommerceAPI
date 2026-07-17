@@ -1,7 +1,5 @@
 package com.phu.ecommerceapi.catalog.infrastructure;
 
-import com.phu.ecommerceapi.Product.ProductModel;
-import com.phu.ecommerceapi.Product.ProductRepo;
 import com.phu.ecommerceapi.catalog.application.AdminProductCatalogPort;
 import com.phu.ecommerceapi.catalog.application.AdminProductCommand;
 import com.phu.ecommerceapi.catalog.application.ProductAdminSnapshot;

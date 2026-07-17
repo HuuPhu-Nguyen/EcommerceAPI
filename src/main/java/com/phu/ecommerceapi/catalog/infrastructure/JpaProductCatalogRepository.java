@@ -1,6 +1,5 @@
 package com.phu.ecommerceapi.catalog.infrastructure;
 
-import com.phu.ecommerceapi.Product.ProductRepo;
 import com.phu.ecommerceapi.catalog.application.ProductCatalogItem;
 import com.phu.ecommerceapi.catalog.application.ProductCatalogRepository;
 import org.springframework.data.domain.Page;

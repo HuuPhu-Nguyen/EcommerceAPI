@@ -1,7 +1,5 @@
 package com.phu.ecommerceapi.customer.infrastructure;
 
-import com.phu.ecommerceapi.User.UserModel;
-import com.phu.ecommerceapi.User.UserRepo;
 import com.phu.ecommerceapi.customer.application.CustomerProfile;
 import com.phu.ecommerceapi.customer.application.CustomerProfileProvisioningPort;
 import com.phu.ecommerceapi.identity.application.CurrentUser;
