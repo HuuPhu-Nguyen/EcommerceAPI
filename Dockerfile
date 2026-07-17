@@ -4,6 +4,12 @@ FROM eclipse-temurin:21-jdk-jammy@sha256:9d8dcf999b0bce2453e913823595a5ff2a4e8e9
 
 WORKDIR /workspace
 
+# Keep the Linux Maven wrapper path on the configured ZIP distribution so
+# distributionSha256Sum verifies the same artifact on Windows, CI, and Docker builds.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends unzip=6.0-26ubuntu3.2 \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY .mvn .mvn
 COPY mvnw pom.xml ./
 RUN chmod +x mvnw && ./mvnw -B -ntp -DskipTests dependency:go-offline
