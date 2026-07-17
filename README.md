@@ -493,6 +493,14 @@ trivy image ecommerce-api:local
 
 The dependency scan needs a bootstrapped OWASP vulnerability database. The `gitleaks` and `trivy` commands require those CLIs locally; CI runs equivalent maintained GitHub Actions.
 
+## Pinned Build And CI Tooling
+
+The Maven wrapper verifies the Maven distribution with `distributionSha256Sum` in `.mvn/wrapper/maven-wrapper.properties`.
+
+GitHub Actions in `.github/workflows` are pinned to full commit SHAs with the source tag or branch kept as an inline comment. The repository keeps weekly Dependabot checks enabled for the `github-actions` ecosystem; action updates should be reviewed as normal dependency changes by replacing the SHA and updating the comment together.
+
+CI workflow permissions are job-scoped. Only jobs that upload SARIF receive `security-events: write`; build, artifact, dependency-review, and secret-scan jobs keep read-only permissions.
+
 ## Pinned Container Images
 
 The Dockerfile and local Compose stack pin container images by digest instead of relying on mutable tags. The tag remains in each reference for readability, but Docker verifies the immutable `sha256` manifest digest.
