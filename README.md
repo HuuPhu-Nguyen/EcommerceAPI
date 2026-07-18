@@ -1,4 +1,4 @@
-# EcommerceAPI
+# Banking-Grade E-Commerce API
 
 [![CI](https://github.com/HuuPhu-Nguyen/EcommerceAPI/actions/workflows/ci.yml/badge.svg)](https://github.com/HuuPhu-Nguyen/EcommerceAPI/actions/workflows/ci.yml)
 

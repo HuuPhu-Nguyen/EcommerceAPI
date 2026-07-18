@@ -25,7 +25,7 @@ RUN groupadd --system ecommerce \
 
 WORKDIR /app
 
-COPY --from=build /workspace/target/ECommerceAPI-0.0.1-SNAPSHOT.jar /app/app.jar
+COPY --from=build /workspace/target/ecommerce-api-0.0.1-SNAPSHOT.jar /app/app.jar
 
 USER ecommerce
 

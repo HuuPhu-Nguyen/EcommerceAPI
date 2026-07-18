@@ -9,22 +9,16 @@
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
     <groupId>com.phu</groupId>
-    <artifactId>ECommerceAPI</artifactId>
+    <artifactId>ecommerce-api</artifactId>
     <version>0.0.1-SNAPSHOT</version>
-    <name>E-Commerce API</name>
-    <description>E-Commerce API</description>
-    <url/>
-    <licenses>
-        <license/>
-    </licenses>
-    <developers>
-        <developer/>
-    </developers>
+    <name>Banking-Grade E-Commerce API</name>
+    <description>Spring Boot portfolio backend for secure checkout, idempotent payments, immutable ledger records, tamper-evident audit events, and reconciliation.</description>
+    <url>https://github.com/HuuPhu-Nguyen/EcommerceAPI</url>
     <scm>
-        <connection/>
-        <developerConnection/>
-        <tag/>
-        <url/>
+        <connection>scm:git:https://github.com/HuuPhu-Nguyen/EcommerceAPI.git</connection>
+        <developerConnection>scm:git:https://github.com/HuuPhu-Nguyen/EcommerceAPI.git</developerConnection>
+        <tag>HEAD</tag>
+        <url>https://github.com/HuuPhu-Nguyen/EcommerceAPI</url>
     </scm>
     <properties>
         <java.version>21</java.version>
