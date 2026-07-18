@@ -27,7 +27,7 @@
         <cyclonedx-maven-plugin.version>2.9.1</cyclonedx-maven-plugin.version>
         <dependency-check-maven.version>12.1.0</dependency-check-maven.version>
         <nvdApiKey></nvdApiKey>
-        <jacoco-maven-plugin.version>0.8.13</jacoco-maven-plugin.version>
+        <jacoco-maven-plugin.version>0.8.15</jacoco-maven-plugin.version>
         <jacoco.minimum.line.coverage>0.80</jacoco.minimum.line.coverage>
         <lombok.version>1.18.38</lombok.version>
         <maven-checkstyle-plugin.version>3.6.0</maven-checkstyle-plugin.version>
