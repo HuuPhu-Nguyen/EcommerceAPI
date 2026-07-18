@@ -152,6 +152,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ProblemDetail> handleUnexpected(Exception exception, HttpServletRequest request) {
+        logUnexpectedException(exception, request);
         return buildResponse(
                 HttpStatus.INTERNAL_SERVER_ERROR,
                 ApiErrorCode.INTERNAL_ERROR,
@@ -180,6 +181,15 @@ public class GlobalExceptionHandler {
         LOGGER.warn(
                 "database exception category={} path={} requestId={} exceptionType={}",
                 category,
+                request.getRequestURI(),
+                requestId(request),
+                exception.getClass().getName()
+        );
+    }
+
+    private void logUnexpectedException(Exception exception, HttpServletRequest request) {
+        LOGGER.error(
+                "unexpected exception path={} requestId={} exceptionType={}",
                 request.getRequestURI(),
                 requestId(request),
                 exception.getClass().getName()

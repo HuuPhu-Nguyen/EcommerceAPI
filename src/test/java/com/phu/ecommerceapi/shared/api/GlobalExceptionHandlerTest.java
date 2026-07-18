@@ -3,6 +3,9 @@ package com.phu.ecommerceapi.shared.api;
 import jakarta.persistence.OptimisticLockException;
 import jakarta.persistence.QueryTimeoutException;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
@@ -13,6 +16,7 @@ import org.springframework.security.access.AccessDeniedException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+@ExtendWith(OutputCaptureExtension.class)
 class GlobalExceptionHandlerTest {
 
     private final GlobalExceptionHandler handler = new GlobalExceptionHandler();
@@ -134,6 +138,40 @@ class GlobalExceptionHandlerTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
         assertThat(response.getBody().getDetail()).doesNotContain("SQL", "ledger", "statement timeout");
         assertThat(response.getBody().getProperties()).doesNotContainKeys("trace", "exception");
+    }
+
+    @Test
+    void unexpectedExceptionResponseIsSanitizedAndLogged(CapturedOutput output) {
+        MockHttpServletRequest request = requestWithId("/checkout", "req-unexpected");
+        request.addHeader("Authorization", "Bearer raw-token-value");
+
+        ResponseEntity<ProblemDetail> response = handler.handleUnexpected(
+                new IllegalStateException(
+                        "Authorization: Bearer raw-token-value; secret=sk_live_123; body={card=4111111111111111}"
+                ),
+                request
+        );
+
+        ProblemDetail body = response.getBody();
+        String logs = output.getOut() + output.getErr();
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
+        assertThat(body.getDetail()).isEqualTo("Unexpected server error");
+        assertThat(body.getProperties()).containsEntry("code", "INTERNAL_ERROR");
+        assertThat(body.getProperties()).containsEntry("path", "/checkout");
+        assertThat(body.getProperties()).containsEntry("requestId", "req-unexpected");
+        assertThat(body.getProperties()).doesNotContainKeys("trace", "exception");
+        assertThat(body.toString())
+                .doesNotContain("raw-token-value", "sk_live_123", "4111111111111111", "Authorization");
+
+        assertThat(logs)
+                .contains(
+                        "unexpected exception",
+                        "path=/checkout",
+                        "requestId=req-unexpected",
+                        "exceptionType=java.lang.IllegalStateException"
+                )
+                .doesNotContain("raw-token-value", "sk_live_123", "4111111111111111", "Authorization");
     }
 
     private MockHttpServletRequest requestWithId(String path, String requestId) {
